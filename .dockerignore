@@ -1,0 +1,14 @@
+.git
+.github
+.next
+node_modules
+npm-debug.log
+README.md
+.env
+.env.local
+coverage
+dist
+Plant Health Monitoring App (Copy)
+system requirements specification latex
+project_charter_latex (1).pdf
+.DS_Store
