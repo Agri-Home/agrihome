@@ -12,11 +12,11 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const variantClasses: Record<ButtonVariant, string> = {
   primary:
-    "bg-[#17231a] text-white hover:bg-[#0f170f] disabled:bg-gray-200 disabled:text-gray-400 shadow-[0_10px_22px_rgba(23,35,26,0.18)]",
+    "bg-ink text-white shadow-lift hover:bg-moss hover:shadow-glow disabled:bg-mist disabled:text-ink/35",
   secondary:
-    "border border-gray-200 bg-white text-gray-900 hover:bg-gray-50 focus:ring-2 focus:ring-gray-200 disabled:bg-gray-50 disabled:text-gray-400",
+    "border border-[var(--border-strong)] bg-[var(--surface-strong)] text-ink hover:border-leaf/40 hover:bg-white disabled:bg-mist/80 disabled:text-ink/35",
   ghost:
-    "bg-white/80 text-gray-700 hover:bg-white hover:text-gray-900 disabled:text-gray-400"
+    "bg-transparent text-ink/75 hover:bg-ink/[0.05] hover:text-ink disabled:text-ink/30"
 };
 
 export function Button({
@@ -27,7 +27,7 @@ export function Button({
   return (
     <button
       className={cn(
-        "inline-flex items-center justify-center rounded-2xl px-4 py-3 text-sm font-medium transition-all duration-200 active:scale-[0.98] disabled:pointer-events-none",
+        "inline-flex items-center justify-center rounded-2xl px-4 py-2.5 text-sm font-semibold tracking-tight transition-all duration-200 ease-spring focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-leaf active:scale-[0.97] disabled:pointer-events-none disabled:shadow-none",
         variantClasses[variant],
         className
       )}

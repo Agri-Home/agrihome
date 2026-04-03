@@ -51,6 +51,7 @@ export const schema = createSchema({
       id: ID!
       captureId: String
       trayId: String
+      plantId: String
       level: String!
       title: String!
       message: String!
@@ -92,6 +93,8 @@ export const schema = createSchema({
       status: String!
       lastReportAt: String!
       latestDiagnosis: String!
+      lastImageUrl: String
+      lastImageAt: String!
     }
 
     type PlantReport {
@@ -133,7 +136,7 @@ export const schema = createSchema({
     type Query {
       latestImage(trayId: String): CameraCapture
       latestPrediction(trayId: String): PredictionResult
-      monitoringLog(limit: Int = 10, trayId: String): [MonitoringEvent!]!
+      monitoringLog(limit: Int = 10, trayId: String, plantId: String): [MonitoringEvent!]!
       traySystems: [TraySystem!]!
       meshNetworks: [MeshNetwork!]!
       plants(trayId: String): [PlantUnit!]!
@@ -160,8 +163,10 @@ export const schema = createSchema({
         getLatestCameraCapture(args.trayId),
       latestPrediction: (_parent, args: { trayId?: string }) =>
         getLatestPrediction(args.trayId),
-      monitoringLog: (_parent, args: { limit?: number; trayId?: string }) =>
-        getMonitoringLog(args.limit ?? 10, args.trayId),
+      monitoringLog: (
+        _parent,
+        args: { limit?: number; trayId?: string; plantId?: string }
+      ) => getMonitoringLog(args.limit ?? 10, args.trayId, args.plantId),
       traySystems: () => listTraySystems(),
       meshNetworks: () => listMeshNetworks(),
       plants: (_parent, args: { trayId?: string }) => listPlantsByTray(args.trayId),

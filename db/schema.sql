@@ -24,6 +24,8 @@ CREATE TABLE IF NOT EXISTS plants (
   status VARCHAR(32) NOT NULL DEFAULT 'healthy',
   last_report_at DATETIME NOT NULL,
   latest_diagnosis VARCHAR(160) NOT NULL,
+  last_image_url TEXT NULL,
+  last_image_at DATETIME NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_plant_tray
     FOREIGN KEY (tray_id) REFERENCES tray_systems(id)

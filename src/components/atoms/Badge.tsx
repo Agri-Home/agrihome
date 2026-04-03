@@ -5,10 +5,10 @@ import { cn } from "@/lib/utils";
 type BadgeTone = "default" | "success" | "warning" | "critical";
 
 const badgeToneClasses: Record<BadgeTone, string> = {
-  default: "bg-slate-100 text-slate-800 ring-1 ring-slate-200/80",
-  success: "bg-emerald-100 text-emerald-800 ring-1 ring-emerald-300/70",
-  warning: "bg-amber-100 text-amber-800 ring-1 ring-amber-300/70",
-  critical: "bg-rose-100 text-rose-800 ring-1 ring-rose-300/70"
+  default: "bg-mist/90 text-ink/80 ring-1 ring-ink/10",
+  success: "bg-lime/35 text-moss ring-1 ring-leaf/25",
+  warning: "bg-[#fff4e0] text-amber-900 ring-1 ring-amber-200/80",
+  critical: "bg-[#ffe8ec] text-rose-900 ring-1 ring-rose-200/80"
 };
 
 export function Badge({
@@ -23,7 +23,7 @@ export function Badge({
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
+        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide transition-transform duration-200",
         badgeToneClasses[tone],
         className
       )}

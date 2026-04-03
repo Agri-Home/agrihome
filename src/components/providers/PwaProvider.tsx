@@ -25,12 +25,7 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
   const [isStandalone, setIsStandalone] = useState(false);
 
   useEffect(() => {
-    if (!("serviceWorker" in navigator)) {
-      setIsStandalone(
-        window.matchMedia("(display-mode: standalone)").matches ||
-          Boolean((window.navigator as Navigator & { standalone?: boolean }).standalone)
-      );
-    } else {
+    if ("serviceWorker" in navigator) {
       void navigator.serviceWorker.register("/sw.js");
     }
 
@@ -52,7 +47,9 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
       syncStandalone();
     };
 
-    syncStandalone();
+    queueMicrotask(() => {
+      syncStandalone();
+    });
     mediaQuery.addEventListener("change", syncStandalone);
     window.addEventListener(
       "beforeinstallprompt",

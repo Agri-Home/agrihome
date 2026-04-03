@@ -5,7 +5,6 @@ import { mockSimilarMatches } from "@/lib/mocks/data";
 import type { CameraCapture, SimilarImageMatch } from "@/lib/types/domain";
 
 declare global {
-  // eslint-disable-next-line no-var
   var __agrihomeQdrantClient__:
     | QdrantClient
     | null

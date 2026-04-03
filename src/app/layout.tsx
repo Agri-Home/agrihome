@@ -1,18 +1,19 @@
 import type { Metadata, Viewport } from "next";
-import { Manrope } from "next/font/google";
+import { DM_Sans } from "next/font/google";
 
+import { AppShell } from "@/components/shell/AppShell";
 import { PwaProvider } from "@/components/providers/PwaProvider";
 import "./globals.css";
 
-const manrope = Manrope({
+const dmSans = DM_Sans({
   subsets: ["latin"],
-  variable: "--font-app"
+  variable: "--font-app",
+  weight: ["400", "500", "600", "700"]
 });
 
 export const metadata: Metadata = {
-  title: "AgriHome Vision Console",
-  description:
-    "A mobile-first agricultural monitoring app with tray, plant, schedule, and mesh management.",
+  title: "AgriHome",
+  description: "Tray and plant monitoring.",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
@@ -22,7 +23,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#eef3e8",
+  themeColor: "#1a3d2e",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -36,8 +37,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={manrope.variable}>
-        <PwaProvider>{children}</PwaProvider>
+      <body className={`${dmSans.variable} font-sans antialiased`}>
+        <PwaProvider>
+          <AppShell>{children}</AppShell>
+        </PwaProvider>
       </body>
     </html>
   );

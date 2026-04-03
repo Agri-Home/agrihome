@@ -16,6 +16,8 @@ interface PlantRow {
   status: PlantUnit["status"];
   last_report_at: Date | string;
   latest_diagnosis: string;
+  last_image_url?: string | null;
+  last_image_at?: Date | string | null;
 }
 
 interface PlantReportRow {
@@ -54,7 +56,8 @@ export const listPlantsByTray = async (
         : "";
       const rows = await queryRows<PlantRow>(
         `SELECT id, tray_id, mesh_ids, name, cultivar, slot_label, row_index,
-                column_index, health_score, status, last_report_at, latest_diagnosis
+                column_index, health_score, status, last_report_at, latest_diagnosis,
+                last_image_url, last_image_at
          FROM plants
          ${whereClause}
          ORDER BY tray_id ASC, row_index ASC, column_index ASC`,
@@ -73,7 +76,11 @@ export const listPlantsByTray = async (
         healthScore: Number(row.health_score),
         status: row.status,
         lastReportAt: new Date(row.last_report_at).toISOString(),
-        latestDiagnosis: row.latest_diagnosis
+        latestDiagnosis: row.latest_diagnosis,
+        lastImageUrl: row.last_image_url ?? null,
+        lastImageAt: row.last_image_at
+          ? new Date(row.last_image_at).toISOString()
+          : new Date(row.last_report_at).toISOString()
       }));
     } catch {
       return getMockStore().plants.filter((plant) =>
@@ -85,6 +92,11 @@ export const listPlantsByTray = async (
   return getMockStore().plants.filter((plant) =>
     trayId ? plant.trayId === trayId : true
   );
+};
+
+export const getPlantById = async (id: string): Promise<PlantUnit | null> => {
+  const plants = await listPlantsByTray();
+  return plants.find((plant) => plant.id === id) ?? null;
 };
 
 export const listPlantReports = async ({

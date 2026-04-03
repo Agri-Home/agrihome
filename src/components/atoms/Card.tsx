@@ -10,7 +10,7 @@ export function Card({
   className?: string;
 }) {
   return (
-    <section className={cn("glass-panel rounded-[1.75rem] p-6", className)}>
+    <section className={cn("glass-panel rounded-3xl p-6 md:rounded-[1.85rem]", className)}>
       {children}
     </section>
   );

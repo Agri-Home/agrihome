@@ -4,10 +4,17 @@
 
 :root {
   color-scheme: light;
-  --background: #f3fbfa;
-  --foreground: #0f172a;
-  --border: rgba(15, 23, 42, 0.08);
-  --muted: #64748b;
+  --canvas: #faf9f5;
+  --surface: rgba(255, 255, 255, 0.88);
+  --surface-strong: rgba(255, 255, 255, 0.96);
+  --foreground: #0f1f17;
+  --muted: rgba(15, 31, 23, 0.52);
+  --border: rgba(15, 31, 23, 0.08);
+  --border-strong: rgba(15, 31, 23, 0.12);
+  --accent: #c8fb80;
+  --accent-deep: #3d9f6c;
+  --shadow-card: 0 16px 48px rgba(15, 31, 23, 0.06);
+  --shadow-dock: 0 -8px 40px rgba(15, 31, 23, 0.07);
 }
 
 * {
@@ -16,23 +23,38 @@
 
 html {
   scroll-behavior: smooth;
-  background: var(--background);
+  background: var(--canvas);
 }
 
 body {
   min-height: 100vh;
-  background:
-    radial-gradient(circle at top left, rgba(34, 211, 238, 0.16), transparent 28%),
-    radial-gradient(circle at top right, rgba(16, 185, 129, 0.18), transparent 24%),
-    radial-gradient(circle at bottom, rgba(249, 115, 22, 0.12), transparent 32%),
-    linear-gradient(180deg, #f2fbf8 0%, #eef8fb 42%, #f6f4ff 100%);
+  min-height: 100dvh;
+  background-color: var(--canvas);
+  background-image:
+    radial-gradient(ellipse 100% 80% at 10% -20%, rgba(200, 251, 128, 0.28), transparent 55%),
+    radial-gradient(ellipse 80% 60% at 90% 10%, rgba(61, 159, 108, 0.18), transparent 50%),
+    linear-gradient(180deg, #fafcf7 0%, #f4f7f2 45%, #f8f6f0 100%);
   color: var(--foreground);
-  font-family: var(--font-app), "Avenir Next", "Segoe UI", sans-serif;
+  font-family: var(--font-app), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   overscroll-behavior-y: contain;
   -webkit-tap-highlight-color: transparent;
   text-rendering: optimizeLegibility;
   touch-action: manipulation;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 a {
@@ -42,14 +64,17 @@ a {
 
 .glass-panel {
   border: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.82);
-  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.08);
-  transition: all 0.25s ease;
-  backdrop-filter: blur(18px);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+  transition:
+    box-shadow 0.35s cubic-bezier(0.34, 1.2, 0.64, 1),
+    transform 0.35s cubic-bezier(0.34, 1.2, 0.64, 1);
+  backdrop-filter: blur(20px);
 }
 
 .glass-panel:hover {
-  box-shadow: 0 14px 40px rgba(19, 28, 17, 0.08);
+  box-shadow: 0 20px 56px rgba(15, 31, 23, 0.09);
+  transform: translateY(-1px);
 }
 
 .status-dot {
@@ -60,7 +85,7 @@ a {
 }
 
 .panel-title {
-  font-weight: 500;
+  font-weight: 600;
   letter-spacing: -0.02em;
 }
 
@@ -80,11 +105,11 @@ a {
 }
 
 .safe-top {
-  padding-top: max(1rem, env(safe-area-inset-top));
+  padding-top: max(0.75rem, env(safe-area-inset-top));
 }
 
 .safe-bottom {
-  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
 }
 
 .hide-scrollbar::-webkit-scrollbar {
@@ -98,4 +123,30 @@ a {
 
 .text-balance {
   text-wrap: balance;
+}
+
+@keyframes surface-shimmer {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
+.animate-surface-shimmer {
+  animation: surface-shimmer 5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-surface-shimmer {
+    animation: none;
+    opacity: 0.5;
+  }
+}
+
+.focus-ring:focus-visible {
+  outline: 2px solid var(--accent-deep);
+  outline-offset: 2px;
 }

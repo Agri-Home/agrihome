@@ -46,6 +46,9 @@ export interface PlantUnit {
   status: PlantHealthStatus;
   lastReportAt: string;
   latestDiagnosis: string;
+  /** Latest crop image for this plant (tray capture or plant ROI). */
+  lastImageUrl: string | null;
+  lastImageAt: string;
 }
 
 export interface CaptureSchedule {

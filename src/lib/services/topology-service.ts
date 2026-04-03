@@ -1,6 +1,10 @@
 import { env } from "@/lib/config/env";
 import { getPostgresPool, queryRows } from "@/lib/db/postgres";
-import { createMockMesh, getMockStore } from "@/lib/services/mock-store";
+import {
+  createMockMesh,
+  ensureManualTrayInMockStore,
+  getMockStore
+} from "@/lib/services/mock-store";
 import type { MeshNetwork, TraySystem } from "@/lib/types/domain";
 
 interface TrayRow {
@@ -52,11 +56,18 @@ export const listTraySystems = async (): Promise<TraySystem[]> => {
         lastCaptureAt: new Date(row.last_capture_at).toISOString()
       }));
     } catch {
+      ensureManualTrayInMockStore();
       return getMockStore().trays;
     }
   }
 
+  ensureManualTrayInMockStore();
   return getMockStore().trays;
+};
+
+export const getTrayById = async (id: string): Promise<TraySystem | null> => {
+  const trays = await listTraySystems();
+  return trays.find((tray) => tray.id === id) ?? null;
 };
 
 export const listMeshNetworks = async (): Promise<MeshNetwork[]> => {
@@ -87,6 +98,11 @@ export const listMeshNetworks = async (): Promise<MeshNetwork[]> => {
   return getMockStore().meshes;
 };
 
+export const getMeshById = async (id: string): Promise<MeshNetwork | null> => {
+  const meshes = await listMeshNetworks();
+  return meshes.find((mesh) => mesh.id === id) ?? null;
+};
+
 export const createMeshNetwork = async ({
   name,
   trayIds
@@ -104,7 +120,7 @@ export const createMeshNetwork = async ({
       nodeCount: trayIds.length,
       status: "draft",
       createdAt: new Date().toISOString(),
-      summary: `Links ${trayIds.length} tray nodes for shared monitoring, routing, and future hardware coordination.`
+      summary: `${trayIds.length} trays in this group.`
     };
 
     try {

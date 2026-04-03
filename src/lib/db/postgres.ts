@@ -3,7 +3,6 @@ import { Pool } from "pg";
 import { env, hasPostgresConfig } from "@/lib/config/env";
 
 declare global {
-  // eslint-disable-next-line no-var
   var __agrihomePostgresPool__: Pool | null | undefined;
 }
 

@@ -6,3 +6,5 @@ dist
 coverage
 *.log
 .DS_Store
+public/uploads/plants/*
+!public/uploads/plants/.gitkeep

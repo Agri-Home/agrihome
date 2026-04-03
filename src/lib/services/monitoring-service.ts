@@ -7,6 +7,7 @@ interface MonitoringRow {
   id: string;
   capture_id: string | null;
   tray_id: string | null;
+  plant_id: string | null;
   level: MonitoringEvent["level"];
   title: string;
   message: string;
@@ -15,26 +16,35 @@ interface MonitoringRow {
 
 export const getMonitoringLog = async (
   limit = 10,
-  trayId?: string
+  trayId?: string,
+  plantId?: string
 ): Promise<MonitoringEvent[]> => {
   const pool = getPostgresPool();
 
   if (!env.useMockData && pool) {
     try {
       const params: Array<string | number> = [];
-      const whereClause = trayId
-        ? (() => {
-            params.push(trayId);
-            return `WHERE tray_id = $${params.length}`;
-          })()
-        : "";
+      const clauses: string[] = [];
+
+      if (trayId) {
+        params.push(trayId);
+        clauses.push(`tray_id = $${params.length}`);
+      }
+
+      if (plantId) {
+        params.push(plantId);
+        clauses.push(`plant_id = $${params.length}`);
+      }
+
       params.push(limit);
+      const limitIdx = params.length;
+
       const rows = await queryRows<MonitoringRow>(
-        `SELECT id, capture_id, tray_id, level, title, message, created_at
+        `SELECT id, capture_id, tray_id, plant_id, level, title, message, created_at
          FROM monitoring_events
-         ${whereClause}
+         ${clauses.length ? `WHERE ${clauses.join(" AND ")}` : ""}
          ORDER BY created_at DESC
-         LIMIT $${params.length}`,
+         LIMIT $${limitIdx}`,
         params
       );
 
@@ -42,19 +52,23 @@ export const getMonitoringLog = async (
         id: row.id,
         captureId: row.capture_id ?? undefined,
         trayId: row.tray_id ?? undefined,
+        plantId: row.plant_id ?? undefined,
         level: row.level,
         title: row.title,
         message: row.message,
         createdAt: new Date(row.created_at).toISOString()
       }));
     } catch {
-      return getMockStore().events
-        .filter((event) => (trayId ? event.trayId === trayId : true))
-        .slice(0, limit);
+      return filterMockEvents(limit, trayId, plantId);
     }
   }
 
-  return getMockStore().events
-    .filter((event) => (trayId ? event.trayId === trayId : true))
-    .slice(0, limit);
+  return filterMockEvents(limit, trayId, plantId);
 };
+
+function filterMockEvents(limit: number, trayId?: string, plantId?: string) {
+  return getMockStore()
+    .events.filter((event) => (trayId ? event.trayId === trayId : true))
+    .filter((event) => (plantId ? event.plantId === plantId : true))
+    .slice(0, limit);
+}

@@ -1,4 +1,9 @@
-import { createMockSeed, derivePredictionFromCapture } from "@/lib/mocks/data";
+import { MANUAL_TRAY_ID } from "@/lib/constants/manual-tray";
+import {
+  buildPlantReportFromPrediction,
+  createMockSeed,
+  derivePredictionFromCapture
+} from "@/lib/mocks/data";
 import type {
   CameraCapture,
   CaptureSchedule,
@@ -23,7 +28,6 @@ interface MockStore {
 }
 
 declare global {
-  // eslint-disable-next-line no-var
   var __agrihomeMockStore__: MockStore | undefined;
 }
 
@@ -79,13 +83,13 @@ const rotateSimulation = (store: MockStore) => {
       prediction.severity === "high"
         ? ["necrotic leaf spotting"]
         : ["minor canopy asymmetry"],
-    summary: `${focusPlant.name} was analyzed during the scheduled capture cycle.`,
+    summary: `Scan of ${focusPlant.name}.`,
     recommendedAction:
       prediction.severity === "high"
-        ? "Escalate to manual review and isolate the plant."
+        ? "Isolate; re-image today."
         : prediction.severity === "medium"
-          ? "Review nutrient mix and collect follow-up imagery."
-          : "Continue the current care routine.",
+          ? "Check feed; re-image in 24h."
+          : "No change.",
     status: prediction.severity === "high" ? "pending_review" : "ready",
     createdAt: capture.capturedAt
   };
@@ -96,8 +100,8 @@ const rotateSimulation = (store: MockStore) => {
     trayId: capture.trayId,
     plantId: focusPlant.id,
     level: prediction.severity === "high" ? "critical" : "info",
-    title: "Scheduled analysis completed",
-    message: `${focusPlant.name} in ${capture.trayName} was processed by the simulated computer-vision pipeline.`,
+    title: "Scan done",
+    message: `${focusPlant.name} · ${capture.trayName}`,
     createdAt: capture.capturedAt
   };
 
@@ -140,7 +144,11 @@ const rotateSimulation = (store: MockStore) => {
                 ? "watch"
                 : "healthy",
           latestDiagnosis: report.diagnosis,
-          lastReportAt: report.createdAt
+          lastReportAt: report.createdAt,
+          lastImageUrl: capture.imageUrl
+            ? `${capture.imageUrl}${capture.imageUrl.includes("?") ? "&" : "?"}plant=${item.id}`
+            : item.lastImageUrl,
+          lastImageAt: capture.capturedAt
         }
       : item
   );
@@ -162,6 +170,131 @@ const rotateSimulation = (store: MockStore) => {
 
 export const getMockStore = () => rotateSimulation(getGlobalStore());
 
+export const ensureManualTrayInMockStore = () => {
+  const store = getGlobalStore();
+  if (store.trays.some((t) => t.id === MANUAL_TRAY_ID)) {
+    return;
+  }
+  store.trays.push({
+    id: MANUAL_TRAY_ID,
+    name: "My plants",
+    zone: "Manual entry",
+    crop: "Custom",
+    plantCount: 0,
+    healthScore: 92,
+    status: "healthy",
+    deviceId: "user-device",
+    lastCaptureAt: new Date().toISOString()
+  });
+};
+
+export const createManualPlantInStore = (input: {
+  name: string;
+  cultivar: string;
+  trayId: string;
+}): PlantUnit => {
+  const store = getMockStore();
+  const tray = store.trays.find((t) => t.id === input.trayId);
+  if (!tray) {
+    throw new Error("Tray not found");
+  }
+  const siblings = store.plants.filter((p) => p.trayId === input.trayId);
+  const n = siblings.length + 1;
+  const plant: PlantUnit = {
+    id: `plant-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+    trayId: input.trayId,
+    meshIds: [],
+    name: input.name.trim(),
+    cultivar: input.cultivar.trim(),
+    slotLabel: `M-${n}`,
+    row: Math.ceil(n / 3),
+    column: ((n - 1) % 3) + 1,
+    healthScore: 88,
+    status: "healthy",
+    lastReportAt: new Date().toISOString(),
+    latestDiagnosis: "Awaiting first photo analysis",
+    lastImageUrl: null,
+    lastImageAt: new Date().toISOString()
+  };
+  store.plants = [...store.plants, plant];
+  store.trays = store.trays.map((t) =>
+    t.id === input.trayId ? { ...t, plantCount: t.plantCount + 1 } : t
+  );
+  return plant;
+};
+
+/**
+ * Runs simulated CV → report for a capture. Updates in-memory mock store only
+ * when this plant exists there (typical when NEXT_PUBLIC_USE_MOCK_DATA=true).
+ */
+export const finalizePlantPhotoAnalysisForPlant = (
+  plant: PlantUnit,
+  capture: CameraCapture
+): { report: PlantReport; prediction: PredictionResult } => {
+  const store = getMockStore();
+  let prediction = store.predictions.find((p) => p.captureId === capture.id);
+  if (!prediction) {
+    prediction = derivePredictionFromCapture(capture);
+    store.predictions = [prediction, ...store.predictions].slice(0, 48);
+  }
+  const report = buildPlantReportFromPrediction(plant, capture, prediction);
+  const newHealth =
+    prediction.severity === "high"
+      ? Math.max(plant.healthScore - 8, 44)
+      : prediction.severity === "medium"
+        ? Math.max(plant.healthScore - 4, 60)
+        : Math.min(plant.healthScore + 2, 98);
+  const newStatus: PlantUnit["status"] =
+    prediction.severity === "high"
+      ? "alert"
+      : prediction.severity === "medium"
+        ? "watch"
+        : "healthy";
+
+  const inMock = store.plants.some((p) => p.id === plant.id);
+  if (inMock) {
+    store.reports = [report, ...store.reports].slice(0, 80);
+    store.plants = store.plants.map((p) =>
+      p.id === plant.id
+        ? {
+            ...p,
+            healthScore: newHealth,
+            status: newStatus,
+            latestDiagnosis: report.diagnosis,
+            lastReportAt: report.createdAt,
+            lastImageUrl: capture.imageUrl,
+            lastImageAt: capture.capturedAt
+          }
+        : p
+    );
+    const event: MonitoringEvent = {
+      id: `event-${capture.id}-${plant.id}`,
+      captureId: capture.id,
+      trayId: plant.trayId,
+      plantId: plant.id,
+      level: prediction.severity === "high" ? "critical" : "info",
+      title: "Photo analysis",
+      message: `${plant.name} · ${report.diagnosis}`,
+      createdAt: capture.capturedAt
+    };
+    store.events = [event, ...store.events].slice(0, 80);
+    store.trays = store.trays.map((t) =>
+      t.id === plant.trayId
+        ? {
+            ...t,
+            lastCaptureAt: capture.capturedAt,
+            healthScore: Math.min(
+              99,
+              Math.round((t.healthScore * 2 + newHealth) / 3)
+            )
+          }
+        : t
+    );
+  }
+
+  return { report, prediction };
+};
+
 export const ingestMockCapture = (capture: CameraCapture) => {
   const store = getGlobalStore();
   const prediction = derivePredictionFromCapture(capture);
@@ -170,8 +303,8 @@ export const ingestMockCapture = (capture: CameraCapture) => {
     captureId: capture.id,
     trayId: capture.trayId,
     level: "info",
-    title: "Hardware ingest received",
-    message: `Camera frame from ${capture.trayName} accepted into the staging pipeline.`,
+    title: "Frame received",
+    message: capture.trayName,
     createdAt: capture.capturedAt
   };
 
@@ -200,7 +333,7 @@ export const createMockMesh = (name: string, trayIds: string[]) => {
     nodeCount: trayIds.length,
     status: "draft",
     createdAt: new Date().toISOString(),
-    summary: `Links ${trayIds.length} tray nodes for shared monitoring, routing, and future hardware coordination.`
+    summary: `${trayIds.length} trays in this group.`
   };
 
   store.meshes = [mesh, ...store.meshes];

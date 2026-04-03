@@ -14,21 +14,19 @@ const predictionCatalog = [
   {
     label: "Healthy leaf tissue",
     severity: "low" as const,
-    recommendation: "No immediate action required. Continue normal irrigation.",
+    recommendation: "No change.",
     score: 0.97
   },
   {
     label: "Early blight risk",
     severity: "medium" as const,
-    recommendation:
-      "Inspect the affected bed and isolate nearby leaves for closer review.",
+    recommendation: "Inspect canopy; re-image in 24h.",
     score: 0.88
   },
   {
     label: "Leaf spot anomaly",
     severity: "high" as const,
-    recommendation:
-      "Trigger a manual inspection and prepare treatment workflow for the row.",
+    recommendation: "Manual inspection; consider treatment.",
     score: 0.82
   }
 ];
@@ -41,9 +39,8 @@ const reportCatalog = [
     deficiencies: [] as string[],
     anomalies: ["minor edge curl"],
     confidence: 0.96,
-    summary:
-      "The plant shows uniform color, stable foliage density, and no major disease markers.",
-    recommendedAction: "Keep the current lighting and irrigation schedule."
+    summary: "Color and density look normal.",
+    recommendedAction: "Keep current light and water."
   },
   {
     diagnosis: "Nutrient deficiency watch",
@@ -52,9 +49,8 @@ const reportCatalog = [
     deficiencies: ["nitrogen deficiency"],
     anomalies: ["chlorosis on lower leaves"],
     confidence: 0.84,
-    summary:
-      "The plant shows yellowing patterns that align with early nutrient imbalance.",
-    recommendedAction: "Review nutrient mix concentration and inspect runoff EC."
+    summary: "Lower leaves yellowing; possible N shortage.",
+    recommendedAction: "Check EC/pH and feed rate."
   },
   {
     diagnosis: "Disease risk detected",
@@ -63,9 +59,8 @@ const reportCatalog = [
     deficiencies: [] as string[],
     anomalies: ["necrotic leaf spotting"],
     confidence: 0.81,
-    summary:
-      "The plant has recurring lesions and spotting that resemble early-stage disease.",
-    recommendedAction: "Isolate this plant, capture a follow-up image, and prepare treatment."
+    summary: "Spots match early blight pattern.",
+    recommendedAction: "Isolate; re-shoot; prep fungicide if confirmed."
   }
 ];
 
@@ -133,8 +128,7 @@ const meshSeed: MeshNetwork[] = [
     nodeCount: 2,
     status: "active",
     createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-    summary:
-      "Coordinates basil and tomato trays for shared irrigation and alert routing."
+    summary: "Basil + tomato on one alert group."
   },
   {
     id: "mesh-leafy-02",
@@ -143,8 +137,7 @@ const meshSeed: MeshNetwork[] = [
     nodeCount: 2,
     status: "draft",
     createdAt: new Date(Date.now() - 36 * 60 * 60 * 1000).toISOString(),
-    summary:
-      "Groups basil and lettuce trays for comparative health analysis and scheduling."
+    summary: "Lettuce and basil compared on the same schedule."
   }
 ];
 
@@ -165,9 +158,7 @@ const makeCapture = (
   capturedAt: new Date(Date.now() - offsetMinutes * 60 * 1000).toISOString(),
   source: "simulator",
   status: missing ? "missing" : "available",
-  notes: missing
-    ? `${tray.name} reported a stale frame. Placeholder engaged.`
-    : `${tray.name} frame normalized for dashboard preview.`
+  notes: missing ? "Stale frame." : "OK."
 });
 
 const makePrediction = (
@@ -210,10 +201,23 @@ const makeEvent = (
   createdAt: new Date(Date.now() - offsetMinutes * 60 * 1000).toISOString()
 });
 
+const plantPreviewUrl = (
+  capture: CameraCapture | undefined,
+  trayId: string,
+  slotNumber: number
+) => {
+  if (capture?.imageUrl) {
+    const sep = capture.imageUrl.includes("?") ? "&" : "?";
+    return `${capture.imageUrl}${sep}plant=${trayId}-${slotNumber}`;
+  }
+  return `/images/test-image.jpg?v=${trayId}-p${slotNumber}`;
+};
+
 const makePlant = (
   tray: Omit<TraySystem, "healthScore" | "status" | "lastCaptureAt">,
   slotNumber: number,
-  meshes: MeshNetwork[]
+  meshes: MeshNetwork[],
+  trayCapture?: CameraCapture
 ): PlantUnit => {
   const templates: Array<{
     score: number;
@@ -237,7 +241,14 @@ const makePlant = (
     trayId: tray.id,
     meshIds,
     name: `${tray.crop} Plant ${slotNumber}`,
-    cultivar: `${tray.crop} cultivar`,
+    cultivar:
+      tray.crop === "Tomato"
+        ? "Cherry cascade"
+        : tray.crop === "Basil"
+          ? "Genovese"
+          : tray.crop === "Lettuce"
+            ? "Butterhead"
+            : `${tray.crop} (grow)`,
     slotLabel: `R${Math.ceil(slotNumber / 3)}-C${((slotNumber - 1) % 3) + 1}`,
     row: Math.ceil(slotNumber / 3),
     column: ((slotNumber - 1) % 3) + 1,
@@ -246,7 +257,11 @@ const makePlant = (
     lastReportAt: new Date(
       Date.now() - (slotNumber + 2) * 60 * 60 * 1000
     ).toISOString(),
-    latestDiagnosis: template.diagnosis
+    latestDiagnosis: template.diagnosis,
+    lastImageUrl: plantPreviewUrl(trayCapture, tray.id, slotNumber),
+    lastImageAt:
+      trayCapture?.capturedAt ??
+      new Date(Date.now() - (slotNumber + 1) * 45 * 60 * 1000).toISOString()
   };
 };
 
@@ -336,17 +351,46 @@ export const createMockSeed = () => {
     };
   });
 
-  const plants = trayCatalog.flatMap((tray) =>
-    Array.from({ length: tray.plantCount }, (_value, index) =>
-      makePlant(tray, index + 1, meshSeed)
-    )
-  );
+  const plants = trayCatalog.flatMap((tray) => {
+    const cap = latestCaptureByTray.find((c) => c.trayId === tray.id);
+    return Array.from({ length: tray.plantCount }, (_value, index) =>
+      makePlant(tray, index + 1, meshSeed, cap)
+    );
+  });
 
-  const reports = plants.map((plant, index) => {
+  const reports = plants.flatMap((plant, index) => {
     const capture =
       latestCaptureByTray.find((item) => item.trayId === plant.trayId) ?? captures[0];
 
-    return makePlantReport(plant, capture, index);
+    const latest = makePlantReport(plant, capture, index);
+    const t0 = new Date(latest.createdAt).getTime();
+    const older: PlantReport = {
+      ...latest,
+      id: `${plant.id}-r72`,
+      severity: "low",
+      diagnosis: "Healthy growth pattern",
+      summary: "Earlier check: no issues.",
+      confidence: 0.94,
+      diseases: [],
+      deficiencies: [],
+      recommendedAction: "No change.",
+      status: "ready",
+      createdAt: new Date(t0 - 72 * 3600000).toISOString()
+    };
+    const mid: PlantReport = {
+      ...latest,
+      id: `${plant.id}-r36`,
+      severity: index % 4 === 0 ? "medium" : "low",
+      diagnosis: index % 4 === 0 ? "Nutrient deficiency watch" : "Healthy growth pattern",
+      summary: index % 4 === 0 ? "Slight yellowing noted." : "Stable.",
+      confidence: index % 4 === 0 ? 0.82 : 0.91,
+      diseases: [],
+      deficiencies: index % 4 === 0 ? ["nitrogen deficiency"] : [],
+      recommendedAction: index % 4 === 0 ? "Check EC." : "No change.",
+      status: "ready",
+      createdAt: new Date(t0 - 36 * 3600000).toISOString()
+    };
+    return [older, mid, { ...latest, id: `${plant.id}-r0` }];
   });
 
   const events = [
@@ -354,8 +398,8 @@ export const createMockSeed = () => {
       "pipeline",
       2,
       "info",
-      "Inference pipeline ready",
-      "The mock classifier is serving tray and plant-level labels.",
+      "Model online",
+      "Classifier up; tray + plant labels enabled.",
       captures[0].trayId,
       undefined,
       captures[0].id
@@ -364,16 +408,16 @@ export const createMockSeed = () => {
       "humidity",
       5,
       "warning",
-      "Humidity drift detected",
-      "Tomato Rail B2 moved 6% above the target humidity band.",
+      "Humidity high",
+      "Tomato Rail B2: +6% vs setpoint.",
       captures[1].trayId
     ),
     makeEvent(
       "missing-frame",
       16,
       "critical",
-      "Frame missing",
-      "Pepper Loop D4 did not return a valid image during the previous capture window.",
+      "No frame",
+      "Pepper Loop D4: empty capture window.",
       captures[3].trayId,
       undefined,
       captures[3].id
@@ -382,8 +426,8 @@ export const createMockSeed = () => {
       "plant-watch",
       9,
       "warning",
-      "Plant-level nutrient watch",
-      "Basil Plant 2 shows chlorosis consistent with nutrient deficiency.",
+      "Nutrient watch",
+      "Basil plant 2: chlorosis on lower leaves.",
       "tray-basil-01",
       "tray-basil-01-plant-2",
       captures[0].id
@@ -392,8 +436,8 @@ export const createMockSeed = () => {
       "plant-alert",
       13,
       "critical",
-      "Disease candidate",
-      "Tomato Plant 3 is flagged for early blight risk and requires review.",
+      "Disease flag",
+      "Tomato plant 3: possible early blight.",
       "tray-tomato-02",
       "tray-tomato-02-plant-3",
       captures[1].id
@@ -446,6 +490,34 @@ export const derivePredictionFromCapture = (
   const variantIndex = capture.id.length % predictionCatalog.length;
 
   return makePrediction(capture, variantIndex);
+};
+
+/** Map model output + reference catalog into a structured plant report. */
+export const buildPlantReportFromPrediction = (
+  plant: PlantUnit,
+  capture: CameraCapture,
+  prediction: PredictionResult
+): PlantReport => {
+  const idx =
+    prediction.severity === "high" ? 2 : prediction.severity === "medium" ? 1 : 0;
+  const template = reportCatalog[idx];
+
+  return {
+    id: `${plant.id}-report-${capture.id}`,
+    trayId: plant.trayId,
+    plantId: plant.id,
+    captureId: capture.id,
+    diagnosis: template.diagnosis,
+    confidence: prediction.confidence,
+    severity: template.severity,
+    diseases: [...template.diseases],
+    deficiencies: [...template.deficiencies],
+    anomalies: [...template.anomalies],
+    summary: `${template.summary} Model: ${prediction.label}.`,
+    recommendedAction: template.recommendedAction,
+    status: prediction.severity === "high" ? "pending_review" : "ready",
+    createdAt: capture.capturedAt
+  };
 };
 
 export const mockSimilarMatches = similarityCatalog;

@@ -9,9 +9,11 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const limit = Number(searchParams.get("limit") ?? 10);
   const trayId = searchParams.get("trayId") ?? undefined;
+  const plantId = searchParams.get("plantId") ?? undefined;
   const data = await getMonitoringLog(
     Number.isFinite(limit) && limit > 0 ? limit : 10,
-    trayId
+    trayId,
+    plantId
   );
 
   return NextResponse.json({
