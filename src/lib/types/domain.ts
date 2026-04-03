@@ -1,4 +1,4 @@
-export type DataSource = "mock" | "mariadb";
+export type DataSource = "mock" | "postgres";
 
 export type CaptureStatus = "available" | "processing" | "missing";
 
@@ -7,6 +7,9 @@ export type Severity = "low" | "medium" | "high";
 export type MonitoringLevel = "info" | "warning" | "critical";
 export type TrayHealthStatus = "healthy" | "watch" | "alert";
 export type MeshStatus = "draft" | "active";
+export type PlantHealthStatus = "healthy" | "watch" | "alert";
+export type ScheduleScopeType = "tray" | "mesh";
+export type ReportStatus = "ready" | "pending_review";
 
 export interface TraySystem {
   id: string;
@@ -28,6 +31,33 @@ export interface MeshNetwork {
   status: MeshStatus;
   createdAt: string;
   summary: string;
+}
+
+export interface PlantUnit {
+  id: string;
+  trayId: string;
+  meshIds: string[];
+  name: string;
+  cultivar: string;
+  slotLabel: string;
+  row: number;
+  column: number;
+  healthScore: number;
+  status: PlantHealthStatus;
+  lastReportAt: string;
+  latestDiagnosis: string;
+}
+
+export interface CaptureSchedule {
+  id: string;
+  scopeType: ScheduleScopeType;
+  scopeId: string;
+  name: string;
+  intervalMinutes: number;
+  active: boolean;
+  nextRunAt: string;
+  lastRunAt?: string;
+  destination: "computer-vision-backend";
 }
 
 export interface CameraCapture {
@@ -62,10 +92,28 @@ export interface PredictionResult {
   similarMatches: SimilarImageMatch[];
 }
 
+export interface PlantReport {
+  id: string;
+  trayId: string;
+  plantId: string;
+  captureId?: string;
+  diagnosis: string;
+  confidence: number;
+  severity: Severity;
+  diseases: string[];
+  deficiencies: string[];
+  anomalies: string[];
+  summary: string;
+  recommendedAction: string;
+  status: ReportStatus;
+  createdAt: string;
+}
+
 export interface MonitoringEvent {
   id: string;
   captureId?: string;
   trayId?: string;
+  plantId?: string;
   level: MonitoringLevel;
   title: string;
   message: string;

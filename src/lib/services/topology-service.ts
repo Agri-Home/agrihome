@@ -1,5 +1,5 @@
 import { env } from "@/lib/config/env";
-import { getMariaDbPool } from "@/lib/db/mariadb";
+import { getPostgresPool, queryRows } from "@/lib/db/postgres";
 import { createMockMesh, getMockStore } from "@/lib/services/mock-store";
 import type { MeshNetwork, TraySystem } from "@/lib/types/domain";
 
@@ -18,24 +18,27 @@ interface TrayRow {
 interface MeshRow {
   id: string;
   name: string;
-  tray_ids: string;
+  tray_ids: string[] | string;
   node_count: number;
   status: MeshNetwork["status"];
   created_at: Date | string;
   summary: string;
 }
 
+const parseStringArray = (value: string[] | string) =>
+  Array.isArray(value) ? value : JSON.parse(value);
+
 export const listTraySystems = async (): Promise<TraySystem[]> => {
-  const pool = getMariaDbPool();
+  const pool = getPostgresPool();
 
   if (!env.useMockData && pool) {
     try {
-      const rows = (await pool.query(
+      const rows = await queryRows<TrayRow>(
         `SELECT id, name, zone, crop, plant_count, health_score, status,
                 device_id, last_capture_at
          FROM tray_systems
          ORDER BY name ASC`
-      )) as TrayRow[];
+      );
 
       return rows.map((row) => ({
         id: row.id,
@@ -57,20 +60,20 @@ export const listTraySystems = async (): Promise<TraySystem[]> => {
 };
 
 export const listMeshNetworks = async (): Promise<MeshNetwork[]> => {
-  const pool = getMariaDbPool();
+  const pool = getPostgresPool();
 
   if (!env.useMockData && pool) {
     try {
-      const rows = (await pool.query(
+      const rows = await queryRows<MeshRow>(
         `SELECT id, name, tray_ids, node_count, status, created_at, summary
          FROM mesh_networks
          ORDER BY created_at DESC`
-      )) as MeshRow[];
+      );
 
       return rows.map((row) => ({
         id: row.id,
         name: row.name,
-        trayIds: JSON.parse(row.tray_ids),
+        trayIds: parseStringArray(row.tray_ids),
         nodeCount: Number(row.node_count),
         status: row.status,
         createdAt: new Date(row.created_at).toISOString(),
@@ -91,7 +94,7 @@ export const createMeshNetwork = async ({
   name: string;
   trayIds: string[];
 }): Promise<MeshNetwork> => {
-  const pool = getMariaDbPool();
+  const pool = getPostgresPool();
 
   if (!env.useMockData && pool) {
     const mesh: MeshNetwork = {
@@ -108,7 +111,7 @@ export const createMeshNetwork = async ({
       await pool.query(
         `INSERT INTO mesh_networks
           (id, name, tray_ids, node_count, status, created_at, summary)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
         [
           mesh.id,
           mesh.name,

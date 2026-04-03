@@ -1,11 +1,32 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+import { Manrope } from "next/font/google";
 
+import { PwaProvider } from "@/components/providers/PwaProvider";
 import "./globals.css";
+
+const manrope = Manrope({
+  subsets: ["latin"],
+  variable: "--font-app"
+});
 
 export const metadata: Metadata = {
   title: "AgriHome Vision Console",
   description:
-    "A hardware-ready agricultural monitoring dashboard with camera capture, image recognition, and monitoring logs."
+    "A mobile-first agricultural monitoring app with tray, plant, schedule, and mesh management.",
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "AgriHome"
+  }
+};
+
+export const viewport: Viewport = {
+  themeColor: "#eef3e8",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  viewportFit: "cover"
 };
 
 export default function RootLayout({
@@ -15,7 +36,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body className={manrope.variable}>
+        <PwaProvider>{children}</PwaProvider>
+      </body>
     </html>
   );
 }

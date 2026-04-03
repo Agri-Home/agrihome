@@ -2,14 +2,16 @@ import { createSchema } from "graphql-yoga";
 
 import { getLatestCameraCapture } from "@/lib/services/camera-service";
 import { getMonitoringLog } from "@/lib/services/monitoring-service";
+import { listPlantReports, listPlantsByTray } from "@/lib/services/plant-service";
 import { getLatestPrediction } from "@/lib/services/prediction-service";
+import { listSchedules, upsertSchedule } from "@/lib/services/schedule-service";
 import {
   createMeshNetwork,
   listMeshNetworks,
   listTraySystems
 } from "@/lib/services/topology-service";
 import { getVectorSource } from "@/lib/services/vector-service";
-import { getMariaDbPool } from "@/lib/db/mariadb";
+import { isPostgresHealthy } from "@/lib/db/postgres";
 
 export const schema = createSchema({
   typeDefs: /* GraphQL */ `
@@ -77,6 +79,50 @@ export const schema = createSchema({
       summary: String!
     }
 
+    type PlantUnit {
+      id: ID!
+      trayId: String!
+      meshIds: [String!]!
+      name: String!
+      cultivar: String!
+      slotLabel: String!
+      row: Int!
+      column: Int!
+      healthScore: Int!
+      status: String!
+      lastReportAt: String!
+      latestDiagnosis: String!
+    }
+
+    type PlantReport {
+      id: ID!
+      trayId: String!
+      plantId: String!
+      captureId: String
+      diagnosis: String!
+      confidence: Float!
+      severity: String!
+      diseases: [String!]!
+      deficiencies: [String!]!
+      anomalies: [String!]!
+      summary: String!
+      recommendedAction: String!
+      status: String!
+      createdAt: String!
+    }
+
+    type CaptureSchedule {
+      id: ID!
+      scopeType: String!
+      scopeId: String!
+      name: String!
+      intervalMinutes: Int!
+      active: Boolean!
+      nextRunAt: String!
+      lastRunAt: String
+      destination: String!
+    }
+
     type SystemHealth {
       api: String!
       database: String!
@@ -90,11 +136,22 @@ export const schema = createSchema({
       monitoringLog(limit: Int = 10, trayId: String): [MonitoringEvent!]!
       traySystems: [TraySystem!]!
       meshNetworks: [MeshNetwork!]!
+      plants(trayId: String): [PlantUnit!]!
+      reports(trayId: String, plantId: String, limit: Int = 12): [PlantReport!]!
+      schedules(scopeType: String, scopeId: String): [CaptureSchedule!]!
       health: SystemHealth!
     }
 
     type Mutation {
       createMeshNetwork(name: String!, trayIds: [String!]!): MeshNetwork!
+      upsertSchedule(
+        id: String
+        scopeType: String!
+        scopeId: String!
+        name: String!
+        intervalMinutes: Int!
+        active: Boolean!
+      ): CaptureSchedule!
     }
   `,
   resolvers: {
@@ -107,9 +164,18 @@ export const schema = createSchema({
         getMonitoringLog(args.limit ?? 10, args.trayId),
       traySystems: () => listTraySystems(),
       meshNetworks: () => listMeshNetworks(),
-      health: () => ({
+      plants: (_parent, args: { trayId?: string }) => listPlantsByTray(args.trayId),
+      reports: (
+        _parent,
+        args: { trayId?: string; plantId?: string; limit?: number }
+      ) => listPlantReports(args),
+      schedules: (
+        _parent,
+        args: { scopeType?: "tray" | "mesh"; scopeId?: string }
+      ) => listSchedules(args),
+      health: async () => ({
         api: "healthy",
-        database: getMariaDbPool() ? "connected" : "mock",
+        database: (await isPostgresHealthy()) ? "connected" : "mock",
         vectorStore: getVectorSource() === "qdrant" ? "connected" : "mock",
         cameraPipeline: "simulated"
       })
@@ -118,7 +184,18 @@ export const schema = createSchema({
       createMeshNetwork: (
         _parent,
         args: { name: string; trayIds: string[] }
-      ) => createMeshNetwork(args)
+      ) => createMeshNetwork(args),
+      upsertSchedule: (
+        _parent,
+        args: {
+          id?: string;
+          scopeType: "tray" | "mesh";
+          scopeId: string;
+          name: string;
+          intervalMinutes: number;
+          active: boolean;
+        }
+      ) => upsertSchedule(args)
     }
   }
 });

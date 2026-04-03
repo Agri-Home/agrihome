@@ -10,12 +10,16 @@ export const env = {
     process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000",
   autoRefreshMs: parseNumber(process.env.NEXT_PUBLIC_AUTO_REFRESH_MS, 15000),
   useMockData: (process.env.NEXT_PUBLIC_USE_MOCK_DATA ?? "true") !== "false",
-  mariadb: {
-    host: process.env.MARIADB_HOST ?? "",
-    port: parseNumber(process.env.MARIADB_PORT, 3306),
-    user: process.env.MARIADB_USER ?? "",
-    password: process.env.MARIADB_PASSWORD ?? "",
-    database: process.env.MARIADB_DATABASE ?? ""
+  postgres: {
+    host: process.env.POSTGRES_HOST ?? process.env.MARIADB_HOST ?? "",
+    port: parseNumber(
+      process.env.POSTGRES_PORT ?? process.env.MARIADB_PORT,
+      5432
+    ),
+    user: process.env.POSTGRES_USER ?? process.env.MARIADB_USER ?? "",
+    password: process.env.POSTGRES_PASSWORD ?? process.env.MARIADB_PASSWORD ?? "",
+    database:
+      process.env.POSTGRES_DATABASE ?? process.env.MARIADB_DATABASE ?? ""
   },
   qdrant: {
     url: process.env.QDRANT_URL ?? "",
@@ -24,10 +28,10 @@ export const env = {
   }
 };
 
-export const hasMariaDbConfig = Boolean(
-  env.mariadb.host &&
-    env.mariadb.user &&
-    env.mariadb.database
+export const hasPostgresConfig = Boolean(
+  env.postgres.host &&
+    env.postgres.user &&
+    env.postgres.database
 );
 
 export const hasVectorConfig = Boolean(env.qdrant.url);

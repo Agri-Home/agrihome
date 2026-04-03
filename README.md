@@ -7,7 +7,7 @@ A full-stack Next.js monitoring dashboard prepared for a future hardware camera 
 - Next.js App Router with TypeScript
 - Tailwind CSS
 - Atomic design component structure
-- MariaDB adapter for production metadata storage
+- PostgreSQL adapter for production metadata storage
 - GraphQL API for consolidated read access
 - Qdrant vector-search adapter for image-recognition similarity lookup
 - Mock camera, prediction, and monitoring data so the app runs before ML integration is ready
@@ -16,11 +16,13 @@ A full-stack Next.js monitoring dashboard prepared for a future hardware camera 
 
 - Dashboard with latest camera image, auto-refresh, manual refresh, and empty placeholder handling
 - Multi-tray monitoring with tray-specific health views
+- Individual plant monitoring, diagnosis reporting, and analytics inside each tray
 - Mesh creation for grouping trays/systems into shared monitoring topologies
+- Editable image-capture schedules for trays and meshes
 - REST endpoints for latest image, latest prediction, monitoring history, and camera ingest
 - GraphQL endpoint for dashboard and integrator queries
 - Monitoring timeline for device health, alerts, and inference output
-- Database schema stub for camera captures, predictions, and events
+- Database schema stub for trays, plants, captures, reports, schedules, and events
 
 ## Local setup
 
@@ -29,6 +31,10 @@ A full-stack Next.js monitoring dashboard prepared for a future hardware camera 
 3. Start the app with `npm run dev`.
 4. Open `http://localhost:3000`.
 
+## Documentation
+
+- Implementation guide: [docs/IMPLEMENTATION_GUIDE.md](/Users/laxmanbhusal/agrihome/docs/IMPLEMENTATION_GUIDE.md)
+
 ## API routes
 
 - `GET /api/camera/latest`
@@ -36,6 +42,11 @@ A full-stack Next.js monitoring dashboard prepared for a future hardware camera 
 - `GET /api/predictions/latest`
 - `GET /api/monitoring/log`
 - `GET /api/trays`
+- `GET /api/plants`
+- `GET /api/reports`
+- `GET /api/schedules`
+- `POST /api/schedules`
+- `PATCH /api/schedules`
 - `GET /api/mesh`
 - `POST /api/mesh`
 - `POST /api/graphql`
@@ -69,4 +80,4 @@ query DashboardSnapshot {
 ## Notes
 
 - The workspace did not contain a Figma export or completed SRS data, so the current UI is a polished first-pass dashboard aligned to the chartered camera and ML workflow.
-- The app defaults to mock data and can be switched to MariaDB and Qdrant using environment variables and the schema in `db/schema.sql`.
+- The app can run against PostgreSQL and Qdrant using the environment variables in `.env.example`; mock mode is controlled by `NEXT_PUBLIC_USE_MOCK_DATA`.

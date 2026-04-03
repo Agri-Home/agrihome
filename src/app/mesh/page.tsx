@@ -1,12 +1,12 @@
 import { DashboardTemplate } from "@/components/templates/DashboardTemplate";
 import { getDashboardData } from "@/lib/services/dashboard-service";
 
-export default async function HomePage() {
+export default async function MeshPage() {
   const data = await getDashboardData();
 
   return (
     <DashboardTemplate
-      activeTab="overview"
+      activeTab="mesh"
       initialLatestImage={data.latestImage}
       initialLatestPrediction={data.latestPrediction}
       initialMonitoringLog={data.monitoringLog}

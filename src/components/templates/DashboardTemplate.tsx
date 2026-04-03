@@ -1,15 +1,19 @@
 "use client";
 
 import Image from "next/image";
-import { startTransition, useEffect, useState } from "react";
+import Link from "next/link";
+import { useEffect, useState } from "react";
 
 import { Badge } from "@/components/atoms/Badge";
 import { Button } from "@/components/atoms/Button";
-import { Card } from "@/components/atoms/Card";
+import { usePwa } from "@/components/providers/PwaProvider";
 import type {
   CameraCapture,
+  CaptureSchedule,
   MeshNetwork,
   MonitoringEvent,
+  PlantReport,
+  PlantUnit,
   PredictionResult,
   TraySystem
 } from "@/lib/types/domain";
@@ -17,12 +21,18 @@ import { clampPercent, formatDateTime, formatRelativeTimestamp } from "@/lib/uti
 
 const AUTO_REFRESH_MS = Number(process.env.NEXT_PUBLIC_AUTO_REFRESH_MS ?? 15000);
 
+type AppTab = "overview" | "plants" | "schedule" | "mesh";
+
 interface DashboardTemplateProps {
+  activeTab: AppTab;
   initialLatestImage: CameraCapture | null;
   initialLatestPrediction: PredictionResult | null;
   initialMonitoringLog: MonitoringEvent[];
   initialTrays: TraySystem[];
   initialMeshes: MeshNetwork[];
+  initialPlants: PlantUnit[];
+  initialReports: PlantReport[];
+  initialSchedules: CaptureSchedule[];
 }
 
 interface ApiResponse<T> {
@@ -30,9 +40,16 @@ interface ApiResponse<T> {
   refreshedAt?: string;
 }
 
-const navItems = ["Overview", "Trays", "Mesh", "Hardware"];
+const TABS: Array<{ id: AppTab; label: string; short: string; href: string }> = [
+  { id: "overview", label: "Overview", short: "OV", href: "/" },
+  { id: "plants", label: "Plants", short: "PL", href: "/plants" },
+  { id: "schedule", label: "Schedule", short: "SC", href: "/schedule" },
+  { id: "mesh", label: "Mesh", short: "MS", href: "/mesh" }
+];
 
-const toneForSeverity = (severity?: PredictionResult["severity"]) => {
+const toneForSeverity = (
+  severity?: PredictionResult["severity"] | PlantReport["severity"]
+) => {
   if (severity === "high") return "critical" as const;
   if (severity === "medium") return "warning" as const;
   return "success" as const;
@@ -44,13 +61,59 @@ const toneForLevel = (level: MonitoringEvent["level"]) => {
   return "success" as const;
 };
 
-const toneForTrayStatus = (status: TraySystem["status"]) => {
+const toneForStatus = (
+  status: TraySystem["status"] | PlantUnit["status"] | MeshNetwork["status"]
+) => {
   if (status === "alert") return "critical" as const;
   if (status === "watch") return "warning" as const;
   return "success" as const;
 };
 
-function MiniStat({
+const monitoringValue = (level: MonitoringEvent["level"]) => {
+  if (level === "critical") return 3;
+  if (level === "warning") return 2;
+  return 1;
+};
+
+function Panel({
+  children,
+  className = ""
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <section
+      className={`rounded-[2rem] border border-white/80 bg-white/88 p-5 shadow-[0_18px_40px_rgba(15,23,42,0.06)] backdrop-blur-xl ${className}`}
+    >
+      {children}
+    </section>
+  );
+}
+
+function SectionHeader({
+  eyebrow,
+  title,
+  detail
+}: {
+  eyebrow: string;
+  title: string;
+  detail: string;
+}) {
+  return (
+    <div>
+      <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-400">
+        {eyebrow}
+      </p>
+      <h2 className="mt-2 text-[1.15rem] font-semibold tracking-[-0.03em] text-slate-950">
+        {title}
+      </h2>
+      <p className="mt-1 text-sm leading-6 text-slate-500">{detail}</p>
+    </div>
+  );
+}
+
+function MetricTile({
   label,
   value,
   detail
@@ -60,15 +123,153 @@ function MiniStat({
   detail?: string;
 }) {
   return (
-    <div className="flex flex-col rounded-xl border border-gray-100 bg-white p-4 transition-all hover:border-gray-200 hover:shadow-sm">
-      <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+    <div className="rounded-[1.35rem] bg-slate-50 px-4 py-3 ring-1 ring-slate-200/70">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
         {label}
-      </span>
-      <span className="mt-2 text-2xl font-bold tracking-tight text-gray-900">
+      </p>
+      <p className="mt-2 text-lg font-semibold tracking-[-0.03em] text-slate-950">
         {value}
-      </span>
-      {detail ? <span className="mt-1 text-sm text-gray-500">{detail}</span> : null}
+      </p>
+      {detail ? <p className="mt-1 text-sm text-slate-500">{detail}</p> : null}
     </div>
+  );
+}
+
+function SidebarNavItem({
+  active,
+  label,
+  short,
+  href
+}: {
+  active: boolean;
+  label: string;
+  short: string;
+  href: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className={`flex items-center gap-3 rounded-[1.2rem] px-3 py-3 transition ${
+        active
+          ? "bg-slate-950 text-white"
+          : "bg-transparent text-slate-600 hover:bg-slate-100 hover:text-slate-950"
+      }`}
+    >
+      <span
+        className={`flex h-9 w-9 items-center justify-center rounded-full text-[11px] font-semibold tracking-[0.14em] ${
+          active ? "bg-white/14 text-white" : "bg-slate-100 text-slate-500"
+        }`}
+      >
+        {short}
+      </span>
+      <span className="text-sm font-semibold">{label}</span>
+    </Link>
+  );
+}
+
+function TrayRailItem({
+  tray,
+  active,
+  onSelect
+}: {
+  tray: TraySystem;
+  active: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={`w-full rounded-[1.35rem] px-4 py-3 text-left transition ${
+        active
+          ? "bg-[linear-gradient(135deg,#0f172a_0%,#134e4a_100%)] text-white"
+          : "bg-slate-50 text-slate-900 ring-1 ring-slate-200/70"
+      }`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="truncate font-semibold">{tray.name}</p>
+          <p className={`mt-1 text-sm ${active ? "text-white/72" : "text-slate-500"}`}>
+            {tray.crop} · {tray.zone}
+          </p>
+        </div>
+        <Badge tone={toneForStatus(tray.status)}>{tray.status}</Badge>
+      </div>
+      <div className="mt-3 flex items-center justify-between text-sm">
+        <span className={active ? "text-white/72" : "text-slate-500"}>
+          {tray.plantCount} plants
+        </span>
+        <span className="font-semibold">{tray.healthScore}%</span>
+      </div>
+    </button>
+  );
+}
+
+function MobileTrayPill({
+  tray,
+  active,
+  onSelect
+}: {
+  tray: TraySystem;
+  active: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={`min-w-[150px] rounded-full px-4 py-3 text-left transition ${
+        active
+          ? "bg-[linear-gradient(135deg,#0f172a_0%,#0f766e_100%)] text-white"
+          : "bg-white text-slate-700 ring-1 ring-slate-200/70"
+      }`}
+    >
+      <p className="text-sm font-semibold">{tray.name}</p>
+      <p className={`mt-1 text-xs ${active ? "text-white/72" : "text-slate-500"}`}>
+        {tray.healthScore}% health
+      </p>
+    </button>
+  );
+}
+
+function PlantSlot({
+  plant,
+  active,
+  onSelect
+}: {
+  plant: PlantUnit;
+  active: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className={`aspect-square rounded-[1.3rem] p-3 text-left transition ${
+        active
+          ? "bg-[linear-gradient(135deg,#0f766e_0%,#22d3ee_100%)] text-white"
+          : "bg-slate-50 text-slate-900 ring-1 ring-slate-200/70"
+      }`}
+    >
+      <div className="flex h-full flex-col justify-between">
+        <div>
+          <p
+            className={`text-[11px] font-semibold uppercase tracking-[0.2em] ${
+              active ? "text-white/70" : "text-slate-400"
+            }`}
+          >
+            {plant.slotLabel}
+          </p>
+          <p className="mt-2 text-sm font-semibold">{plant.name}</p>
+        </div>
+        <div>
+          <Badge tone={toneForStatus(plant.status)}>{plant.status}</Badge>
+          <p className={`mt-2 text-xs ${active ? "text-white/82" : "text-slate-500"}`}>
+            {plant.healthScore}% health
+          </p>
+        </div>
+      </div>
+    </button>
   );
 }
 
@@ -83,26 +284,27 @@ function EventRow({
 }) {
   return (
     <button
+      type="button"
       onClick={onSelect}
-      className={`w-full rounded-xl border p-4 text-left transition-all ${
+      className={`w-full rounded-[1.35rem] px-4 py-3 text-left transition ${
         active
-          ? "border-gray-200 bg-gray-50 shadow-sm"
-          : "border-transparent hover:border-gray-100 hover:bg-gray-50"
+          ? "bg-slate-950 text-white"
+          : "bg-slate-50 text-slate-900 ring-1 ring-slate-200/70"
       }`}
     >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
           <div className="flex items-center gap-2">
             <Badge tone={toneForLevel(event.level)}>{event.level}</Badge>
-            <span className="text-sm font-semibold text-gray-900">
+            <span className={`truncate text-sm font-semibold ${active ? "text-white" : ""}`}>
               {event.title}
             </span>
           </div>
-          <p className="line-clamp-1 pr-4 text-sm text-gray-500">
+          <p className={`mt-2 text-sm ${active ? "text-white/72" : "text-slate-500"}`}>
             {event.message}
           </p>
         </div>
-        <span className="mt-1 whitespace-nowrap text-xs font-medium text-gray-400">
+        <span className={`shrink-0 text-xs ${active ? "text-white/60" : "text-slate-400"}`}>
           {formatRelativeTimestamp(event.createdAt)}
         </span>
       </div>
@@ -110,137 +312,272 @@ function EventRow({
   );
 }
 
-function TrayCard({
-  tray,
+function ScheduleRow({
+  schedule,
   active,
   onSelect
 }: {
-  tray: TraySystem;
+  schedule: CaptureSchedule;
   active: boolean;
   onSelect: () => void;
 }) {
   return (
     <button
+      type="button"
       onClick={onSelect}
-      className={`rounded-2xl border p-5 text-left transition-all ${
+      className={`w-full rounded-[1.35rem] px-4 py-3 text-left transition ${
         active
-          ? "border-emerald-200 bg-emerald-50/80 shadow-sm"
-          : "border-gray-200/70 bg-white hover:border-gray-300"
+          ? "bg-slate-950 text-white"
+          : "bg-slate-50 text-slate-900 ring-1 ring-slate-200/70"
       }`}
     >
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="text-lg font-semibold tracking-tight text-gray-900">
-            {tray.name}
-          </p>
-          <p className="mt-1 text-sm text-gray-500">
-            {tray.crop} · {tray.zone}
+          <p className="font-semibold">{schedule.name}</p>
+          <p className={`mt-1 text-sm ${active ? "text-white/72" : "text-slate-500"}`}>
+            {schedule.scopeType} · {schedule.scopeId}
           </p>
         </div>
-        <Badge tone={toneForTrayStatus(tray.status)}>{tray.status}</Badge>
+        <Badge tone={schedule.active ? "success" : "default"}>
+          {schedule.active ? "active" : "paused"}
+        </Badge>
       </div>
-      <div className="mt-5 grid grid-cols-3 gap-3">
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
-            Health
-          </p>
-          <p className="mt-1 text-xl font-bold text-gray-900">
-            {tray.healthScore}%
-          </p>
-        </div>
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
-            Plants
-          </p>
-          <p className="mt-1 text-xl font-bold text-gray-900">
-            {tray.plantCount}
-          </p>
-        </div>
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">
-            Camera
-          </p>
-          <p className="mt-1 text-sm font-semibold text-gray-700">
-            {tray.deviceId}
-          </p>
-        </div>
+      <div className={`mt-3 text-sm ${active ? "text-white/72" : "text-slate-500"}`}>
+        Every {schedule.intervalMinutes} min · {formatRelativeTimestamp(schedule.nextRunAt)}
       </div>
     </button>
   );
 }
 
-function MeshCard({
+function MeshRow({
   mesh,
-  trays
+  trays,
+  plants
 }: {
   mesh: MeshNetwork;
   trays: TraySystem[];
+  plants: PlantUnit[];
 }) {
   const trayNames = mesh.trayIds
     .map((trayId) => trays.find((tray) => tray.id === trayId)?.name ?? trayId)
     .join(", ");
+  const meshPlants = plants.filter((plant) => mesh.trayIds.includes(plant.trayId));
+  const alertCount = meshPlants.filter((plant) => plant.status === "alert").length;
 
   return (
-    <div className="rounded-2xl border border-gray-100 bg-white p-4">
+    <div className="rounded-[1.4rem] bg-slate-50 px-4 py-4 ring-1 ring-slate-200/70">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-base font-semibold text-gray-900">{mesh.name}</p>
-          <p className="mt-1 text-sm text-gray-500">{mesh.summary}</p>
+          <p className="font-semibold text-slate-950">{mesh.name}</p>
+          <p className="mt-1 text-sm leading-6 text-slate-500">{mesh.summary}</p>
         </div>
-        <Badge tone={mesh.status === "active" ? "success" : "default"}>
-          {mesh.status}
-        </Badge>
+        <Badge tone={toneForStatus(mesh.status)}>{mesh.status}</Badge>
       </div>
-      <div className="mt-4 grid grid-cols-2 gap-3">
-        <MiniStat
-          label="Nodes"
-          value={String(mesh.nodeCount)}
-          detail="Connected trays"
-        />
-        <MiniStat
-          label="Created"
-          value={formatDateTime(mesh.createdAt)}
-          detail="Mesh registration"
-        />
+      <div className="mt-4 flex flex-wrap gap-2 text-sm text-slate-500">
+        <span>{mesh.nodeCount} trays</span>
+        <span>·</span>
+        <span>{alertCount} alerts</span>
+        <span>·</span>
+        <span>{trayNames}</span>
       </div>
-      <p className="mt-4 text-sm leading-6 text-gray-500">{trayNames}</p>
+    </div>
+  );
+}
+
+function TrendChart({ events }: { events: MonitoringEvent[] }) {
+  const reversed = events.slice().reverse();
+
+  if (!reversed.length) {
+    return (
+      <div className="flex h-36 items-center justify-center rounded-[1.4rem] bg-slate-50 text-sm text-slate-400">
+        No recent monitoring data.
+      </div>
+    );
+  }
+
+  const width = 320;
+  const height = 132;
+  const padding = 16;
+  const stepX = reversed.length > 1 ? (width - padding * 2) / (reversed.length - 1) : 0;
+  const points = reversed
+    .map((event, index) => {
+      const x = padding + index * stepX;
+      const y =
+        height - padding - ((monitoringValue(event.level) - 1) / 2) * (height - padding * 2);
+      return `${x},${y}`;
+    })
+    .join(" ");
+
+  return (
+    <div className="rounded-[1.5rem] bg-[linear-gradient(135deg,#0f172a_0%,#134e4a_55%,#155e75_100%)] p-4 text-white">
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-36 w-full">
+        <line x1="16" y1="116" x2="304" y2="116" stroke="rgba(255,255,255,0.15)" />
+        <line x1="16" y1="66" x2="304" y2="66" stroke="rgba(255,255,255,0.1)" />
+        <line x1="16" y1="16" x2="304" y2="16" stroke="rgba(255,255,255,0.08)" />
+        <polyline
+          fill="none"
+          points={points}
+          stroke="url(#trend-gradient)"
+          strokeWidth="4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        {reversed.map((event, index) => {
+          const x = padding + index * stepX;
+          const y =
+            height - padding - ((monitoringValue(event.level) - 1) / 2) * (height - padding * 2);
+
+          return (
+            <circle
+              key={event.id}
+              cx={x}
+              cy={y}
+              r="4.5"
+              fill={
+                event.level === "critical"
+                  ? "#fb7185"
+                  : event.level === "warning"
+                    ? "#f59e0b"
+                    : "#34d399"
+              }
+              stroke="white"
+              strokeWidth="2"
+            />
+          );
+        })}
+        <defs>
+          <linearGradient id="trend-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor="#34d399" />
+            <stop offset="55%" stopColor="#22d3ee" />
+            <stop offset="100%" stopColor="#f59e0b" />
+          </linearGradient>
+        </defs>
+      </svg>
+      <div className="mt-2 flex items-center justify-between text-xs text-white/70">
+        <span>Info</span>
+        <span>Warning</span>
+        <span>Critical</span>
+      </div>
+    </div>
+  );
+}
+
+function MonitoringSummary({
+  events,
+  reports,
+  plants
+}: {
+  events: MonitoringEvent[];
+  reports: PlantReport[];
+  plants: PlantUnit[];
+}) {
+  const infoCount = events.filter((event) => event.level === "info").length;
+  const warningCount = events.filter((event) => event.level === "warning").length;
+  const criticalCount = events.filter((event) => event.level === "critical").length;
+  const diseaseFlags = reports.reduce((total, report) => total + report.diseases.length, 0);
+  const deficiencyFlags = reports.reduce(
+    (total, report) => total + report.deficiencies.length,
+    0
+  );
+  const averageHealth = plants.length
+    ? Math.round(plants.reduce((total, plant) => total + plant.healthScore, 0) / plants.length)
+    : 0;
+
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      <MetricTile label="Average health" value={`${averageHealth}%`} detail="Selected tray" />
+      <MetricTile
+        label="Critical events"
+        value={String(criticalCount)}
+        detail={`${warningCount} warning · ${infoCount} info`}
+      />
+      <MetricTile label="Disease flags" value={String(diseaseFlags)} detail="Active findings" />
+      <MetricTile
+        label="Deficiencies"
+        value={String(deficiencyFlags)}
+        detail="Nutrient concerns"
+      />
     </div>
   );
 }
 
 export function DashboardTemplate({
+  activeTab,
   initialLatestImage,
   initialLatestPrediction,
   initialMonitoringLog,
   initialTrays,
-  initialMeshes
+  initialMeshes,
+  initialPlants,
+  initialReports,
+  initialSchedules
 }: DashboardTemplateProps) {
+  const { canInstall, install, isStandalone } = usePwa();
+
   const [latestImage, setLatestImage] = useState(initialLatestImage);
   const [latestPrediction, setLatestPrediction] = useState(initialLatestPrediction);
   const [monitoringLog, setMonitoringLog] = useState(initialMonitoringLog);
   const [trays, setTrays] = useState(initialTrays);
   const [meshes, setMeshes] = useState(initialMeshes);
+  const [plants, setPlants] = useState(initialPlants);
+  const [reports, setReports] = useState(initialReports);
+  const [schedules, setSchedules] = useState(initialSchedules);
   const [selectedTrayId, setSelectedTrayId] = useState<string | null>(
     initialLatestImage?.trayId ?? initialTrays[0]?.id ?? null
   );
-  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [selectedPlantId, setSelectedPlantId] = useState<string | null>(
+    initialPlants[0]?.id ?? null
+  );
   const [selectedEventId, setSelectedEventId] = useState<string | null>(
     initialMonitoringLog[0]?.id ?? null
   );
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(
     new Date().toISOString()
   );
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [meshName, setMeshName] = useState("");
-  const [meshDraftTrayIds, setMeshDraftTrayIds] = useState<string[]>(
-    initialTrays[0]?.id ? [initialTrays[0].id] : []
-  );
+  const [meshDraftTrayIds, setMeshDraftTrayIds] = useState<string[]>([]);
   const [meshFeedback, setMeshFeedback] = useState<string | null>(null);
   const [isCreatingMesh, setIsCreatingMesh] = useState(false);
+  const [selectedScheduleId, setSelectedScheduleId] = useState<string | null>(null);
+  const [isInstalling, setIsInstalling] = useState(false);
+  const [scheduleScopeType, setScheduleScopeType] =
+    useState<CaptureSchedule["scopeType"]>("tray");
+  const [scheduleScopeId, setScheduleScopeId] = useState("");
+  const [scheduleName, setScheduleName] = useState("");
+  const [scheduleInterval, setScheduleInterval] = useState("120");
+  const [scheduleActive, setScheduleActive] = useState(true);
+  const [scheduleFeedback, setScheduleFeedback] = useState<string | null>(null);
+  const [isSavingSchedule, setIsSavingSchedule] = useState(false);
 
   const selectedTray =
     trays.find((tray) => tray.id === selectedTrayId) ?? trays[0] ?? null;
+  const trayPlants = plants.filter((plant) => plant.trayId === selectedTrayId);
+  const trayReports = reports.filter((report) => report.trayId === selectedTrayId);
+  const selectedPlant =
+    trayPlants.find((plant) => plant.id === selectedPlantId) ?? trayPlants[0] ?? null;
+  const selectedReport =
+    reports.find((report) => report.plantId === selectedPlant?.id) ??
+    reports.find((report) => report.trayId === selectedTrayId) ??
+    null;
+  const summaryLog = monitoringLog.slice(0, 6);
+  const selectedEvent =
+    summaryLog.find((event) => event.id === selectedEventId) ?? summaryLog[0] ?? null;
+  const captureAvailable = Boolean(latestImage?.imageUrl);
+  const selectedTraySchedule =
+    schedules.find(
+      (schedule) =>
+        schedule.scopeType === "tray" && schedule.scopeId === selectedTrayId
+    ) ?? null;
+  const plantGridColumns = Math.max(
+    1,
+    Math.min(4, ...trayPlants.map((plant) => plant.column))
+  );
+  const healthyPlants = trayPlants.filter((plant) => plant.status === "healthy").length;
+  const watchPlants = trayPlants.filter((plant) => plant.status === "watch").length;
+  const alertPlants = trayPlants.filter((plant) => plant.status === "alert").length;
 
   const refreshDashboard = async (targetTrayId = selectedTrayId) => {
     setIsRefreshing(true);
@@ -250,36 +587,70 @@ export function DashboardTemplate({
         ? `?${new URLSearchParams({ trayId: targetTrayId }).toString()}`
         : "";
       const monitoringParams = new URLSearchParams({ limit: "8" });
+      const reportParams = new URLSearchParams({ limit: "12" });
 
       if (targetTrayId) {
         monitoringParams.set("trayId", targetTrayId);
+        reportParams.set("trayId", targetTrayId);
       }
 
-      const [imgRes, predRes, monRes, trayRes] = await Promise.all([
+      const [
+        imgRes,
+        predRes,
+        monRes,
+        trayRes,
+        meshRes,
+        plantRes,
+        reportRes,
+        scheduleRes
+      ] = await Promise.all([
         fetch(`/api/camera/latest${trayQuery}`, { cache: "no-store" }),
         fetch(`/api/predictions/latest${trayQuery}`, { cache: "no-store" }),
-        fetch(`/api/monitoring/log?${monitoringParams.toString()}`, {
-          cache: "no-store"
-        }),
-        fetch("/api/trays", { cache: "no-store" })
+        fetch(`/api/monitoring/log?${monitoringParams.toString()}`, { cache: "no-store" }),
+        fetch("/api/trays", { cache: "no-store" }),
+        fetch("/api/mesh", { cache: "no-store" }),
+        fetch("/api/plants", { cache: "no-store" }),
+        fetch(`/api/reports?${reportParams.toString()}`, { cache: "no-store" }),
+        fetch("/api/schedules", { cache: "no-store" })
       ]);
 
-      const [imgJson, predJson, monJson, trayJson] = (await Promise.all([
+      const [
+        imgJson,
+        predJson,
+        monJson,
+        trayJson,
+        meshJson,
+        plantJson,
+        reportJson,
+        scheduleJson
+      ] = (await Promise.all([
         imgRes.json(),
         predRes.json(),
         monRes.json(),
-        trayRes.json()
+        trayRes.json(),
+        meshRes.json(),
+        plantRes.json(),
+        reportRes.json(),
+        scheduleRes.json()
       ])) as [
         ApiResponse<CameraCapture | null>,
         ApiResponse<PredictionResult | null>,
         ApiResponse<MonitoringEvent[]>,
-        ApiResponse<TraySystem[]>
+        ApiResponse<TraySystem[]>,
+        ApiResponse<MeshNetwork[]>,
+        ApiResponse<PlantUnit[]>,
+        ApiResponse<PlantReport[]>,
+        ApiResponse<CaptureSchedule[]>
       ];
 
       setLatestImage(imgJson.data);
       setLatestPrediction(predJson.data);
       setMonitoringLog(monJson.data);
       setTrays(trayJson.data);
+      setMeshes(meshJson.data);
+      setPlants(plantJson.data);
+      setReports(reportJson.data);
+      setSchedules(scheduleJson.data);
       setLastUpdatedAt(
         imgJson.refreshedAt ??
           predJson.refreshedAt ??
@@ -289,15 +660,73 @@ export function DashboardTemplate({
       );
       setErrorMessage(null);
     } catch {
-      setErrorMessage("System failed to re-sync. Displaying cached tray data.");
+      setErrorMessage("The app could not refresh. Cached tray data is still shown.");
     } finally {
       setIsRefreshing(false);
     }
   };
 
-  const handleCreateMesh = async () => {
+  const handleInstall = async () => {
+    setIsInstalling(true);
+
+    try {
+      await install();
+    } finally {
+      setIsInstalling(false);
+    }
+  };
+
+  const saveSchedule = async () => {
+    if (!scheduleScopeId || !scheduleName.trim()) {
+      setScheduleFeedback("Select a target and provide a schedule name.");
+      return;
+    }
+
+    setIsSavingSchedule(true);
+
+    try {
+      const response = await fetch("/api/schedules", {
+        method: selectedScheduleId ? "PATCH" : "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          id: selectedScheduleId ?? undefined,
+          scopeType: scheduleScopeType,
+          scopeId: scheduleScopeId,
+          name: scheduleName.trim(),
+          intervalMinutes: Number(scheduleInterval),
+          active: scheduleActive
+        })
+      });
+
+      const payload = (await response.json()) as ApiResponse<CaptureSchedule> & {
+        error?: string;
+      };
+
+      if (!response.ok || !payload.data) {
+        setScheduleFeedback(payload.error ?? "Schedule save failed.");
+        return;
+      }
+
+      setSchedules((current) => {
+        const exists = current.some((item) => item.id === payload.data.id);
+        return exists
+          ? current.map((item) => (item.id === payload.data.id ? payload.data : item))
+          : [payload.data, ...current];
+      });
+      setSelectedScheduleId(payload.data.id);
+      setScheduleFeedback("Schedule saved.");
+    } catch {
+      setScheduleFeedback("Schedule save failed.");
+    } finally {
+      setIsSavingSchedule(false);
+    }
+  };
+
+  const createMesh = async () => {
     if (!meshName.trim() || meshDraftTrayIds.length < 2) {
-      setMeshFeedback("Provide a mesh name and select at least two trays.");
+      setMeshFeedback("Select at least two trays and provide a mesh name.");
       return;
     }
 
@@ -326,7 +755,8 @@ export function DashboardTemplate({
 
       setMeshes((current) => [payload.data, ...current]);
       setMeshName("");
-      setMeshFeedback("Mesh created and ready for future hardware routing.");
+      setMeshDraftTrayIds([]);
+      setMeshFeedback("Mesh created.");
     } catch {
       setMeshFeedback("Mesh creation failed.");
     } finally {
@@ -335,22 +765,26 @@ export function DashboardTemplate({
   };
 
   useEffect(() => {
-    if (!selectedTrayId) {
-      return;
-    }
-
+    if (!selectedTrayId) return;
     void refreshDashboard(selectedTrayId);
   }, [selectedTrayId]);
 
   useEffect(() => {
     if (!autoRefreshEnabled) return;
-
     const intervalId = window.setInterval(() => {
       void refreshDashboard();
     }, AUTO_REFRESH_MS);
 
     return () => window.clearInterval(intervalId);
   }, [autoRefreshEnabled, selectedTrayId]);
+
+  useEffect(() => {
+    setSelectedPlantId((current) =>
+      trayPlants.some((plant) => plant.id === current)
+        ? current
+        : trayPlants[0]?.id ?? null
+    );
+  }, [selectedTrayId, plants]);
 
   useEffect(() => {
     setSelectedEventId((current) =>
@@ -361,453 +795,785 @@ export function DashboardTemplate({
   }, [monitoringLog]);
 
   useEffect(() => {
-    if (!selectedTrayId && trays[0]?.id) {
-      setSelectedTrayId(trays[0].id);
-    }
-  }, [selectedTrayId, trays]);
+    const selectedSchedule = schedules.find((schedule) => schedule.id === selectedScheduleId);
 
-  const summaryLog = monitoringLog.slice(0, 8);
-  const selectedEvent =
-    summaryLog.find((event) => event.id === selectedEventId) ?? summaryLog[0] ?? null;
-  const captureAvailable = Boolean(latestImage?.imageUrl);
+    if (selectedSchedule) {
+      setScheduleScopeType(selectedSchedule.scopeType);
+      setScheduleScopeId(selectedSchedule.scopeId);
+      setScheduleName(selectedSchedule.name);
+      setScheduleInterval(String(selectedSchedule.intervalMinutes));
+      setScheduleActive(selectedSchedule.active);
+      return;
+    }
+
+    setScheduleScopeType("tray");
+    setScheduleScopeId(selectedTrayId ?? "");
+    setScheduleName(selectedTray ? `${selectedTray.name} scheduled scan` : "");
+    setScheduleInterval("120");
+    setScheduleActive(true);
+  }, [selectedScheduleId, selectedTrayId, selectedTray, schedules]);
+
+  useEffect(() => {
+    if (selectedScheduleId) {
+      return;
+    }
+
+    if (scheduleScopeType === "tray") {
+      setScheduleScopeId(selectedTrayId ?? trays[0]?.id ?? "");
+      setScheduleName(selectedTray ? `${selectedTray.name} scheduled scan` : "");
+      return;
+    }
+
+    setScheduleScopeId(meshes[0]?.id ?? "");
+    setScheduleName(meshes[0] ? `${meshes[0].name} coordinated scan` : "");
+  }, [scheduleScopeType, selectedScheduleId, selectedTrayId, selectedTray, trays, meshes]);
 
   return (
-    <main className="min-h-screen bg-[#fafafa] p-4 font-sans sm:p-6 lg:p-8">
-      <div className="mx-auto flex max-w-[1400px] flex-col gap-8">
-        <header className="flex flex-col justify-between gap-6 md:flex-row md:items-end">
-          <div>
-            <div className="mb-2 flex items-center gap-2">
-              <div className="h-2 w-2 animate-pulse rounded-full bg-emerald-500 ring-4 ring-emerald-500/20" />
-              <span className="text-[11px] font-bold uppercase tracking-widest text-emerald-600">
-                Multi-tray monitoring
-              </span>
-            </div>
-            <h1 className="text-3xl font-semibold tracking-tight text-gray-900">
+    <main className="h-[100dvh] overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.14),_transparent_28%),radial-gradient(circle_at_top_right,_rgba(16,185,129,0.16),_transparent_24%),linear-gradient(180deg,#f7fbfa_0%,#eef6fb_45%,#f6f7ff_100%)] lg:min-h-[100svh] lg:h-auto lg:overflow-visible lg:px-6 lg:py-6">
+      <div className="mx-auto h-full max-w-[1480px] lg:grid lg:min-h-[calc(100svh-3rem)] lg:h-auto lg:grid-cols-[280px_minmax(0,1fr)] lg:gap-6">
+        <aside className="hidden lg:block">
+          <div className="flex h-[calc(100svh-3rem)] flex-col overflow-hidden rounded-[2rem] border border-white/80 bg-white/78 p-5 shadow-[0_24px_70px_rgba(15,23,42,0.07)] backdrop-blur-xl">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-teal-600">
               AgriHome Vision
-            </h1>
-            <p className="mt-2 text-sm text-gray-500">
-              View one tray at a time, keep its health in focus, and connect
-              trays into meshes for coordinated monitoring.
             </p>
-          </div>
+            <h1 className="mt-2 text-[1.9rem] font-semibold tracking-[-0.04em] text-slate-950">
+              Clean ops
+            </h1>
+            <p className="mt-2 text-sm leading-6 text-slate-500">
+              A lighter monitoring workspace for trays, plants, schedules, and mesh groups.
+            </p>
 
-          <div className="flex flex-col items-start gap-3 md:items-end">
-            <div className="flex gap-2">
-              {navItems.map((item, idx) => (
-                <button
-                  key={item}
-                  className={`rounded-full px-4 py-2 text-sm font-medium transition-colors ${
-                    idx === 1
-                      ? "bg-gray-900 text-white shadow-sm"
-                      : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
-                  }`}
-                >
-                  {item}
-                </button>
-              ))}
+            <div className="mt-6 rounded-[1.6rem] bg-slate-100/80 p-2">
+              <div className="space-y-2">
+                {TABS.map((tab) => (
+                  <SidebarNavItem
+                    key={tab.id}
+                    active={activeTab === tab.id}
+                    label={tab.label}
+                    short={tab.short}
+                    href={tab.href}
+                  />
+                ))}
+              </div>
             </div>
-            <div className="flex flex-wrap gap-2">
+
+            <div className="mt-6 flex flex-wrap gap-2">
               <Badge tone={captureAvailable ? "success" : "warning"}>
-                {captureAvailable ? "camera online" : "placeholder mode"}
+                {captureAvailable ? "camera online" : "image pending"}
               </Badge>
-              {selectedTray ? (
-                <Badge tone={toneForTrayStatus(selectedTray.status)}>
-                  {selectedTray.name}
-                </Badge>
-              ) : null}
+              <Badge tone={autoRefreshEnabled ? "success" : "default"}>
+                {autoRefreshEnabled ? "auto-refresh" : "manual"}
+              </Badge>
+              <Badge tone={isStandalone ? "success" : "default"}>
+                {isStandalone ? "installed" : "browser"}
+              </Badge>
+            </div>
+
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              <Button onClick={() => void refreshDashboard()} disabled={isRefreshing}>
+                {isRefreshing ? "Refreshing..." : "Refresh"}
+              </Button>
+              {canInstall ? (
+                <Button
+                  variant="secondary"
+                  onClick={() => void handleInstall()}
+                  disabled={isInstalling}
+                >
+                  {isInstalling ? "Installing..." : "Install"}
+                </Button>
+              ) : (
+                <Button
+                  variant="secondary"
+                  onClick={() => setAutoRefreshEnabled((current) => !current)}
+                >
+                  {autoRefreshEnabled ? "Pause sync" : "Resume sync"}
+                </Button>
+              )}
+            </div>
+
+            <div className="mt-6 min-h-0 flex-1">
+              <SectionHeader
+                eyebrow="Workspace"
+                title="Tray switcher"
+                detail="Monitor one system at a time."
+              />
+              <div className="mt-4 flex max-h-full flex-col gap-3 overflow-y-auto pr-1">
+                {trays.map((tray) => (
+                  <TrayRailItem
+                    key={tray.id}
+                    tray={tray}
+                    active={tray.id === selectedTray?.id}
+                    onSelect={() => setSelectedTrayId(tray.id)}
+                  />
+                ))}
+              </div>
             </div>
           </div>
-        </header>
+        </aside>
 
-        {errorMessage ? (
-          <div className="rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-600">
-            {errorMessage}
-          </div>
-        ) : null}
-
-        <section className="grid gap-4 lg:grid-cols-4">
-          {trays.map((tray) => (
-            <TrayCard
-              key={tray.id}
-              tray={tray}
-              active={tray.id === selectedTray?.id}
-              onSelect={() => {
-                startTransition(() => {
-                  setSelectedTrayId(tray.id);
-                  setMeshDraftTrayIds((current) =>
-                    current.includes(tray.id) ? current : [tray.id, ...current]
-                  );
-                });
-              }}
-            />
-          ))}
-        </section>
-
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          <div className="flex flex-col gap-6 lg:col-span-2">
-            <Card className="group flex flex-col overflow-hidden border border-gray-200/50 bg-white p-0 shadow-sm">
-              <div className="flex items-center justify-between border-b border-gray-100 p-5">
-                <div className="flex items-center gap-3">
-                  <h2 className="text-lg font-semibold text-gray-900">
-                    {selectedTray?.name ?? "Selected tray"}
-                  </h2>
-                  <Badge tone={captureAvailable ? "success" : "warning"}>
-                    {captureAvailable ? "Online" : "Holding"}
-                  </Badge>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    onClick={() => setAutoRefreshEnabled((current) => !current)}
-                  >
-                    {autoRefreshEnabled ? "Pause sync" : "Resume"}
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    onClick={() => void refreshDashboard()}
-                    disabled={isRefreshing}
-                  >
-                    {isRefreshing ? "Syncing..." : "Sync now"}
-                  </Button>
-                </div>
-              </div>
-
-              <div className="relative aspect-[16/9] w-full overflow-hidden bg-gray-50">
-                {captureAvailable ? (
-                  <>
-                    <Image
-                      src={latestImage?.imageUrl as string}
-                      alt={latestImage?.trayName ?? "Feed"}
-                      fill
-                      className="object-cover transition-transform duration-700 ease-out group-hover:scale-[1.02]"
-                      priority
-                      sizes="(max-width: 1280px) 100vw, 70vw"
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-gray-900/60 via-transparent to-transparent" />
-                    <div className="absolute bottom-6 left-6 right-6 flex items-end justify-between">
-                      <div className="text-white">
-                        <span className="font-mono text-[10px] uppercase tracking-widest text-white/70">
-                          {latestImage?.deviceId ?? "DEV_01"}
-                        </span>
-                        <h3 className="mt-1 text-2xl font-bold tracking-tight">
-                          {latestPrediction?.label ?? "Capturing..."}
-                        </h3>
-                        <p className="mt-1 text-sm text-white/70">
-                          {latestImage?.trayName} · Captured{" "}
-                          {latestImage?.capturedAt
-                            ? formatRelativeTimestamp(latestImage.capturedAt)
-                            : "recently"}
-                        </p>
-                      </div>
-                      <div className="rounded-xl border border-white/20 bg-white/10 px-4 py-3 text-right backdrop-blur-md">
-                        <span className="text-[10px] font-bold uppercase tracking-widest text-white/70">
-                          Score
-                        </span>
-                        <p className="text-2xl font-bold text-white">
-                          {latestPrediction
-                            ? clampPercent(latestPrediction.confidence)
-                            : "0%"}
-                        </p>
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-50 text-gray-400">
-                    <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full border border-gray-200 bg-white shadow-sm">
-                      <svg
-                        className="h-8 w-8 text-gray-300"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={1.5}
-                          d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"
-                        />
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={1.5}
-                          d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"
-                        />
-                      </svg>
-                    </div>
-                    <span className="font-medium text-gray-500">
-                      No current frame for this tray
-                    </span>
-                  </div>
-                )}
-              </div>
-            </Card>
-
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
-              <MiniStat
-                label="Tray"
-                value={selectedTray?.crop ?? "N/A"}
-                detail={selectedTray?.zone ?? "No zone selected"}
-              />
-              <MiniStat
-                label="Plants"
-                value={String(selectedTray?.plantCount ?? 0)}
-                detail="Active plants in tray"
-              />
-              <MiniStat
-                label="Health"
-                value={`${selectedTray?.healthScore ?? 0}%`}
-                detail="Tray health score"
-              />
-              <MiniStat
-                label="Sync"
-                value={lastUpdatedAt ? formatDateTime(lastUpdatedAt) : "N/A"}
-                detail="Latest dashboard pull"
-              />
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-6">
-            <Card className="flex h-full flex-col border border-gray-200/50 bg-white p-6 shadow-sm">
-              <div className="mb-8 flex items-start justify-between">
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900">
-                    Tray intelligence
-                  </h3>
-                  <p className="mt-1 text-sm text-gray-500">
-                    Health state for the selected tray only.
-                  </p>
-                </div>
-                <Badge tone={toneForSeverity(latestPrediction?.severity)}>
-                  {latestPrediction?.severity ?? "pending"}
-                </Badge>
-              </div>
-
-              <div className="flex-1">
-                <div className="mb-8">
-                  <span className="text-[11px] font-bold uppercase tracking-widest text-gray-400">
-                    Classification
-                  </span>
-                  <p className="mt-2 text-2xl font-bold tracking-tight text-gray-900">
-                    {latestPrediction?.label ?? "Analyzing environment"}
-                  </p>
-                </div>
-
-                <div className="mb-8">
-                  <span className="text-[11px] font-bold uppercase tracking-widest text-gray-400">
-                    Director output
-                  </span>
-                  <p className="mt-3 border-l-2 border-gray-100 pl-4 text-sm leading-relaxed text-gray-600">
-                    {latestPrediction?.recommendation ??
-                      "No operational guidance required at this moment. The intelligence engine is actively monitoring."}
-                  </p>
-                </div>
-
-                <div className="space-y-4">
-                  <span className="text-[11px] font-bold uppercase tracking-widest text-gray-400">
-                    Nearest vectors
-                  </span>
-                  <div className="space-y-2">
-                    {latestPrediction?.similarMatches?.length ? (
-                      latestPrediction.similarMatches.slice(0, 3).map((match) => (
-                        <div
-                          key={match.id}
-                          className="group flex items-center justify-between rounded-xl border border-gray-100 bg-gray-50/50 p-3 transition-colors hover:bg-gray-50"
-                        >
-                          <span className="text-sm font-semibold text-gray-700">
-                            {match.label}
-                          </span>
-                          <span className="rounded-md border border-gray-100 bg-white px-2 py-1 font-mono text-xs shadow-sm">
-                            {clampPercent(match.score)}
-                          </span>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-sm italic text-gray-400">
-                        No vector data established.
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            </Card>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.25fr_0.75fr]">
-          <Card className="border border-gray-200/50 bg-white p-6 shadow-sm">
-            <div className="mb-6 flex items-center justify-between">
+        <div className="mx-auto flex h-full max-w-[460px] flex-col overflow-hidden bg-white/78 backdrop-blur-xl lg:max-w-none lg:min-h-[calc(100svh-3rem)] lg:h-auto lg:rounded-[2.4rem] lg:border lg:border-white/80 lg:shadow-[0_26px_80px_rgba(15,23,42,0.08)]">
+          <header className="safe-top shrink-0 border-b border-slate-200/70 bg-white/72 px-4 pb-4 pt-4 backdrop-blur-xl lg:px-6">
+            <div className="flex items-start justify-between gap-3">
               <div>
-                <h3 className="text-lg font-semibold text-gray-900">
-                  System trace
-                </h3>
-                <p className="mt-1 text-sm text-gray-500">
-                  Events for {selectedTray?.name ?? "the selected tray"}.
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-teal-600 lg:hidden">
+                  AgriHome Vision
                 </p>
-              </div>
-              <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-gray-600">
-                {summaryLog.length} events
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-[0.95fr_1.05fr]">
-              <div className="flex max-h-[420px] flex-col gap-2 overflow-y-auto pr-2">
-                {summaryLog.length ? (
-                  summaryLog.map((event) => (
-                    <EventRow
-                      key={event.id}
-                      event={event}
-                      active={selectedEvent?.id === event.id}
-                      onSelect={() => setSelectedEventId(event.id)}
-                    />
-                  ))
-                ) : (
-                  <div className="rounded-xl border border-dashed border-gray-200 py-8 text-center text-sm text-gray-400">
-                    Event history empty for this tray.
-                  </div>
-                )}
-              </div>
-
-              <div className="flex flex-col justify-between rounded-2xl border border-gray-100 bg-gray-50 p-6">
-                {selectedEvent ? (
-                  <>
-                    <div>
-                      <Badge tone={toneForLevel(selectedEvent.level)} className="mb-4">
-                        {selectedEvent.level}
-                      </Badge>
-                      <h4 className="text-2xl font-bold tracking-tight text-gray-900">
-                        {selectedEvent.title}
-                      </h4>
-                      <p className="mt-4 text-sm leading-relaxed text-gray-600">
-                        {selectedEvent.message}
-                      </p>
-                    </div>
-                    <div className="mt-6 grid grid-cols-2 gap-4">
-                      <div>
-                        <span className="block text-[10px] font-bold uppercase tracking-widest text-gray-400">
-                          Recorded
-                        </span>
-                        <span className="mt-1 block text-sm font-semibold text-gray-900">
-                          {formatDateTime(selectedEvent.createdAt)}
-                        </span>
-                      </div>
-                      <div>
-                        <span className="block text-[10px] font-bold uppercase tracking-widest text-gray-400">
-                          Tray
-                        </span>
-                        <span className="mt-1 block text-sm font-semibold text-gray-900">
-                          {selectedTray?.name ?? selectedEvent.trayId ?? "System"}
-                        </span>
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <div className="flex h-full items-center justify-center text-sm font-medium text-gray-400">
-                    Select an event from the logs.
-                  </div>
-                )}
-              </div>
-            </div>
-          </Card>
-
-          <div className="flex flex-col gap-6">
-            <Card className="border border-gray-200/50 bg-white p-6 shadow-sm">
-              <div className="mb-5">
-                <h3 className="text-lg font-semibold text-gray-900">
-                  Create mesh
-                </h3>
-                <p className="mt-1 text-sm text-gray-500">
-                  Group trays into a shared mesh for future routing, alerts, and
-                  coordinated control logic.
+                <h1 className="mt-1 text-[1.75rem] font-semibold tracking-[-0.04em] text-slate-950 lg:text-[2.2rem]">
+                  {activeTab === "overview"
+                    ? "Overview"
+                    : activeTab === "plants"
+                      ? "Plants"
+                      : activeTab === "schedule"
+                        ? "Schedule"
+                        : "Mesh"}
+                </h1>
+                <p className="mt-1 text-sm text-slate-500">
+                  {selectedTray
+                    ? `${selectedTray.name} · ${selectedTray.crop} · ${selectedTray.zone}`
+                    : "Choose a tray to begin."}
                 </p>
               </div>
 
-              <label className="block">
-                <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">
-                  Mesh name
-                </span>
-                <input
-                  value={meshName}
-                  onChange={(event) => setMeshName(event.target.value)}
-                  placeholder="North rack supervision mesh"
-                  className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm text-gray-900 outline-none transition focus:border-gray-300"
-                />
-              </label>
-
-              <div className="mt-5">
-                <span className="text-xs font-semibold uppercase tracking-wider text-gray-500">
-                  Tray nodes
-                </span>
-                <div className="mt-3 grid gap-2">
-                  {trays.map((tray) => {
-                    const selected = meshDraftTrayIds.includes(tray.id);
-
-                    return (
-                      <button
-                        key={tray.id}
-                        onClick={() =>
-                          setMeshDraftTrayIds((current) =>
-                            current.includes(tray.id)
-                              ? current.filter((id) => id !== tray.id)
-                              : [...current, tray.id]
-                          )
-                        }
-                        className={`flex items-center justify-between rounded-xl border px-4 py-3 text-left transition ${
-                          selected
-                            ? "border-emerald-200 bg-emerald-50"
-                            : "border-gray-100 bg-gray-50 hover:border-gray-200"
-                        }`}
-                      >
-                        <div>
-                          <p className="text-sm font-semibold text-gray-900">
-                            {tray.name}
-                          </p>
-                          <p className="mt-1 text-xs text-gray-500">
-                            {tray.zone} · {tray.crop}
-                          </p>
-                        </div>
-                        <Badge tone={toneForTrayStatus(tray.status)}>
-                          {tray.status}
-                        </Badge>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {meshFeedback ? (
-                <p className="mt-4 text-sm text-gray-500">{meshFeedback}</p>
-              ) : null}
-
-              <div className="mt-5">
-                <Button onClick={() => void handleCreateMesh()} disabled={isCreatingMesh}>
-                  {isCreatingMesh ? "Creating..." : "Create mesh"}
+              <div className="flex flex-col items-end gap-2">
+                <Button
+                  variant="ghost"
+                  className="rounded-full px-4 py-2.5"
+                  onClick={() => void refreshDashboard()}
+                  disabled={isRefreshing}
+                >
+                  {isRefreshing ? "Refreshing..." : "Refresh"}
+                </Button>
+                <Button
+                  variant="secondary"
+                  className="rounded-full px-4 py-2.5 lg:hidden"
+                  onClick={() => setAutoRefreshEnabled((current) => !current)}
+                >
+                  {autoRefreshEnabled ? "Pause sync" : "Resume sync"}
                 </Button>
               </div>
-            </Card>
+            </div>
 
-            <Card className="border border-gray-200/50 bg-white p-6 shadow-sm">
-              <div className="mb-5">
-                <h3 className="text-lg font-semibold text-gray-900">
-                  Existing meshes
-                </h3>
-                <p className="mt-1 text-sm text-gray-500">
-                  Current mesh definitions across trays and systems.
-                </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Badge tone={toneForStatus(selectedTray?.status ?? "healthy")}>
+                {selectedTray?.status ?? "healthy"}
+              </Badge>
+              <Badge tone={captureAvailable ? "success" : "warning"}>
+                {captureAvailable ? "capture ready" : "awaiting image"}
+              </Badge>
+              <Badge tone={autoRefreshEnabled ? "success" : "default"}>
+                {autoRefreshEnabled ? "auto-refresh" : "manual"}
+              </Badge>
+            </div>
+
+            <div className="hide-scrollbar mt-4 overflow-x-auto pb-1 lg:hidden">
+              <div className="flex gap-3">
+                {trays.map((tray) => (
+                  <MobileTrayPill
+                    key={tray.id}
+                    tray={tray}
+                    active={tray.id === selectedTray?.id}
+                    onSelect={() => setSelectedTrayId(tray.id)}
+                  />
+                ))}
               </div>
+            </div>
+          </header>
 
-              <div className="space-y-3">
-                {meshes.length ? (
-                  meshes.map((mesh) => (
-                    <MeshCard key={mesh.id} mesh={mesh} trays={trays} />
-                  ))
-                ) : (
-                  <div className="rounded-xl border border-dashed border-gray-200 py-8 text-center text-sm text-gray-400">
-                    No meshes created yet.
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-4 lg:px-6 lg:pb-8">
+            {errorMessage ? (
+              <div className="mb-4 rounded-[1.4rem] border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-600">
+                {errorMessage}
+              </div>
+            ) : null}
+
+            {activeTab === "overview" ? (
+              <div className="space-y-4 lg:space-y-6">
+                <div className="grid gap-4 lg:grid-cols-[minmax(0,1.05fr)_minmax(360px,0.95fr)]">
+                  <Panel className="overflow-hidden border-0 bg-[linear-gradient(135deg,#0f172a_0%,#134e4a_58%,#155e75_100%)] p-0 text-white">
+                    <div className="relative aspect-[5/6] lg:aspect-auto lg:h-full">
+                      {captureAvailable ? (
+                        <>
+                          <Image
+                            src={latestImage?.imageUrl as string}
+                            alt={latestImage?.trayName ?? "Tray image"}
+                            fill
+                            className="object-cover"
+                            priority
+                            sizes="(max-width: 1024px) 100vw, 52vw"
+                          />
+                          <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(15,23,42,0.08)_0%,rgba(15,23,42,0.72)_100%)]" />
+                        </>
+                      ) : (
+                        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,#2dd4bf_0%,#0f172a_65%)]" />
+                      )}
+                      <div className="absolute inset-x-0 bottom-0 p-5">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-white/62">
+                          Live tray
+                        </p>
+                        <h2 className="mt-2 text-[1.8rem] font-semibold tracking-[-0.04em]">
+                          {latestPrediction?.label ?? "Awaiting analysis"}
+                        </h2>
+                        <p className="mt-2 max-w-lg text-sm leading-6 text-white/76">
+                          {latestPrediction?.recommendation ??
+                            "The next capture submitted to the CV backend will update the tray diagnosis."}
+                        </p>
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <Badge tone="default">{selectedTray?.name ?? "No tray"}</Badge>
+                          <Badge tone={toneForSeverity(latestPrediction?.severity ?? "low")}>
+                            {latestPrediction?.severity ?? "low"}
+                          </Badge>
+                          <Badge tone={captureAvailable ? "success" : "warning"}>
+                            {latestImage?.capturedAt
+                              ? formatRelativeTimestamp(latestImage.capturedAt)
+                              : "No capture"}
+                          </Badge>
+                        </div>
+                      </div>
+                    </div>
+                  </Panel>
+
+                  <div className="space-y-4">
+                    <Panel>
+                      <SectionHeader
+                        eyebrow="Tray health"
+                        title={selectedTray?.name ?? "Tray not selected"}
+                        detail="A quieter operational summary for the selected system."
+                      />
+                      <div className="mt-4 grid grid-cols-2 gap-3">
+                        <MetricTile label="Health" value={`${selectedTray?.healthScore ?? 0}%`} />
+                        <MetricTile label="Plants" value={String(trayPlants.length)} />
+                        <MetricTile
+                          label="Next scan"
+                          value={
+                            selectedTraySchedule
+                              ? formatRelativeTimestamp(selectedTraySchedule.nextRunAt)
+                              : "Not set"
+                          }
+                        />
+                        <MetricTile
+                          label="Last sync"
+                          value={lastUpdatedAt ? formatDateTime(lastUpdatedAt) : "N/A"}
+                        />
+                      </div>
+                    </Panel>
+
+                    <Panel className="bg-[linear-gradient(180deg,rgba(240,253,250,0.92)_0%,rgba(255,255,255,0.95)_100%)]">
+                      <SectionHeader
+                        eyebrow="Flow"
+                        title="Open the next workspace"
+                        detail="Keep the main monitoring flow simple and task-based."
+                      />
+                      <div className="mt-4 grid grid-cols-3 gap-3">
+                        {TABS.filter((tab) => tab.id !== "overview").map((tab) => (
+                          <Link
+                            key={tab.id}
+                            href={tab.href}
+                            className="rounded-[1.35rem] bg-white px-4 py-4 text-left ring-1 ring-slate-200/70"
+                          >
+                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-[11px] font-semibold tracking-[0.14em] text-slate-500">
+                              {tab.short}
+                            </div>
+                            <p className="mt-3 text-sm font-semibold text-slate-950">
+                              {tab.label}
+                            </p>
+                          </Link>
+                        ))}
+                      </div>
+                    </Panel>
                   </div>
-                )}
+                </div>
+
+                <Panel>
+                  <div className="grid gap-4 lg:grid-cols-[minmax(320px,0.85fr)_minmax(0,1.15fr)]">
+                    <div>
+                      <SectionHeader
+                        eyebrow="Monitoring"
+                        title="Signal trend"
+                        detail="Compact monitoring data from recent tray and plant events."
+                      />
+                      <div className="mt-4">
+                        <TrendChart events={summaryLog} />
+                      </div>
+                    </div>
+                    <div className="space-y-4">
+                      <MonitoringSummary
+                        events={summaryLog}
+                        reports={trayReports}
+                        plants={trayPlants}
+                      />
+                    </div>
+                  </div>
+                </Panel>
+
+                <Panel>
+                  <div className="grid gap-4 lg:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)]">
+                    <div>
+                      <SectionHeader
+                        eyebrow="Current diagnosis"
+                        title={latestPrediction?.label ?? "No diagnosis yet"}
+                        detail={
+                          latestPrediction?.recommendation ??
+                          "Live diagnosis will appear here after the next image capture."
+                        }
+                      />
+                      <div className="mt-4 grid grid-cols-2 gap-3">
+                        <MetricTile
+                          label="Confidence"
+                          value={latestPrediction ? clampPercent(latestPrediction.confidence) : "0%"}
+                        />
+                        <MetricTile
+                          label="Vector"
+                          value={latestPrediction?.vectorSource ?? "mock"}
+                        />
+                        <MetricTile
+                          label="Capture"
+                          value={
+                            latestImage?.capturedAt
+                              ? formatRelativeTimestamp(latestImage.capturedAt)
+                              : "Waiting"
+                          }
+                        />
+                        <MetricTile label="Device" value={selectedTray?.deviceId ?? "N/A"} />
+                      </div>
+                    </div>
+
+                    <div>
+                      <SectionHeader
+                        eyebrow="Recent events"
+                        title="Monitoring log"
+                        detail="Select an item to focus on the latest finding."
+                      />
+                      <div className="mt-4 space-y-3">
+                        {summaryLog.map((event) => (
+                          <EventRow
+                            key={event.id}
+                            event={event}
+                            active={selectedEvent?.id === event.id}
+                            onSelect={() => setSelectedEventId(event.id)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </Panel>
+
+                {selectedEvent ? (
+                  <Panel className="bg-[linear-gradient(180deg,rgba(248,250,252,0.95)_0%,rgba(240,253,250,0.92)_100%)]">
+                    <SectionHeader
+                      eyebrow="Focused event"
+                      title={selectedEvent.title}
+                      detail={selectedEvent.message}
+                    />
+                    <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                      <MetricTile label="Level" value={selectedEvent.level} />
+                      <MetricTile label="Logged" value={formatDateTime(selectedEvent.createdAt)} />
+                      <MetricTile label="Tray" value={selectedTray?.name ?? "N/A"} />
+                    </div>
+                  </Panel>
+                ) : null}
               </div>
-            </Card>
+            ) : null}
+
+            {activeTab === "plants" ? (
+              <div className="space-y-4 lg:space-y-6">
+                <Panel>
+                  <div className="grid gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+                    <div>
+                      <SectionHeader
+                        eyebrow="Plant map"
+                        title={selectedTray ? `${selectedTray.name} plants` : "Plants"}
+                        detail="Tap one plant at a time. Keep the report focused."
+                      />
+                      <div className="mt-4 grid grid-cols-3 gap-3">
+                        <MetricTile label="Healthy" value={String(healthyPlants)} />
+                        <MetricTile label="Watch" value={String(watchPlants)} />
+                        <MetricTile label="Alert" value={String(alertPlants)} />
+                      </div>
+                      <div
+                        className="mt-5 grid gap-3"
+                        style={{
+                          gridTemplateColumns: `repeat(${plantGridColumns}, minmax(0, 1fr))`
+                        }}
+                      >
+                        {trayPlants
+                          .slice()
+                          .sort((left, right) =>
+                            left.row === right.row
+                              ? left.column - right.column
+                              : left.row - right.row
+                          )
+                          .map((plant) => (
+                            <PlantSlot
+                              key={plant.id}
+                              plant={plant}
+                              active={plant.id === selectedPlant?.id}
+                              onSelect={() => setSelectedPlantId(plant.id)}
+                            />
+                          ))}
+                      </div>
+                    </div>
+
+                    <div className="rounded-[1.6rem] bg-[linear-gradient(180deg,rgba(248,250,252,0.95)_0%,rgba(240,253,250,0.92)_100%)] p-5">
+                      <SectionHeader
+                        eyebrow="Selected plant"
+                        title={selectedPlant?.name ?? "No plant selected"}
+                        detail={
+                          selectedPlant
+                            ? `${selectedPlant.slotLabel} · ${selectedPlant.cultivar}`
+                            : "Choose a plant from the grid."
+                        }
+                      />
+
+                      {selectedPlant && selectedReport ? (
+                        <div className="mt-4 space-y-4">
+                          <div className="flex items-center justify-between">
+                            <Badge tone={toneForSeverity(selectedReport.severity)}>
+                              {selectedReport.diagnosis}
+                            </Badge>
+                            <span className="text-sm font-medium text-slate-500">
+                              {clampPercent(selectedReport.confidence)}
+                            </span>
+                          </div>
+                          <p className="text-sm leading-7 text-slate-500">
+                            {selectedReport.summary}
+                          </p>
+                          <div className="grid grid-cols-3 gap-3">
+                            <MetricTile
+                              label="Score"
+                              value={`${selectedPlant.healthScore}%`}
+                            />
+                            <MetricTile
+                              label="Disease"
+                              value={String(selectedReport.diseases.length)}
+                            />
+                            <MetricTile
+                              label="Deficiency"
+                              value={String(selectedReport.deficiencies.length)}
+                            />
+                          </div>
+                          <div className="rounded-[1.35rem] bg-white px-4 py-4 ring-1 ring-slate-200/70">
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">
+                              Recommended action
+                            </p>
+                            <p className="mt-2 text-sm leading-7 text-slate-700">
+                              {selectedReport.recommendedAction}
+                            </p>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="mt-4 rounded-[1.35rem] border border-dashed border-slate-200 py-8 text-center text-sm text-slate-400">
+                          No report available for this plant yet.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </Panel>
+
+                <Panel>
+                  <SectionHeader
+                    eyebrow="Plant list"
+                    title="All plants in tray"
+                    detail="Compact list for fast switching without extra chrome."
+                  />
+                  <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                    {trayPlants.map((plant) => (
+                      <button
+                        key={plant.id}
+                        type="button"
+                        onClick={() => setSelectedPlantId(plant.id)}
+                        className={`rounded-[1.35rem] px-4 py-3 text-left transition ${
+                          plant.id === selectedPlant?.id
+                            ? "bg-slate-950 text-white"
+                            : "bg-slate-50 text-slate-900 ring-1 ring-slate-200/70"
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="font-semibold">{plant.name}</p>
+                            <p
+                              className={`mt-1 text-sm ${
+                                plant.id === selectedPlant?.id ? "text-white/72" : "text-slate-500"
+                              }`}
+                            >
+                              {plant.slotLabel} · {plant.latestDiagnosis}
+                            </p>
+                          </div>
+                          <Badge tone={toneForStatus(plant.status)}>{plant.status}</Badge>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </Panel>
+              </div>
+            ) : null}
+
+            {activeTab === "schedule" ? (
+              <div className="space-y-4 lg:space-y-6">
+                <Panel>
+                  <div className="grid gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+                    <div>
+                      <SectionHeader
+                        eyebrow="Capture planner"
+                        title="Edit schedule"
+                        detail="Define capture timing without leaving the monitoring workflow."
+                      />
+                      <div className="mt-4 flex gap-2 rounded-full bg-slate-100 p-1">
+                        <button
+                          type="button"
+                          onClick={() => setScheduleScopeType("tray")}
+                          className={`rounded-full px-4 py-2 text-sm font-medium ${
+                            scheduleScopeType === "tray"
+                              ? "bg-white text-slate-950 shadow-sm"
+                              : "text-slate-500"
+                          }`}
+                        >
+                          Tray
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setScheduleScopeType("mesh")}
+                          className={`rounded-full px-4 py-2 text-sm font-medium ${
+                            scheduleScopeType === "mesh"
+                              ? "bg-white text-slate-950 shadow-sm"
+                              : "text-slate-500"
+                          }`}
+                        >
+                          Mesh
+                        </button>
+                      </div>
+
+                      <div className="mt-4 grid gap-4">
+                        <label className="block">
+                          <span className="text-sm font-medium text-slate-700">Target</span>
+                          <select
+                            value={scheduleScopeId}
+                            onChange={(event) => setScheduleScopeId(event.target.value)}
+                            className="mt-2 w-full rounded-[1.25rem] border border-slate-200 bg-white px-4 py-3 text-sm outline-none"
+                          >
+                            {(scheduleScopeType === "tray" ? trays : meshes).map((item) => (
+                              <option key={item.id} value={item.id}>
+                                {item.name}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+
+                        <label className="block">
+                          <span className="text-sm font-medium text-slate-700">Schedule name</span>
+                          <input
+                            value={scheduleName}
+                            onChange={(event) => setScheduleName(event.target.value)}
+                            className="mt-2 w-full rounded-[1.25rem] border border-slate-200 px-4 py-3 text-sm outline-none"
+                          />
+                        </label>
+
+                        <label className="block">
+                          <span className="text-sm font-medium text-slate-700">
+                            Interval minutes
+                          </span>
+                          <input
+                            type="number"
+                            min="5"
+                            step="5"
+                            value={scheduleInterval}
+                            onChange={(event) => setScheduleInterval(event.target.value)}
+                            className="mt-2 w-full rounded-[1.25rem] border border-slate-200 px-4 py-3 text-sm outline-none"
+                          />
+                        </label>
+
+                        <label className="flex items-center gap-3 rounded-[1.25rem] bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                          <input
+                            type="checkbox"
+                            checked={scheduleActive}
+                            onChange={(event) => setScheduleActive(event.target.checked)}
+                            className="h-4 w-4 rounded border-slate-300"
+                          />
+                          Schedule is active
+                        </label>
+                      </div>
+
+                      {scheduleFeedback ? (
+                        <p className="mt-4 text-sm text-slate-500">{scheduleFeedback}</p>
+                      ) : null}
+
+                      <div className="mt-5">
+                        <Button
+                          className="w-full"
+                          onClick={() => void saveSchedule()}
+                          disabled={isSavingSchedule}
+                        >
+                          {isSavingSchedule ? "Saving..." : "Save schedule"}
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="rounded-[1.6rem] bg-[linear-gradient(180deg,rgba(248,250,252,0.95)_0%,rgba(240,249,255,0.92)_100%)] p-5">
+                      <SectionHeader
+                        eyebrow="Run state"
+                        title="Capture flow"
+                        detail="Scheduling and routing summary for the current workspace."
+                      />
+                      <div className="mt-4 grid grid-cols-2 gap-3">
+                        <MetricTile label="Destination" value="computer-vision-backend" />
+                        <MetricTile
+                          label="Next tray run"
+                          value={
+                            selectedTraySchedule
+                              ? formatRelativeTimestamp(selectedTraySchedule.nextRunAt)
+                              : "Not set"
+                          }
+                        />
+                        <MetricTile
+                          label="Scope"
+                          value={scheduleScopeType === "tray" ? "Tray" : "Mesh"}
+                        />
+                        <MetricTile label="Status" value={scheduleActive ? "Active" : "Paused"} />
+                      </div>
+                    </div>
+                  </div>
+                </Panel>
+
+                <Panel>
+                  <SectionHeader
+                    eyebrow="Existing schedules"
+                    title="Current runs"
+                    detail="Load a saved schedule into the editor with one tap."
+                  />
+                  <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                    {schedules.map((schedule) => (
+                      <ScheduleRow
+                        key={schedule.id}
+                        schedule={schedule}
+                        active={selectedScheduleId === schedule.id}
+                        onSelect={() => setSelectedScheduleId(schedule.id)}
+                      />
+                    ))}
+                  </div>
+                </Panel>
+              </div>
+            ) : null}
+
+            {activeTab === "mesh" ? (
+              <div className="space-y-4 lg:space-y-6">
+                <Panel>
+                  <div className="grid gap-5 lg:grid-cols-[minmax(0,0.92fr)_minmax(0,1.08fr)]">
+                    <div>
+                      <SectionHeader
+                        eyebrow="Mesh builder"
+                        title="Create a tray group"
+                        detail="Build a shared monitoring topology without crowding the workspace."
+                      />
+                      <div className="mt-4 grid grid-cols-2 gap-3">
+                        <MetricTile label="Selected trays" value={String(meshDraftTrayIds.length)} />
+                        <MetricTile label="Existing meshes" value={String(meshes.length)} />
+                      </div>
+
+                      <label className="mt-4 block">
+                        <span className="text-sm font-medium text-slate-700">Mesh name</span>
+                        <input
+                          value={meshName}
+                          onChange={(event) => setMeshName(event.target.value)}
+                          placeholder="North rack health mesh"
+                          className="mt-2 w-full rounded-[1.25rem] border border-slate-200 px-4 py-3 text-sm outline-none"
+                        />
+                      </label>
+
+                      <div className="mt-4 space-y-2">
+                        {trays.map((tray) => {
+                          const selected = meshDraftTrayIds.includes(tray.id);
+
+                          return (
+                            <button
+                              key={tray.id}
+                              type="button"
+                              onClick={() =>
+                                setMeshDraftTrayIds((current) =>
+                                  current.includes(tray.id)
+                                    ? current.filter((id) => id !== tray.id)
+                                    : [...current, tray.id]
+                                )
+                              }
+                              className={`flex w-full items-center justify-between rounded-[1.25rem] px-4 py-3 text-left transition ${
+                                selected
+                                  ? "bg-slate-950 text-white"
+                                  : "bg-slate-50 text-slate-900 ring-1 ring-slate-200/70"
+                              }`}
+                            >
+                              <div>
+                                <p className="font-semibold">{tray.name}</p>
+                                <p
+                                  className={`mt-1 text-sm ${
+                                    selected ? "text-white/72" : "text-slate-500"
+                                  }`}
+                                >
+                                  {tray.crop} · {tray.zone}
+                                </p>
+                              </div>
+                              <Badge tone={selected ? "default" : toneForStatus(tray.status)}>
+                                {selected ? "selected" : tray.status}
+                              </Badge>
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {meshFeedback ? (
+                        <p className="mt-4 text-sm text-slate-500">{meshFeedback}</p>
+                      ) : null}
+
+                      <div className="mt-5">
+                        <Button
+                          className="w-full"
+                          onClick={() => void createMesh()}
+                          disabled={isCreatingMesh}
+                        >
+                          {isCreatingMesh ? "Creating..." : "Create mesh"}
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="rounded-[1.6rem] bg-[linear-gradient(180deg,rgba(248,250,252,0.95)_0%,rgba(240,253,250,0.92)_100%)] p-5">
+                      <SectionHeader
+                        eyebrow="Existing mesh groups"
+                        title="Grouped systems"
+                        detail="Each mesh summarizes tray coverage and active plant alerts."
+                      />
+                      <div className="mt-4 space-y-3">
+                        {meshes.map((mesh) => (
+                          <MeshRow key={mesh.id} mesh={mesh} trays={trays} plants={plants} />
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </Panel>
+              </div>
+            ) : null}
           </div>
+
+          <nav className="safe-bottom shrink-0 border-t border-slate-200/70 bg-white/94 px-2 pb-2 pt-2 lg:hidden">
+            <div className="grid grid-cols-4 gap-2 rounded-[1.7rem] bg-slate-50 p-2 ring-1 ring-slate-200/70">
+              {TABS.map((tab) => (
+                <Link
+                  key={tab.id}
+                  href={tab.href}
+                  className={`rounded-[1.2rem] px-2 py-2.5 text-center transition ${
+                    activeTab === tab.id ? "bg-slate-950 text-white" : "text-slate-500"
+                  }`}
+                >
+                  <div
+                    className={`mx-auto flex h-8 w-8 items-center justify-center rounded-full text-[11px] font-semibold tracking-[0.14em] ${
+                      activeTab === tab.id
+                        ? "bg-white/14 text-white"
+                        : "bg-white text-slate-500 ring-1 ring-slate-200/70"
+                    }`}
+                  >
+                    {tab.short}
+                  </div>
+                  <p className="mt-2 text-[11px] font-semibold">{tab.label}</p>
+                </Link>
+              ))}
+            </div>
+          </nav>
         </div>
       </div>
     </main>

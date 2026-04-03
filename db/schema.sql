@@ -11,6 +11,24 @@ CREATE TABLE IF NOT EXISTS tray_systems (
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS plants (
+  id VARCHAR(64) PRIMARY KEY,
+  tray_id VARCHAR(64) NOT NULL,
+  mesh_ids JSON NOT NULL,
+  name VARCHAR(120) NOT NULL,
+  cultivar VARCHAR(120) NOT NULL,
+  slot_label VARCHAR(32) NOT NULL,
+  row_index INT NOT NULL,
+  column_index INT NOT NULL,
+  health_score INT NOT NULL DEFAULT 0,
+  status VARCHAR(32) NOT NULL DEFAULT 'healthy',
+  last_report_at DATETIME NOT NULL,
+  latest_diagnosis VARCHAR(160) NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_plant_tray
+    FOREIGN KEY (tray_id) REFERENCES tray_systems(id)
+);
+
 CREATE TABLE IF NOT EXISTS camera_captures (
   id VARCHAR(64) PRIMARY KEY,
   tray_id VARCHAR(64) NOT NULL,
@@ -42,10 +60,34 @@ CREATE TABLE IF NOT EXISTS prediction_results (
     FOREIGN KEY (tray_id) REFERENCES tray_systems(id)
 );
 
+CREATE TABLE IF NOT EXISTS plant_reports (
+  id VARCHAR(64) PRIMARY KEY,
+  tray_id VARCHAR(64) NOT NULL,
+  plant_id VARCHAR(64) NOT NULL,
+  capture_id VARCHAR(64) NULL,
+  diagnosis VARCHAR(160) NOT NULL,
+  confidence DECIMAL(5,4) NOT NULL,
+  severity VARCHAR(32) NOT NULL,
+  diseases JSON NOT NULL,
+  deficiencies JSON NOT NULL,
+  anomalies JSON NOT NULL,
+  summary TEXT NOT NULL,
+  recommended_action TEXT NOT NULL,
+  status VARCHAR(32) NOT NULL DEFAULT 'ready',
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_report_tray
+    FOREIGN KEY (tray_id) REFERENCES tray_systems(id),
+  CONSTRAINT fk_report_plant
+    FOREIGN KEY (plant_id) REFERENCES plants(id),
+  CONSTRAINT fk_report_capture
+    FOREIGN KEY (capture_id) REFERENCES camera_captures(id)
+);
+
 CREATE TABLE IF NOT EXISTS monitoring_events (
   id VARCHAR(64) PRIMARY KEY,
   capture_id VARCHAR(64) NULL,
   tray_id VARCHAR(64) NULL,
+  plant_id VARCHAR(64) NULL,
   level VARCHAR(32) NOT NULL,
   title VARCHAR(160) NOT NULL,
   message TEXT NOT NULL,
@@ -61,5 +103,18 @@ CREATE TABLE IF NOT EXISTS mesh_networks (
   node_count INT NOT NULL DEFAULT 0,
   status VARCHAR(32) NOT NULL DEFAULT 'draft',
   summary TEXT NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS capture_schedules (
+  id VARCHAR(64) PRIMARY KEY,
+  scope_type VARCHAR(16) NOT NULL,
+  scope_id VARCHAR(64) NOT NULL,
+  name VARCHAR(160) NOT NULL,
+  interval_minutes INT NOT NULL,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  next_run_at DATETIME NOT NULL,
+  last_run_at DATETIME NULL,
+  destination VARCHAR(64) NOT NULL DEFAULT 'computer-vision-backend',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

@@ -1,18 +1,24 @@
 import { createMockSeed, derivePredictionFromCapture } from "@/lib/mocks/data";
 import type {
   CameraCapture,
+  CaptureSchedule,
   MeshNetwork,
   MonitoringEvent,
+  PlantReport,
+  PlantUnit,
   PredictionResult,
   TraySystem
 } from "@/lib/types/domain";
 
 interface MockStore {
   trays: TraySystem[];
+  plants: PlantUnit[];
   captures: CameraCapture[];
   predictions: PredictionResult[];
+  reports: PlantReport[];
   events: MonitoringEvent[];
   meshes: MeshNetwork[];
+  schedules: CaptureSchedule[];
   lastRotationAt: number;
 }
 
@@ -37,6 +43,9 @@ const rotateSimulation = (store: MockStore) => {
   }
 
   const tray = store.trays[now % store.trays.length];
+  const trayPlants = store.plants.filter((plant) => plant.trayId === tray.id);
+  const focusPlant = trayPlants[now % trayPlants.length];
+
   const capture: CameraCapture = {
     id: `capture-${now}`,
     trayId: tray.id,
@@ -50,26 +59,59 @@ const rotateSimulation = (store: MockStore) => {
   };
 
   const prediction = derivePredictionFromCapture(capture);
+  const report: PlantReport = {
+    id: `${focusPlant.id}-report-${now}`,
+    trayId: tray.id,
+    plantId: focusPlant.id,
+    captureId: capture.id,
+    diagnosis:
+      prediction.severity === "high"
+        ? "Disease risk detected"
+        : prediction.severity === "medium"
+          ? "Nutrient deficiency watch"
+          : "Healthy growth pattern",
+    confidence: prediction.confidence,
+    severity: prediction.severity,
+    diseases: prediction.severity === "high" ? ["early blight"] : [],
+    deficiencies:
+      prediction.severity === "medium" ? ["nitrogen deficiency"] : [],
+    anomalies:
+      prediction.severity === "high"
+        ? ["necrotic leaf spotting"]
+        : ["minor canopy asymmetry"],
+    summary: `${focusPlant.name} was analyzed during the scheduled capture cycle.`,
+    recommendedAction:
+      prediction.severity === "high"
+        ? "Escalate to manual review and isolate the plant."
+        : prediction.severity === "medium"
+          ? "Review nutrient mix and collect follow-up imagery."
+          : "Continue the current care routine.",
+    status: prediction.severity === "high" ? "pending_review" : "ready",
+    createdAt: capture.capturedAt
+  };
+
   const event: MonitoringEvent = {
     id: `event-${now}`,
     captureId: capture.id,
     trayId: capture.trayId,
+    plantId: focusPlant.id,
     level: prediction.severity === "high" ? "critical" : "info",
-    title: "New frame analyzed",
-    message: `${capture.trayName} was tagged as ${prediction.label.toLowerCase()} during the latest vector lookup.`,
+    title: "Scheduled analysis completed",
+    message: `${focusPlant.name} in ${capture.trayName} was processed by the simulated computer-vision pipeline.`,
     createdAt: capture.capturedAt
   };
 
-  store.captures = [capture, ...store.captures].slice(0, 12);
-  store.predictions = [prediction, ...store.predictions].slice(0, 12);
-  store.events = [event, ...store.events].slice(0, 30);
+  store.captures = [capture, ...store.captures].slice(0, 24);
+  store.predictions = [prediction, ...store.predictions].slice(0, 24);
+  store.reports = [report, ...store.reports].slice(0, 60);
+  store.events = [event, ...store.events].slice(0, 60);
   store.trays = store.trays.map((item) =>
     item.id === tray.id
       ? {
           ...item,
           healthScore:
             prediction.severity === "high"
-              ? Math.max(item.healthScore - 4, 52)
+              ? Math.max(item.healthScore - 3, 52)
               : Math.min(item.healthScore + 1, 99),
           status:
             prediction.severity === "high"
@@ -80,6 +122,38 @@ const rotateSimulation = (store: MockStore) => {
           lastCaptureAt: capture.capturedAt
         }
       : item
+  );
+  store.plants = store.plants.map((item) =>
+    item.id === focusPlant.id
+      ? {
+          ...item,
+          healthScore:
+            prediction.severity === "high"
+              ? Math.max(item.healthScore - 5, 44)
+              : prediction.severity === "medium"
+                ? Math.max(item.healthScore - 2, 60)
+                : Math.min(item.healthScore + 1, 99),
+          status:
+            prediction.severity === "high"
+              ? "alert"
+              : prediction.severity === "medium"
+                ? "watch"
+                : "healthy",
+          latestDiagnosis: report.diagnosis,
+          lastReportAt: report.createdAt
+        }
+      : item
+  );
+  store.schedules = store.schedules.map((schedule) =>
+    schedule.scopeType === "tray" && schedule.scopeId === tray.id
+      ? {
+          ...schedule,
+          lastRunAt: capture.capturedAt,
+          nextRunAt: new Date(
+            now + schedule.intervalMinutes * 60 * 1000
+          ).toISOString()
+        }
+      : schedule
   );
   store.lastRotationAt = now;
 
@@ -101,9 +175,9 @@ export const ingestMockCapture = (capture: CameraCapture) => {
     createdAt: capture.capturedAt
   };
 
-  store.captures = [capture, ...store.captures].slice(0, 12);
-  store.predictions = [prediction, ...store.predictions].slice(0, 12);
-  store.events = [event, ...store.events].slice(0, 30);
+  store.captures = [capture, ...store.captures].slice(0, 24);
+  store.predictions = [prediction, ...store.predictions].slice(0, 24);
+  store.events = [event, ...store.events].slice(0, 60);
   store.trays = store.trays.map((tray) =>
     tray.id === capture.trayId
       ? {
@@ -130,6 +204,46 @@ export const createMockMesh = (name: string, trayIds: string[]) => {
   };
 
   store.meshes = [mesh, ...store.meshes];
+  store.plants = store.plants.map((plant) =>
+    trayIds.includes(plant.trayId)
+      ? { ...plant, meshIds: Array.from(new Set([mesh.id, ...plant.meshIds])) }
+      : plant
+  );
 
   return mesh;
+};
+
+export const upsertMockSchedule = (payload: {
+  id?: string;
+  scopeType: CaptureSchedule["scopeType"];
+  scopeId: string;
+  name: string;
+  intervalMinutes: number;
+  active: boolean;
+}) => {
+  const store = getGlobalStore();
+  const nextSchedule: CaptureSchedule = {
+    id: payload.id ?? `schedule-${Date.now()}`,
+    scopeType: payload.scopeType,
+    scopeId: payload.scopeId,
+    name: payload.name,
+    intervalMinutes: payload.intervalMinutes,
+    active: payload.active,
+    destination: "computer-vision-backend",
+    lastRunAt: payload.id
+      ? store.schedules.find((item) => item.id === payload.id)?.lastRunAt
+      : undefined,
+    nextRunAt: new Date(
+      Date.now() + payload.intervalMinutes * 60 * 1000
+    ).toISOString()
+  };
+
+  const exists = store.schedules.some((item) => item.id === nextSchedule.id);
+  store.schedules = exists
+    ? store.schedules.map((item) =>
+        item.id === nextSchedule.id ? nextSchedule : item
+      )
+    : [nextSchedule, ...store.schedules];
+
+  return nextSchedule;
 };

@@ -1,5 +1,5 @@
 import { env } from "@/lib/config/env";
-import { getMariaDbPool } from "@/lib/db/mariadb";
+import { getPostgresPool, queryRows } from "@/lib/db/postgres";
 import { getMockStore, ingestMockCapture } from "@/lib/services/mock-store";
 import type { CameraCapture } from "@/lib/types/domain";
 
@@ -28,27 +28,33 @@ const mapCaptureRow = (row: CameraCaptureRow): CameraCapture => ({
 });
 
 export const getCameraDataSource = async () => {
-  const pool = getMariaDbPool();
+  const pool = getPostgresPool();
 
-  return !env.useMockData && pool ? "mariadb" : "mock";
+  return !env.useMockData && pool ? "postgres" : "mock";
 };
 
 export const getLatestCameraCapture = async (
   trayId?: string
 ): Promise<CameraCapture | null> => {
-  const pool = getMariaDbPool();
+  const pool = getPostgresPool();
 
   if (!env.useMockData && pool) {
     try {
-      const hasTrayFilter = Boolean(trayId);
-      const rows = (await pool.query(
+      const values: string[] = [];
+      const whereClause = trayId
+        ? (() => {
+            values.push(trayId);
+            return `WHERE tray_id = $${values.length}`;
+          })()
+        : "";
+      const rows = await queryRows<CameraCaptureRow>(
         `SELECT id, tray_id, tray_name, device_id, image_url, captured_at, source, status, notes
          FROM camera_captures
-         ${hasTrayFilter ? "WHERE tray_id = ?" : ""}
+         ${whereClause}
          ORDER BY captured_at DESC
          LIMIT 1`,
-        hasTrayFilter ? [trayId] : []
-      )) as CameraCaptureRow[];
+        values
+      );
 
       return rows[0] ? mapCaptureRow(rows[0]) : null;
     } catch {
@@ -82,14 +88,14 @@ export const ingestCameraCapture = async (
     notes: payload.notes
   };
 
-  const pool = getMariaDbPool();
+  const pool = getPostgresPool();
 
   if (!env.useMockData && pool) {
     try {
       await pool.query(
         `INSERT INTO camera_captures
           (id, tray_id, tray_name, device_id, image_url, captured_at, source, status, notes)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
         [
           capture.id,
           capture.trayId,

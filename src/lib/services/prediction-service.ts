@@ -1,5 +1,5 @@
 import { env } from "@/lib/config/env";
-import { getMariaDbPool } from "@/lib/db/mariadb";
+import { getPostgresPool, queryRows } from "@/lib/db/postgres";
 import { derivePredictionFromCapture } from "@/lib/mocks/data";
 import { getLatestCameraCapture } from "@/lib/services/camera-service";
 import { getMockStore } from "@/lib/services/mock-store";
@@ -19,9 +19,9 @@ interface PredictionRow {
 }
 
 export const getPredictionDataSource = async () => {
-  const pool = getMariaDbPool();
+  const pool = getPostgresPool();
 
-  return !env.useMockData && pool ? "mariadb" : "mock";
+  return !env.useMockData && pool ? "postgres" : "mock";
 };
 
 export const getLatestPrediction = async (
@@ -33,20 +33,26 @@ export const getLatestPrediction = async (
     return null;
   }
 
-  const pool = getMariaDbPool();
+  const pool = getPostgresPool();
 
   if (!env.useMockData && pool) {
     try {
-      const hasTrayFilter = Boolean(trayId);
-      const rows = (await pool.query(
+      const values: string[] = [];
+      const whereClause = trayId
+        ? (() => {
+            values.push(trayId);
+            return `WHERE tray_id = $${values.length}`;
+          })()
+        : "";
+      const rows = await queryRows<PredictionRow>(
         `SELECT id, capture_id, tray_id, label, confidence, severity, recommendation,
                 vector_source, created_at
          FROM prediction_results
-         ${hasTrayFilter ? "WHERE tray_id = ?" : ""}
+         ${whereClause}
          ORDER BY created_at DESC
          LIMIT 1`,
-        hasTrayFilter ? [trayId] : []
-      )) as PredictionRow[];
+        values
+      );
 
       if (rows[0]) {
         return {

@@ -1,5 +1,5 @@
 import { env } from "@/lib/config/env";
-import { getMariaDbPool } from "@/lib/db/mariadb";
+import { getPostgresPool, queryRows } from "@/lib/db/postgres";
 import { getMockStore } from "@/lib/services/mock-store";
 import type { MonitoringEvent } from "@/lib/types/domain";
 
@@ -17,19 +17,26 @@ export const getMonitoringLog = async (
   limit = 10,
   trayId?: string
 ): Promise<MonitoringEvent[]> => {
-  const pool = getMariaDbPool();
+  const pool = getPostgresPool();
 
   if (!env.useMockData && pool) {
     try {
-      const hasTrayFilter = Boolean(trayId);
-      const rows = (await pool.query(
+      const params: Array<string | number> = [];
+      const whereClause = trayId
+        ? (() => {
+            params.push(trayId);
+            return `WHERE tray_id = $${params.length}`;
+          })()
+        : "";
+      params.push(limit);
+      const rows = await queryRows<MonitoringRow>(
         `SELECT id, capture_id, tray_id, level, title, message, created_at
          FROM monitoring_events
-         ${hasTrayFilter ? "WHERE tray_id = ?" : ""}
+         ${whereClause}
          ORDER BY created_at DESC
-         LIMIT ?`,
-        hasTrayFilter ? [trayId, limit] : [limit]
-      )) as MonitoringRow[];
+         LIMIT $${params.length}`,
+        params
+      );
 
       return rows.map((row) => ({
         id: row.id,
