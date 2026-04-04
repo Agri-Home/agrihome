@@ -26,8 +26,8 @@ flowchart LR
   U --> UI
   UI --> PG
   UI --> Q
-  Edge -.->|"POST /api/camera/ingest\n(image URL or ref)"-.-> UI
-  UI -.->|"schedules.destination\n→ future CV backend"-.-> CV
+  Edge -.->|POST /api/camera/ingest| UI
+  UI -.->|schedules point at future CV| CV
   Edge -.-> Obj
   CV -.-> Obj
 ```

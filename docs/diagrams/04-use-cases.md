@@ -8,7 +8,7 @@ Operator (grower / facility user) interacting with the Vision Console.
 flowchart TB
   Actor[Operator]
 
-  UC1([View overview / home])
+  UC1([View overview and home])
   UC2([Browse trays])
   UC3([Open tray detail])
   UC4([View plant detail])
@@ -35,37 +35,43 @@ flowchart TB
 
 ## Use case — add plant with auto-identification
 
+Equivalent to a classic use-case diagram: the operator selects a tray and uploads a photo; inner steps chain as include-style dependencies.
+
 ```mermaid
-usecaseDiagram
-  actor Operator
-  package "AgriHome" {
-    usecase "Select tray" as UC_T
-    usecase "Upload / capture plant photo" as UC_P
-    usecase "Auto-detect species (simulated)" as UC_D
-    usecase "Create plant record" as UC_C
-    usecase "Run health analysis" as UC_H
-    usecase "View identification + report" as UC_V
-  }
+flowchart TB
+  Operator([Operator])
+
+  subgraph AgriHome [AgriHome]
+    UC_T([Select tray])
+    UC_P([Upload or capture plant photo])
+    UC_D([Auto-detect species simulated])
+    UC_C([Create plant record])
+    UC_H([Run health analysis])
+    UC_V([View identification and report])
+  end
+
   Operator --> UC_T
   Operator --> UC_P
-  UC_P ..> UC_D : <<include>>
-  UC_D ..> UC_C : <<include>>
-  UC_C ..> UC_H : <<include>>
   Operator --> UC_V
-  UC_H ..> UC_V : <<include>>
+  UC_P -.->|include| UC_D
+  UC_D -.->|include| UC_C
+  UC_C -.->|include| UC_H
+  UC_H -.->|include| UC_V
 ```
 
-## Use case — integrator (API / GraphQL)
+## Use case — integrator (API and GraphQL)
 
 ```mermaid
-usecaseDiagram
-  actor Integrator
-  package "APIs" {
-    usecase "Query trays, plants, reports" as Q1
-    usecase "Ingest camera frame" as Q2
-    usecase "GraphQL consolidated read" as Q3
-    usecase "Create mesh / schedule" as Q4
-  }
+flowchart TB
+  Integrator([Integrator])
+
+  subgraph APIs [APIs]
+    Q1([Query trays plants reports])
+    Q2([Ingest camera frame])
+    Q3([GraphQL consolidated read])
+    Q4([Create mesh and schedule])
+  end
+
   Integrator --> Q1
   Integrator --> Q2
   Integrator --> Q3
