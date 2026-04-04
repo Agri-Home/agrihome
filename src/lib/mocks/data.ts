@@ -85,7 +85,12 @@ const similarityCatalog: SimilarImageMatch[] = [
   }
 ];
 
-const trayCatalog: Omit<TraySystem, "healthScore" | "status" | "lastCaptureAt">[] = [
+type TraySeedEntry = Pick<
+  TraySystem,
+  "id" | "name" | "zone" | "crop" | "plantCount" | "deviceId"
+>;
+
+const trayCatalog: TraySeedEntry[] = [
   {
     id: "tray-basil-01",
     name: "Basil Tray A1",
@@ -144,7 +149,7 @@ const meshSeed: MeshNetwork[] = [
 const idFor = (prefix: string, seed: string | number) => `${prefix}-${seed}`;
 
 const makeCapture = (
-  tray: Omit<TraySystem, "healthScore" | "status" | "lastCaptureAt">,
+  tray: TraySeedEntry,
   offsetMinutes: number,
   missing = false
 ): CameraCapture => ({
@@ -214,7 +219,7 @@ const plantPreviewUrl = (
 };
 
 const makePlant = (
-  tray: Omit<TraySystem, "healthScore" | "status" | "lastCaptureAt">,
+  tray: TraySeedEntry,
   slotNumber: number,
   meshes: MeshNetwork[],
   trayCapture?: CameraCapture
@@ -344,6 +349,10 @@ export const createMockSeed = () => {
       zone: trayCatalog[index].zone,
       crop: trayCatalog[index].crop,
       plantCount: trayCatalog[index].plantCount,
+      visionPlantCount: null,
+      visionPlantCountAt: null,
+      visionPlantCountConfidence: null,
+      visionDetections: null,
       healthScore: healthScores[index],
       status: statuses[index],
       deviceId: capture.deviceId,

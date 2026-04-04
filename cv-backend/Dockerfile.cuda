@@ -1,0 +1,21 @@
+# GPU training + inference. Base image must match your host driver/CUDA (see PyTorch Docker tags).
+# Build: docker build -f Dockerfile.cuda -t agrihome-plant-cv:cuda .
+#
+# Pin tag at https://hub.docker.com/r/pytorch/pytorch/tags
+ARG PYTORCH_IMAGE=pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime
+FROM ${PYTORCH_IMAGE}
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+COPY requirements-docker-cuda.txt .
+RUN pip install --no-cache-dir -r requirements-docker-cuda.txt
+
+COPY train.py serve.py dataset_label_map.json ./
+
+EXPOSE 8765
+# Override at run time: train, serve, or sleep infinity
+CMD ["python", "serve.py", "--checkpoint", "/workspace/artifacts/best.pt", "--classes", "/workspace/artifacts/classes.json", "--host", "0.0.0.0", "--port", "8765"]

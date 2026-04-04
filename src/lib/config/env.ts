@@ -9,7 +9,6 @@ export const env = {
   apiBaseUrl:
     process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000",
   autoRefreshMs: parseNumber(process.env.NEXT_PUBLIC_AUTO_REFRESH_MS, 15000),
-  useMockData: (process.env.NEXT_PUBLIC_USE_MOCK_DATA ?? "true") !== "false",
   postgres: {
     host: process.env.POSTGRES_HOST ?? process.env.MARIADB_HOST ?? "",
     port: parseNumber(
@@ -25,6 +24,14 @@ export const env = {
     url: process.env.QDRANT_URL ?? "",
     apiKey: process.env.QDRANT_API_KEY ?? "",
     collection: process.env.QDRANT_COLLECTION ?? "agrihome-image-embeddings"
+  },
+  /** Optional HTTP endpoints for CV (see docs/CV_PIPELINE.md). */
+  cv: {
+    trayInferenceUrl: process.env.CV_TRAY_INFERENCE_URL ?? "",
+    trayInferenceApiKey: process.env.CV_TRAY_INFERENCE_API_KEY ?? "",
+    /** Close-up / leaf photo → species labels (train on e.g. Kaggle plant-identification). */
+    speciesInferenceUrl: process.env.CV_SPECIES_INFERENCE_URL ?? "",
+    speciesInferenceApiKey: process.env.CV_SPECIES_INFERENCE_API_KEY ?? ""
   }
 };
 
@@ -35,3 +42,7 @@ export const hasPostgresConfig = Boolean(
 );
 
 export const hasVectorConfig = Boolean(env.qdrant.url);
+
+export const hasTrayVisionInferenceConfig = Boolean(env.cv.trayInferenceUrl);
+
+export const hasSpeciesInferenceConfig = Boolean(env.cv.speciesInferenceUrl);

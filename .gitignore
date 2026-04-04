@@ -8,3 +8,9 @@ coverage
 .DS_Store
 public/uploads/plants/*
 !public/uploads/plants/.gitkeep
+/storage/originals/*
+!/storage/originals/.gitkeep
+/storage/processed/*
+!/storage/processed/.gitkeep
+/storage/temp/*
+!/storage/temp/.gitkeep
