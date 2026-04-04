@@ -11,12 +11,28 @@ export type PlantHealthStatus = "healthy" | "watch" | "alert";
 export type ScheduleScopeType = "tray" | "mesh";
 export type ReportStatus = "ready" | "pending_review";
 
+/** Normalized box (0–1) from tray-level instance segmentation / detection. */
+export interface TrayPlantDetectionBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  score: number;
+  label?: string;
+}
+
 export interface TraySystem {
   id: string;
   name: string;
   zone: string;
   crop: string;
+  /** Plants recorded in AgriHome (manual + API). */
   plantCount: number;
+  /** Last CV plant-instance count from a tray photo (may differ from plantCount). */
+  visionPlantCount: number | null;
+  visionPlantCountAt: string | null;
+  visionPlantCountConfidence: number | null;
+  visionDetections: TrayPlantDetectionBox[] | null;
   healthScore: number;
   status: TrayHealthStatus;
   deviceId: string;
@@ -128,6 +144,8 @@ export interface SystemHealth {
   database: "connected" | "mock";
   vectorStore: "connected" | "mock";
   cameraPipeline: "online" | "simulated";
+  /** Tray photo → plant count / boxes: remote HTTP vs built-in simulator. */
+  trayVisionInference: "remote" | "simulated";
 }
 
 export interface DashboardSnapshot {

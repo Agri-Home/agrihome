@@ -5,7 +5,7 @@ import {
   ensureManualTrayInMockStore,
   getMockStore
 } from "@/lib/services/mock-store";
-import type { MeshNetwork, TraySystem } from "@/lib/types/domain";
+import type { MeshNetwork, TrayPlantDetectionBox, TraySystem } from "@/lib/types/domain";
 
 interface TrayRow {
   id: string;
@@ -13,11 +13,35 @@ interface TrayRow {
   zone: string;
   crop: string;
   plant_count: number;
+  vision_plant_count: number | null;
+  vision_plant_count_at: Date | string | null;
+  vision_plant_count_confidence: string | number | null;
+  vision_detections_json: TrayPlantDetectionBox[] | string | null;
   health_score: number;
   status: TraySystem["status"];
   device_id: string;
   last_capture_at: Date | string;
 }
+
+const parseTrayDetections = (
+  raw: TrayRow["vision_detections_json"]
+): TrayPlantDetectionBox[] | null => {
+  if (raw == null) {
+    return null;
+  }
+  if (Array.isArray(raw)) {
+    return raw;
+  }
+  if (typeof raw === "string") {
+    try {
+      const v = JSON.parse(raw) as unknown;
+      return Array.isArray(v) ? (v as TrayPlantDetectionBox[]) : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+};
 
 interface MeshRow {
   id: string;
@@ -38,8 +62,10 @@ export const listTraySystems = async (): Promise<TraySystem[]> => {
   if (!env.useMockData && pool) {
     try {
       const rows = await queryRows<TrayRow>(
-        `SELECT id, name, zone, crop, plant_count, health_score, status,
-                device_id, last_capture_at
+        `SELECT id, name, zone, crop, plant_count,
+                vision_plant_count, vision_plant_count_at, vision_plant_count_confidence,
+                vision_detections_json,
+                health_score, status, device_id, last_capture_at
          FROM tray_systems
          ORDER BY name ASC`
       );
@@ -50,6 +76,16 @@ export const listTraySystems = async (): Promise<TraySystem[]> => {
         zone: row.zone,
         crop: row.crop,
         plantCount: Number(row.plant_count),
+        visionPlantCount:
+          row.vision_plant_count != null ? Number(row.vision_plant_count) : null,
+        visionPlantCountAt: row.vision_plant_count_at
+          ? new Date(row.vision_plant_count_at).toISOString()
+          : null,
+        visionPlantCountConfidence:
+          row.vision_plant_count_confidence != null
+            ? Number(row.vision_plant_count_confidence)
+            : null,
+        visionDetections: parseTrayDetections(row.vision_detections_json),
         healthScore: Number(row.health_score),
         status: row.status,
         deviceId: row.device_id,

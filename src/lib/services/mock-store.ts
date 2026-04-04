@@ -39,6 +39,9 @@ const getGlobalStore = () => {
   return globalThis.__agrihomeMockStore__;
 };
 
+/** Writable mock store without running the simulation rotation (for vision / admin updates). */
+export const getGlobalMockStore = () => getGlobalStore();
+
 const rotateSimulation = (store: MockStore) => {
   const now = Date.now();
 
@@ -181,6 +184,10 @@ export const ensureManualTrayInMockStore = () => {
     zone: "Manual entry",
     crop: "Custom",
     plantCount: 0,
+    visionPlantCount: null,
+    visionPlantCountAt: null,
+    visionPlantCountConfidence: null,
+    visionDetections: null,
     healthScore: 92,
     status: "healthy",
     deviceId: "user-device",

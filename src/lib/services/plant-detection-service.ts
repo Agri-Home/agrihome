@@ -4,6 +4,10 @@ import { createHash } from "crypto";
  * Reference taxa for simulated on-device / edge identification.
  * A real deployment would call a vision classifier; here we derive a stable
  * pick from image bytes so the same photo always maps to the same species.
+ *
+ * To plug in a model trained on Kaggle (or other) data, replace this module
+ * with an HTTP client similar to tray vision (`CV_TRAY_INFERENCE_URL`); see
+ * docs/CV_KAGGLE_PIPELINE.md.
  */
 const SPECIES_CATALOG = [
   { commonName: "Sweet basil", cultivar: "Ocimum basilicum 'Genovese'" },

@@ -17,7 +17,7 @@ Full-stack **Next.js** monitoring UI for tray- and plant-level crop health: came
 ## Features
 
 - **Overview** (`/`) — Latest frame, tray list, chart snapshot.
-- **Trays** — List, tray detail (image, monitoring chart, plants with thumbnails, events).
+- **Trays** — List, tray detail (image, monitoring chart, plants with thumbnails, events). **Tray CV**: upload a top-down photo to run **automatic plant detection + count** (`POST /api/trays/{trayId}/vision`); optional **`CV_TRAY_INFERENCE_URL`** for a real model trained on your Kaggle (or other) data ([docs/CV_KAGGLE_PIPELINE.md](docs/CV_KAGGLE_PIPELINE.md)).
 - **Plants** — Detail: last image, health trend, reports, monitoring log.
 - **Add plant** (`/plants/new`) — Photo-first flow: **auto species/cultivar** (simulated from image bytes) + **health report** (`POST /api/plants/from-photo`).
 - **Mesh** — Group trays; mesh detail with merged activity and plants.
@@ -45,6 +45,7 @@ See `.env.example` for variables (including legacy `MARIADB_*` aliases read by `
 | Doc | Description |
 |-----|-------------|
 | [docs/IMPLEMENTATION_GUIDE.md](docs/IMPLEMENTATION_GUIDE.md) | Scope, architecture pointers, REST/GraphQL, schema, env, roadmap |
+| [docs/CV_KAGGLE_PIPELINE.md](docs/CV_KAGGLE_PIPELINE.md) | Kaggle-style training path, HTTP contract for tray detection/count, env vars |
 | [docs/diagrams/README.md](docs/diagrams/README.md) | **Mermaid** diagrams: architecture, integrations, UML-style domain/services, use cases |
 
 ## API routes (REST)
@@ -57,6 +58,7 @@ See `.env.example` for variables (including legacy `MARIADB_*` aliases read by `
 | GET | `/api/predictions/latest` | `?trayId=` optional |
 | GET | `/api/monitoring/log` | `limit`, `trayId`, `plantId` |
 | GET | `/api/trays` | All tray systems |
+| POST | `/api/trays/{trayId}/vision` | Multipart `photo` — tray plant detection + count; persists CV fields on tray |
 | GET | `/api/plants` | `?trayId=` optional |
 | POST | `/api/plants/manual` | JSON — create plant by name/cultivar |
 | POST | `/api/plants/from-photo` | Multipart `photo` — auto ID + report |

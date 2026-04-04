@@ -10,6 +10,7 @@ import {
   listMeshNetworks,
   listTraySystems
 } from "@/lib/services/topology-service";
+import { hasTrayVisionInferenceConfig } from "@/lib/config/env";
 import { getVectorSource } from "@/lib/services/vector-service";
 import { isPostgresHealthy } from "@/lib/db/postgres";
 
@@ -58,12 +59,25 @@ export const schema = createSchema({
       createdAt: String!
     }
 
+    type TrayPlantBox {
+      x: Float!
+      y: Float!
+      w: Float!
+      h: Float!
+      score: Float!
+      label: String
+    }
+
     type TraySystem {
       id: ID!
       name: String!
       zone: String!
       crop: String!
       plantCount: Int!
+      visionPlantCount: Int
+      visionPlantCountAt: String
+      visionPlantCountConfidence: Float
+      visionDetections: [TrayPlantBox!]
       healthScore: Int!
       status: String!
       deviceId: String!
@@ -131,6 +145,7 @@ export const schema = createSchema({
       database: String!
       vectorStore: String!
       cameraPipeline: String!
+      trayVisionInference: String!
     }
 
     type Query {
@@ -182,7 +197,8 @@ export const schema = createSchema({
         api: "healthy",
         database: (await isPostgresHealthy()) ? "connected" : "mock",
         vectorStore: getVectorSource() === "qdrant" ? "connected" : "mock",
-        cameraPipeline: "simulated"
+        cameraPipeline: "simulated",
+        trayVisionInference: hasTrayVisionInferenceConfig ? "remote" : "simulated"
       })
     },
     Mutation: {
