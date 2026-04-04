@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 
-import { hasTrayVisionInferenceConfig } from "@/lib/config/env";
+import {
+  hasSpeciesInferenceConfig,
+  hasTrayVisionInferenceConfig
+} from "@/lib/config/env";
 import { isPostgresHealthy } from "@/lib/db/postgres";
 import { getVectorSource } from "@/lib/services/vector-service";
 
@@ -15,7 +18,8 @@ export async function GET() {
       database: databaseHealthy ? "connected" : "mock",
       vectorStore: getVectorSource() === "qdrant" ? "connected" : "mock",
       cameraPipeline: "simulated",
-      trayVisionInference: hasTrayVisionInferenceConfig ? "remote" : "simulated"
+      trayVisionInference: hasTrayVisionInferenceConfig ? "remote" : "simulated",
+      speciesInference: hasSpeciesInferenceConfig ? "remote" : "simulated"
     },
     generatedAt: new Date().toISOString()
   });
