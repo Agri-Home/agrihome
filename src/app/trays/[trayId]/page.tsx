@@ -16,6 +16,8 @@ import { listPlantsByTray } from "@/lib/services/plant-service";
 import { getTrayById } from "@/lib/services/topology-service";
 import { formatDateTime, formatRelativeTimestamp } from "@/lib/utils";
 
+import { TrayVisionAnalyzeClient } from "./TrayVisionAnalyzeClient";
+
 function trayTone(status: string) {
   if (status === "alert") return "critical" as const;
   if (status === "watch") return "warning" as const;
@@ -65,9 +67,32 @@ export default async function TrayDetailPage({
           <dd className="font-medium tabular-nums">{tray.healthScore}%</dd>
         </div>
         <div>
-          <dt className="text-ink/40">Plants</dt>
+          <dt className="text-ink/40">Plants (catalog)</dt>
           <dd className="font-medium">{tray.plantCount}</dd>
         </div>
+        <div>
+          <dt className="text-ink/40">CV plant count</dt>
+          <dd className="font-medium">
+            {tray.visionPlantCount != null ? (
+              <>
+                {tray.visionPlantCount}
+                {tray.visionPlantCountConfidence != null ? (
+                  <span className="ml-1 text-xs font-normal text-ink/45">
+                    ({(tray.visionPlantCountConfidence * 100).toFixed(0)}% conf.)
+                  </span>
+                ) : null}
+              </>
+            ) : (
+              <span className="text-ink/40">—</span>
+            )}
+          </dd>
+        </div>
+        {tray.visionPlantCountAt ? (
+          <div className="col-span-2">
+            <dt className="text-ink/40">Last CV analysis</dt>
+            <dd>{formatDateTime(tray.visionPlantCountAt)}</dd>
+          </div>
+        ) : null}
         <div className="col-span-2">
           <dt className="text-ink/40">Camera</dt>
           <dd className="font-mono text-xs text-ink/70">{tray.deviceId}</dd>
@@ -87,6 +112,8 @@ export default async function TrayDetailPage({
           <MonitoringAreaChart events={events} />
         </ClientChartFrame>
       </div>
+
+      <TrayVisionAnalyzeClient trayId={tray.id} />
 
       {capture?.imageUrl ? (
         <div className="mt-6">
