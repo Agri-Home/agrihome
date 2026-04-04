@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS plants (
   status VARCHAR(32) NOT NULL DEFAULT 'healthy',
   last_report_at TIMESTAMP NOT NULL,
   latest_diagnosis VARCHAR(160) NOT NULL,
+  description TEXT NULL,
   last_image_url TEXT NULL,
   last_image_at TIMESTAMP NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -124,3 +125,6 @@ CREATE TABLE IF NOT EXISTS capture_schedules (
   destination VARCHAR(64) NOT NULL DEFAULT 'computer-vision-backend',
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Upgrades: `CREATE TABLE IF NOT EXISTS` does not add columns to existing tables.
+ALTER TABLE plants ADD COLUMN IF NOT EXISTS description TEXT NULL;
