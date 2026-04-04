@@ -1,8 +1,7 @@
 import { createHash } from "crypto";
 
 import { env } from "@/lib/config/env";
-import { getPostgresPool } from "@/lib/db/postgres";
-import { getGlobalMockStore } from "@/lib/services/mock-store";
+import { requirePostgresPool } from "@/lib/db/postgres";
 import type { TrayPlantDetectionBox } from "@/lib/types/domain";
 
 export interface TrayPlantVisionResult {
@@ -133,41 +132,20 @@ export async function persistTrayVisionResult(
   result: TrayPlantVisionResult
 ): Promise<void> {
   const at = new Date().toISOString();
-  const pool = getPostgresPool();
-
-  if (!env.useMockData && pool) {
-    try {
-      await pool.query(
-        `UPDATE tray_systems SET
-          vision_plant_count = $1,
-          vision_plant_count_at = $2,
-          vision_plant_count_confidence = $3,
-          vision_detections_json = $4::json
-         WHERE id = $5`,
-        [
-          result.count,
-          at,
-          result.countConfidence,
-          JSON.stringify(result.instances),
-          trayId
-        ]
-      );
-      return;
-    } catch {
-      // fall through to mock store
-    }
-  }
-
-  const store = getGlobalMockStore();
-  store.trays = store.trays.map((t) =>
-    t.id === trayId
-      ? {
-          ...t,
-          visionPlantCount: result.count,
-          visionPlantCountAt: at,
-          visionPlantCountConfidence: result.countConfidence,
-          visionDetections: result.instances
-        }
-      : t
+  const pool = requirePostgresPool();
+  await pool.query(
+    `UPDATE tray_systems SET
+      vision_plant_count = $1,
+      vision_plant_count_at = $2,
+      vision_plant_count_confidence = $3,
+      vision_detections_json = $4::json
+     WHERE id = $5`,
+    [
+      result.count,
+      at,
+      result.countConfidence,
+      JSON.stringify(result.instances),
+      trayId
+    ]
   );
 }

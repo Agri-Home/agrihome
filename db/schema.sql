@@ -11,8 +11,8 @@ CREATE TABLE IF NOT EXISTS tray_systems (
   health_score INT NOT NULL DEFAULT 0,
   status VARCHAR(32) NOT NULL DEFAULT 'healthy',
   device_id VARCHAR(64) NOT NULL,
-  last_capture_at DATETIME NOT NULL,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  last_capture_at TIMESTAMP NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS plants (
@@ -26,11 +26,11 @@ CREATE TABLE IF NOT EXISTS plants (
   column_index INT NOT NULL,
   health_score INT NOT NULL DEFAULT 0,
   status VARCHAR(32) NOT NULL DEFAULT 'healthy',
-  last_report_at DATETIME NOT NULL,
+  last_report_at TIMESTAMP NOT NULL,
   latest_diagnosis VARCHAR(160) NOT NULL,
   last_image_url TEXT NULL,
-  last_image_at DATETIME NULL,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  last_image_at TIMESTAMP NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_plant_tray
     FOREIGN KEY (tray_id) REFERENCES tray_systems(id)
 );
@@ -41,11 +41,11 @@ CREATE TABLE IF NOT EXISTS camera_captures (
   tray_name VARCHAR(120) NOT NULL,
   device_id VARCHAR(64) NOT NULL,
   image_url TEXT NOT NULL,
-  captured_at DATETIME NOT NULL,
+  captured_at TIMESTAMP NOT NULL,
   source VARCHAR(32) NOT NULL DEFAULT 'hardware',
   status VARCHAR(32) NOT NULL DEFAULT 'available',
   notes TEXT NULL,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_capture_tray
     FOREIGN KEY (tray_id) REFERENCES tray_systems(id)
 );
@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS prediction_results (
   severity VARCHAR(32) NOT NULL,
   recommendation TEXT NOT NULL,
   vector_source VARCHAR(64) NOT NULL DEFAULT 'qdrant',
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_prediction_capture
     FOREIGN KEY (capture_id) REFERENCES camera_captures(id),
   CONSTRAINT fk_prediction_tray
@@ -80,7 +80,7 @@ CREATE TABLE IF NOT EXISTS plant_reports (
   summary TEXT NOT NULL,
   recommended_action TEXT NOT NULL,
   status VARCHAR(32) NOT NULL DEFAULT 'ready',
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_report_tray
     FOREIGN KEY (tray_id) REFERENCES tray_systems(id),
   CONSTRAINT fk_report_plant
@@ -97,7 +97,7 @@ CREATE TABLE IF NOT EXISTS monitoring_events (
   level VARCHAR(32) NOT NULL,
   title VARCHAR(160) NOT NULL,
   message TEXT NOT NULL,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_event_tray
     FOREIGN KEY (tray_id) REFERENCES tray_systems(id)
 );
@@ -109,7 +109,7 @@ CREATE TABLE IF NOT EXISTS mesh_networks (
   node_count INT NOT NULL DEFAULT 0,
   status VARCHAR(32) NOT NULL DEFAULT 'draft',
   summary TEXT NOT NULL,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE IF NOT EXISTS capture_schedules (
@@ -119,8 +119,8 @@ CREATE TABLE IF NOT EXISTS capture_schedules (
   name VARCHAR(160) NOT NULL,
   interval_minutes INT NOT NULL,
   active BOOLEAN NOT NULL DEFAULT TRUE,
-  next_run_at DATETIME NOT NULL,
-  last_run_at DATETIME NULL,
+  next_run_at TIMESTAMP NOT NULL,
+  last_run_at TIMESTAMP NULL,
   destination VARCHAR(64) NOT NULL DEFAULT 'computer-vision-backend',
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );

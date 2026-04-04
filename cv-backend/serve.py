@@ -29,8 +29,13 @@ from torchvision import models, transforms
 
 app = FastAPI(title="AgriHome PlantVillage CV", version="1.0.0")
 
+# If train used PlantVillage **raw/** as ImageFolder root, class names are these splits — wrong.
+_PLANTVILLAGE_SPLIT_FOLDERS = frozenset({"color", "grayscale", "segmented"})
+
 _model: nn.Module | None = None
 _classes: list[str] = []
+_checkpoint_path: str = ""
+_classes_path: str = ""
 _device = torch.device("cpu")
 _transform = transforms.Compose(
     [
@@ -84,23 +89,56 @@ def decode_image_bytes(image_bytes: bytes) -> Image.Image:
     return Image.fromarray(rgb)
 
 
+def _validate_plantvillage_classes(classes: list[str]) -> None:
+    bad = _PLANTVILLAGE_SPLIT_FOLDERS.intersection(classes)
+    if bad:
+        raise ValueError(
+            "classes.json looks trained on PlantVillage **raw/** (split folders) instead of **raw/color/**.\n"
+            f"  Found invalid class name(s): {sorted(bad)} — expected folders like Squash___Powdery_mildew.\n"
+            "  Retrain: python train.py --data-dir /path/to/PlantVillage-Dataset/raw/color --output-dir ./artifacts\n"
+            "  Then point serve.py at the new best.pt and classes.json."
+        )
+    if len(classes) < 15 and not any("___" in n for n in classes):
+        print(
+            "WARNING: Few classes and no '___' in names — likely wrong --data-dir. "
+            "Full PlantVillage color has ~38 Crop___Condition folders."
+        )
+
+
 def load_checkpoint(path: Path, classes_path: Path) -> None:
-    global _model, _classes, _device
+    global _model, _classes, _device, _checkpoint_path, _classes_path
+
+    _checkpoint_path = str(path.resolve())
+    _classes_path = str(classes_path.resolve())
 
     _classes = json.loads(classes_path.read_text(encoding="utf-8"))
     if not isinstance(_classes, list) or not all(isinstance(c, str) for c in _classes):
         raise ValueError("classes.json must be a JSON array of strings")
+    _validate_plantvillage_classes(_classes)
 
     _device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     ck = torch.load(path, map_location=_device, weights_only=False)
-    num_classes = int(ck.get("num_classes", len(_classes)))
+    state = ck["model_state"]
+    fc_w = state.get("fc.weight")
+    if fc_w is None or not hasattr(fc_w, "shape"):
+        raise ValueError("Checkpoint missing ResNet fc.weight; cannot verify class count")
+    num_from_ck = int(fc_w.shape[0])
+    if len(_classes) != num_from_ck:
+        raise ValueError(
+            f"Mismatch: classes.json has {len(_classes)} names but checkpoint fc has {num_from_ck} outputs. "
+            "Use the classes.json from the same training run as best.pt, or retrain."
+        )
+
     m = models.resnet18(weights=None)
-    m.fc = nn.Linear(m.fc.in_features, num_classes)
-    m.load_state_dict(ck["model_state"])
+    m.fc = nn.Linear(m.fc.in_features, num_from_ck)
+    m.load_state_dict(state)
     m.to(_device)
     m.eval()
     _model = m
-    print(f"Loaded {path} on {_device} ({num_classes} classes)")
+    print(
+        f"Loaded {path} on {_device} ({num_from_ck} classes); "
+        f"labels[0]={_classes[0]!r} from {_classes_path}"
+    )
 
 
 class ClassifyIn(BaseModel):
@@ -108,8 +146,19 @@ class ClassifyIn(BaseModel):
 
 
 @app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok", "classes": str(len(_classes))}
+def health() -> dict[str, Any]:
+    """Use this to confirm the running process sees the same classes.json as on disk (restart after updates)."""
+    out: dict[str, Any] = {
+        "status": "ok",
+        "num_classes": len(_classes),
+        "checkpoint": _checkpoint_path,
+        "classes_file": _classes_path,
+    }
+    if _classes:
+        out["first_class"] = _classes[0]
+        out["last_class"] = _classes[-1]
+        out["class_preview"] = _classes[:5]
+    return out
 
 
 @app.post("/v1/classify")
@@ -117,10 +166,24 @@ def classify(body: ClassifyIn) -> dict[str, Any]:
     if _model is None or not _classes:
         raise HTTPException(503, "Model not loaded")
 
+    if not (body.imageBase64 or "").strip():
+        raise HTTPException(
+            400,
+            "imageBase64 is empty. Send a non-empty base64-encoded JPEG or PNG (e.g. from a real file).",
+        )
+
     try:
-        raw = base64.b64decode(body.imageBase64)
+        raw = base64.b64decode(body.imageBase64.strip(), validate=True)
+    except TypeError:
+        raw = base64.b64decode(body.imageBase64.strip())
     except Exception as e:  # noqa: BLE001
         raise HTTPException(400, f"Invalid base64: {e}") from e
+
+    if len(raw) < 64:
+        raise HTTPException(
+            400,
+            "Decoded image is too small to be a valid image file.",
+        )
 
     try:
         pil = decode_image_bytes(raw)

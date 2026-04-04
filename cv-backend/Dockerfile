@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends libgl1 libglib2
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY train.py serve.py ./
+COPY train.py serve.py dataset_label_map.json ./
 
 # Build-time: copy artifacts/ into image or mount at run:
 #   docker run -v $(pwd)/artifacts:/artifacts -e ... python serve.py --checkpoint /artifacts/best.pt ...

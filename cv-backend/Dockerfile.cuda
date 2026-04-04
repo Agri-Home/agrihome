@@ -14,7 +14,7 @@ WORKDIR /app
 COPY requirements-docker-cuda.txt .
 RUN pip install --no-cache-dir -r requirements-docker-cuda.txt
 
-COPY train.py serve.py ./
+COPY train.py serve.py dataset_label_map.json ./
 
 EXPOSE 8765
 # Override at run time: train, serve, or sleep infinity

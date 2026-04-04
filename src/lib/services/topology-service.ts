@@ -1,10 +1,4 @@
-import { env } from "@/lib/config/env";
-import { getPostgresPool, queryRows } from "@/lib/db/postgres";
-import {
-  createMockMesh,
-  ensureManualTrayInMockStore,
-  getMockStore
-} from "@/lib/services/mock-store";
+import { queryRows, requirePostgresPool } from "@/lib/db/postgres";
 import type { MeshNetwork, TrayPlantDetectionBox, TraySystem } from "@/lib/types/domain";
 
 interface TrayRow {
@@ -57,48 +51,36 @@ const parseStringArray = (value: string[] | string) =>
   Array.isArray(value) ? value : JSON.parse(value);
 
 export const listTraySystems = async (): Promise<TraySystem[]> => {
-  const pool = getPostgresPool();
+  const rows = await queryRows<TrayRow>(
+    `SELECT id, name, zone, crop, plant_count,
+            vision_plant_count, vision_plant_count_at, vision_plant_count_confidence,
+            vision_detections_json,
+            health_score, status, device_id, last_capture_at
+     FROM tray_systems
+     ORDER BY name ASC`
+  );
 
-  if (!env.useMockData && pool) {
-    try {
-      const rows = await queryRows<TrayRow>(
-        `SELECT id, name, zone, crop, plant_count,
-                vision_plant_count, vision_plant_count_at, vision_plant_count_confidence,
-                vision_detections_json,
-                health_score, status, device_id, last_capture_at
-         FROM tray_systems
-         ORDER BY name ASC`
-      );
-
-      return rows.map((row) => ({
-        id: row.id,
-        name: row.name,
-        zone: row.zone,
-        crop: row.crop,
-        plantCount: Number(row.plant_count),
-        visionPlantCount:
-          row.vision_plant_count != null ? Number(row.vision_plant_count) : null,
-        visionPlantCountAt: row.vision_plant_count_at
-          ? new Date(row.vision_plant_count_at).toISOString()
-          : null,
-        visionPlantCountConfidence:
-          row.vision_plant_count_confidence != null
-            ? Number(row.vision_plant_count_confidence)
-            : null,
-        visionDetections: parseTrayDetections(row.vision_detections_json),
-        healthScore: Number(row.health_score),
-        status: row.status,
-        deviceId: row.device_id,
-        lastCaptureAt: new Date(row.last_capture_at).toISOString()
-      }));
-    } catch {
-      ensureManualTrayInMockStore();
-      return getMockStore().trays;
-    }
-  }
-
-  ensureManualTrayInMockStore();
-  return getMockStore().trays;
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    zone: row.zone,
+    crop: row.crop,
+    plantCount: Number(row.plant_count),
+    visionPlantCount:
+      row.vision_plant_count != null ? Number(row.vision_plant_count) : null,
+    visionPlantCountAt: row.vision_plant_count_at
+      ? new Date(row.vision_plant_count_at).toISOString()
+      : null,
+    visionPlantCountConfidence:
+      row.vision_plant_count_confidence != null
+        ? Number(row.vision_plant_count_confidence)
+        : null,
+    visionDetections: parseTrayDetections(row.vision_detections_json),
+    healthScore: Number(row.health_score),
+    status: row.status,
+    deviceId: row.device_id,
+    lastCaptureAt: new Date(row.last_capture_at).toISOString()
+  }));
 };
 
 export const getTrayById = async (id: string): Promise<TraySystem | null> => {
@@ -107,31 +89,21 @@ export const getTrayById = async (id: string): Promise<TraySystem | null> => {
 };
 
 export const listMeshNetworks = async (): Promise<MeshNetwork[]> => {
-  const pool = getPostgresPool();
+  const rows = await queryRows<MeshRow>(
+    `SELECT id, name, tray_ids, node_count, status, created_at, summary
+     FROM mesh_networks
+     ORDER BY created_at DESC`
+  );
 
-  if (!env.useMockData && pool) {
-    try {
-      const rows = await queryRows<MeshRow>(
-        `SELECT id, name, tray_ids, node_count, status, created_at, summary
-         FROM mesh_networks
-         ORDER BY created_at DESC`
-      );
-
-      return rows.map((row) => ({
-        id: row.id,
-        name: row.name,
-        trayIds: parseStringArray(row.tray_ids),
-        nodeCount: Number(row.node_count),
-        status: row.status,
-        createdAt: new Date(row.created_at).toISOString(),
-        summary: row.summary
-      }));
-    } catch {
-      return getMockStore().meshes;
-    }
-  }
-
-  return getMockStore().meshes;
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    trayIds: parseStringArray(row.tray_ids),
+    nodeCount: Number(row.node_count),
+    status: row.status,
+    createdAt: new Date(row.created_at).toISOString(),
+    summary: row.summary
+  }));
 };
 
 export const getMeshById = async (id: string): Promise<MeshNetwork | null> => {
@@ -146,40 +118,31 @@ export const createMeshNetwork = async ({
   name: string;
   trayIds: string[];
 }): Promise<MeshNetwork> => {
-  const pool = getPostgresPool();
+  const pool = requirePostgresPool();
+  const mesh: MeshNetwork = {
+    id: `mesh-${Date.now()}`,
+    name,
+    trayIds,
+    nodeCount: trayIds.length,
+    status: "draft",
+    createdAt: new Date().toISOString(),
+    summary: `${trayIds.length} trays in this group.`
+  };
 
-  if (!env.useMockData && pool) {
-    const mesh: MeshNetwork = {
-      id: `mesh-${Date.now()}`,
-      name,
-      trayIds,
-      nodeCount: trayIds.length,
-      status: "draft",
-      createdAt: new Date().toISOString(),
-      summary: `${trayIds.length} trays in this group.`
-    };
+  await pool.query(
+    `INSERT INTO mesh_networks
+      (id, name, tray_ids, node_count, status, created_at, summary)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [
+      mesh.id,
+      mesh.name,
+      JSON.stringify(mesh.trayIds),
+      mesh.nodeCount,
+      mesh.status,
+      mesh.createdAt,
+      mesh.summary
+    ]
+  );
 
-    try {
-      await pool.query(
-        `INSERT INTO mesh_networks
-          (id, name, tray_ids, node_count, status, created_at, summary)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [
-          mesh.id,
-          mesh.name,
-          JSON.stringify(mesh.trayIds),
-          mesh.nodeCount,
-          mesh.status,
-          mesh.createdAt,
-          mesh.summary
-        ]
-      );
-
-      return mesh;
-    } catch {
-      return createMockMesh(name, trayIds);
-    }
-  }
-
-  return createMockMesh(name, trayIds);
+  return mesh;
 };

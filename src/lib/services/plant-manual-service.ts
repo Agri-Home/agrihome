@@ -1,26 +1,14 @@
-import { mkdir, writeFile } from "fs/promises";
-import path from "path";
-
 import { MANUAL_TRAY_ID } from "@/lib/constants/manual-tray";
-import { env } from "@/lib/config/env";
-import { getPostgresPool } from "@/lib/db/postgres";
-import {
-  buildPlantReportFromPrediction,
-  derivePredictionFromCapture
-} from "@/lib/mocks/data";
+import { requirePostgresPool } from "@/lib/db/postgres";
+import { buildPredictionAndReportFromSpeciesDetection } from "@/lib/services/species-detection-report";
 import { ingestCameraCapture } from "@/lib/services/camera-service";
-import {
-  createManualPlantInStore,
-  ensureManualTrayInMockStore,
-  finalizePlantPhotoAnalysisForPlant,
-  getMockStore
-} from "@/lib/services/mock-store";
 import {
   detectPlantSpeciesFromImage,
   type PlantSpeciesDetection
 } from "@/lib/services/plant-detection-service";
 import { getPlantById } from "@/lib/services/plant-service";
 import { getTrayById } from "@/lib/services/topology-service";
+import { savePlantLeafOriginal } from "@/lib/storage/save-original";
 import type {
   CameraCapture,
   PlantReport,
@@ -42,21 +30,8 @@ export async function createManualPlant(input: {
     throw new Error("Name and cultivar are required");
   }
 
-  const pool = getPostgresPool();
-  if (!env.useMockData && pool) {
-    try {
-      return await createManualPlantPostgres(pool, { name, cultivar, trayId });
-    } catch {
-      // fall through to mock
-    }
-  }
-
-  ensureManualTrayInMockStore();
-  const store = getMockStore();
-  if (!store.trays.some((t) => t.id === trayId)) {
-    throw new Error("Tray not found");
-  }
-  return createManualPlantInStore({ name, cultivar, trayId });
+  const pool = requirePostgresPool();
+  return createManualPlantPostgres(pool, { name, cultivar, trayId });
 }
 
 async function createManualPlantPostgres(
@@ -153,7 +128,8 @@ export async function persistPlantPhotoAndAnalyze(
   plant: PlantUnit,
   file: Buffer,
   mime: string,
-  captureNotes?: string
+  captureNotes?: string,
+  speciesDetection?: PlantSpeciesDetection | null
 ): Promise<{
   captureId: string;
   imageUrl: string;
@@ -165,10 +141,7 @@ export async function persistPlantPhotoAndAnalyze(
   }
 
   const ext = assertImageMime(mime);
-  const imageUrl = `/uploads/plants/${plant.id}-${Date.now()}.${ext}`;
-  const diskPath = path.join(process.cwd(), "public", imageUrl);
-  await mkdir(path.dirname(diskPath), { recursive: true });
-  await writeFile(diskPath, file);
+  const { imageUrl } = await savePlantLeafOriginal(file, ext);
 
   const tray = await getTrayById(plant.trayId);
   const trayName = tray?.name ?? plant.trayId;
@@ -183,22 +156,11 @@ export async function persistPlantPhotoAndAnalyze(
     notes: captureNotes ?? "User-submitted plant photo"
   });
 
-  const pool = getPostgresPool();
-  if (!env.useMockData && pool) {
-    try {
-      return await finalizePhotoPostgres(pool, plant, capture, imageUrl);
-    } catch {
-      // fall through to mock finalization for response + in-memory state
-    }
-  }
+  const pool = requirePostgresPool();
+  const detection =
+    speciesDetection ?? (await detectPlantSpeciesFromImage(file));
 
-  const { report, prediction } = finalizePlantPhotoAnalysisForPlant(plant, capture);
-  return {
-    captureId: capture.id,
-    imageUrl,
-    report,
-    prediction
-  };
+  return finalizePhotoPostgres(pool, plant, capture, imageUrl, detection);
 }
 
 export async function analyzePlantPhotoFromUpload(
@@ -219,7 +181,7 @@ export async function analyzePlantPhotoFromUpload(
 }
 
 /**
- * Photo-first flow: species/cultivar from vision (simulated), then plant row + health report.
+ * Photo-first flow: species/cultivar from the leaf classifier, then plant row + health report.
  */
 export async function createPlantFromPhotoWithAutoDetection(input: {
   file: Buffer;
@@ -259,7 +221,8 @@ export async function createPlantFromPhotoWithAutoDetection(input: {
     plant,
     input.file,
     input.mime,
-    notes
+    notes,
+    detection
   );
 
   const updated = await getPlantById(plant.id);
@@ -275,15 +238,19 @@ async function finalizePhotoPostgres(
   pool: import("pg").Pool,
   plant: PlantUnit,
   capture: CameraCapture,
-  imagePublicPath: string
+  imagePublicPath: string,
+  speciesDetection: PlantSpeciesDetection
 ): Promise<{
   captureId: string;
   imageUrl: string;
   report: PlantReport;
   prediction: PredictionResult;
 }> {
-  const prediction = derivePredictionFromCapture(capture);
-  const report = buildPlantReportFromPrediction(plant, capture, prediction);
+  const { prediction, report } = buildPredictionAndReportFromSpeciesDetection(
+    plant,
+    capture,
+    speciesDetection
+  );
 
   const newHealth =
     prediction.severity === "high"
@@ -313,7 +280,7 @@ async function finalizePhotoPostgres(
         prediction.confidence,
         prediction.severity,
         prediction.recommendation,
-        "mock"
+        prediction.vectorSource
       ]
     );
     await client.query(

@@ -1,6 +1,4 @@
-import { env } from "@/lib/config/env";
-import { getPostgresPool, queryRows } from "@/lib/db/postgres";
-import { getMockStore, ingestMockCapture } from "@/lib/services/mock-store";
+import { queryRows, requirePostgresPool } from "@/lib/db/postgres";
 import type { CameraCapture } from "@/lib/types/domain";
 
 interface CameraCaptureRow {
@@ -27,50 +25,28 @@ const mapCaptureRow = (row: CameraCaptureRow): CameraCapture => ({
   notes: row.notes ?? undefined
 });
 
-export const getCameraDataSource = async () => {
-  const pool = getPostgresPool();
-
-  return !env.useMockData && pool ? "postgres" : "mock";
-};
+export const getCameraDataSource = async () => "postgres" as const;
 
 export const getLatestCameraCapture = async (
   trayId?: string
 ): Promise<CameraCapture | null> => {
-  const pool = getPostgresPool();
-
-  if (!env.useMockData && pool) {
-    try {
-      const values: string[] = [];
-      const whereClause = trayId
-        ? (() => {
-            values.push(trayId);
-            return `WHERE tray_id = $${values.length}`;
-          })()
-        : "";
-      const rows = await queryRows<CameraCaptureRow>(
-        `SELECT id, tray_id, tray_name, device_id, image_url, captured_at, source, status, notes
-         FROM camera_captures
-         ${whereClause}
-         ORDER BY captured_at DESC
-         LIMIT 1`,
-        values
-      );
-
-      return rows[0] ? mapCaptureRow(rows[0]) : null;
-    } catch {
-      return (
-        getMockStore().captures.find((capture) =>
-          trayId ? capture.trayId === trayId : true
-        ) ?? null
-      );
-    }
-  }
-
-  return (
-    getMockStore().captures.find((capture) =>
-      trayId ? capture.trayId === trayId : true
-    ) ?? null
+  const values: string[] = [];
+  const whereClause = trayId
+    ? (() => {
+        values.push(trayId);
+        return `WHERE tray_id = $${values.length}`;
+      })()
+    : "";
+  const rows = await queryRows<CameraCaptureRow>(
+    `SELECT id, tray_id, tray_name, device_id, image_url, captured_at, source, status, notes
+     FROM camera_captures
+     ${whereClause}
+     ORDER BY captured_at DESC
+     LIMIT 1`,
+    values
   );
+
+  return rows[0] ? mapCaptureRow(rows[0]) : null;
 };
 
 export const ingestCameraCapture = async (
@@ -88,32 +64,23 @@ export const ingestCameraCapture = async (
     notes: payload.notes
   };
 
-  const pool = getPostgresPool();
+  const pool = requirePostgresPool();
+  await pool.query(
+    `INSERT INTO camera_captures
+      (id, tray_id, tray_name, device_id, image_url, captured_at, source, status, notes)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+    [
+      capture.id,
+      capture.trayId,
+      capture.trayName,
+      capture.deviceId,
+      capture.imageUrl,
+      capture.capturedAt,
+      capture.source,
+      capture.status,
+      capture.notes ?? null
+    ]
+  );
 
-  if (!env.useMockData && pool) {
-    try {
-      await pool.query(
-        `INSERT INTO camera_captures
-          (id, tray_id, tray_name, device_id, image_url, captured_at, source, status, notes)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-        [
-          capture.id,
-          capture.trayId,
-          capture.trayName,
-          capture.deviceId,
-          capture.imageUrl,
-          capture.capturedAt,
-          capture.source,
-          capture.status,
-          capture.notes ?? null
-        ]
-      );
-
-      return capture;
-    } catch {
-      return ingestMockCapture(capture).capture;
-    }
-  }
-
-  return ingestMockCapture(capture).capture;
+  return capture;
 };

@@ -25,16 +25,25 @@ export const getPostgresPool = () => {
   return globalThis.__agrihomePostgresPool__;
 };
 
+/** Throws if PostgreSQL is not configured. The app does not use in-memory mock data. */
+export const requirePostgresPool = (): Pool => {
+  if (!hasPostgresConfig) {
+    throw new Error(
+      "PostgreSQL is required. Set POSTGRES_HOST, POSTGRES_USER, POSTGRES_DATABASE (and password if needed)."
+    );
+  }
+  const pool = getPostgresPool();
+  if (!pool) {
+    throw new Error("PostgreSQL pool could not be created.");
+  }
+  return pool;
+};
+
 export const queryRows = async <TRow>(
   text: string,
   values: Array<string | number | boolean | null> = []
 ) => {
-  const pool = getPostgresPool();
-
-  if (!pool) {
-    return [];
-  }
-
+  const pool = requirePostgresPool();
   const result = await pool.query(text, values);
 
   return result.rows as TRow[];
