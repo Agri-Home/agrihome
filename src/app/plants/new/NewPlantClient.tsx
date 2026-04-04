@@ -15,6 +15,9 @@ type Detection = {
   commonName: string;
   cultivar: string;
   identificationConfidence: number;
+  plantCondition?: string;
+  rawLabel?: string;
+  isHealthy?: boolean;
 };
 
 export function NewPlantClient({ trays }: { trays: TraySystem[] }) {
@@ -132,10 +135,22 @@ export function NewPlantClient({ trays }: { trays: TraySystem[] }) {
           <section>
             <SectionTitle>Identification</SectionTitle>
             <Card className="space-y-2 p-4">
-              <p className="text-lg font-semibold text-ink">{detection.commonName}</p>
-              <p className="text-sm text-ink/65">{detection.cultivar}</p>
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-lg font-semibold text-ink">{detection.commonName}</p>
+                {detection.isHealthy === true ? (
+                  <Badge tone="success">Healthy class</Badge>
+                ) : detection.isHealthy === false ? (
+                  <Badge tone="warning">Condition flagged</Badge>
+                ) : null}
+              </div>
+              <p className="text-sm text-ink/65">
+                {detection.plantCondition ?? detection.cultivar}
+              </p>
+              {detection.rawLabel ? (
+                <p className="font-mono text-[0.65rem] text-ink/35">{detection.rawLabel}</p>
+              ) : null}
               <p className="text-xs tabular-nums text-ink/50">
-                Species confidence {(detection.identificationConfidence * 100).toFixed(1)}%
+                Model confidence {(detection.identificationConfidence * 100).toFixed(1)}%
               </p>
               <p className="text-xs text-ink/45">
                 Saved as <span className="font-medium text-ink/70">{plant.name}</span> — rename on

@@ -146,6 +146,8 @@ export interface SystemHealth {
   cameraPipeline: "online" | "simulated";
   /** Tray photo → plant count / boxes: remote HTTP vs built-in simulator. */
   trayVisionInference: "remote" | "simulated";
+  /** Close-up plant photo → species: remote HTTP vs built-in simulator. */
+  speciesInference: "remote" | "simulated";
 }
 
 export interface DashboardSnapshot {

@@ -15,7 +15,10 @@ import {
   finalizePlantPhotoAnalysisForPlant,
   getMockStore
 } from "@/lib/services/mock-store";
-import { detectPlantSpeciesFromImage } from "@/lib/services/plant-detection-service";
+import {
+  detectPlantSpeciesFromImage,
+  type PlantSpeciesDetection
+} from "@/lib/services/plant-detection-service";
 import { getPlantById } from "@/lib/services/plant-service";
 import { getTrayById } from "@/lib/services/topology-service";
 import type {
@@ -228,7 +231,7 @@ export async function createPlantFromPhotoWithAutoDetection(input: {
   cultivarOverride?: string;
 }): Promise<{
   plant: PlantUnit;
-  detection: ReturnType<typeof detectPlantSpeciesFromImage>;
+  detection: PlantSpeciesDetection;
   captureId: string;
   imageUrl: string;
   report: PlantReport;
@@ -238,7 +241,7 @@ export async function createPlantFromPhotoWithAutoDetection(input: {
     throw new Error("Image too large (max 6MB)");
   }
 
-  const detection = detectPlantSpeciesFromImage(input.file);
+  const detection = await detectPlantSpeciesFromImage(input.file);
   const name = input.displayName?.trim() || detection.commonName;
   const cultivar =
     input.cultivarOverride?.trim() || detection.cultivar;
@@ -249,7 +252,8 @@ export async function createPlantFromPhotoWithAutoDetection(input: {
     trayId: input.trayId
   });
 
-  const notes = `Species ID: ${detection.commonName} · ${(detection.identificationConfidence * 100).toFixed(0)}% confidence`;
+  const cond = detection.plantCondition ?? detection.cultivar;
+  const notes = `Species ID: ${detection.commonName} · ${cond} · ${(detection.identificationConfidence * 100).toFixed(0)}% confidence`;
 
   const analysis = await persistPlantPhotoAndAnalyze(
     plant,

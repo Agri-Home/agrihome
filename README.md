@@ -17,9 +17,9 @@ Full-stack **Next.js** monitoring UI for tray- and plant-level crop health: came
 ## Features
 
 - **Overview** (`/`) — Latest frame, tray list, chart snapshot.
-- **Trays** — List, tray detail (image, monitoring chart, plants with thumbnails, events). **Tray CV**: upload a top-down photo to run **automatic plant detection + count** (`POST /api/trays/{trayId}/vision`); optional **`CV_TRAY_INFERENCE_URL`** for a real model trained on your Kaggle (or other) data ([docs/CV_KAGGLE_PIPELINE.md](docs/CV_KAGGLE_PIPELINE.md)).
+- **Trays** — List, tray detail (image, monitoring chart, plants with thumbnails, events). **Tray CV**: upload a top-down photo for **plant count + instance boxes** (`POST /api/trays/{trayId}/vision`); optional **`CV_TRAY_INFERENCE_URL`** ([docs/CV_PIPELINE.md](docs/CV_PIPELINE.md)).
 - **Plants** — Detail: last image, health trend, reports, monitoring log.
-- **Add plant** (`/plants/new`) — Photo-first flow: **auto species/cultivar** (simulated from image bytes) + **health report** (`POST /api/plants/from-photo`).
+- **Add plant** (`/plants/new`) — **Leaf photo → crop + disease/healthy** via `detectPlantSpeciesFromImage` (simulator by default, or **`CV_SPECIES_INFERENCE_URL`** pointing at **`cv-backend`** trained on [PlantVillage `raw/color`](https://github.com/spMohanty/PlantVillage-Dataset/tree/master/raw/color)) + health report (`POST /api/plants/from-photo`). See [docs/CV_PIPELINE.md](docs/CV_PIPELINE.md).
 - **Mesh** — Group trays; mesh detail with merged activity and plants.
 - **Schedule** — Capture intervals for trays or meshes.
 - **Standalone build** — `output: "standalone"`; `postbuild` copies static assets into `.next/standalone` for container runs.
@@ -45,14 +45,15 @@ See `.env.example` for variables (including legacy `MARIADB_*` aliases read by `
 | Doc | Description |
 |-----|-------------|
 | [docs/IMPLEMENTATION_GUIDE.md](docs/IMPLEMENTATION_GUIDE.md) | Scope, architecture pointers, REST/GraphQL, schema, env, roadmap |
-| [docs/CV_KAGGLE_PIPELINE.md](docs/CV_KAGGLE_PIPELINE.md) | Kaggle-style training path, HTTP contract for tray detection/count, env vars |
+| [docs/CV_PIPELINE.md](docs/CV_PIPELINE.md) | PlantVillage training + `cv-backend`, species/disease HTTP contract, tray CV |
+| [cv-backend/README.md](cv-backend/README.md) | PyTorch train/serve commands, Docker |
 | [docs/diagrams/README.md](docs/diagrams/README.md) | **Mermaid** diagrams: architecture, integrations, UML-style domain/services, use cases |
 
 ## API routes (REST)
 
 | Method | Path | Notes |
 |--------|------|--------|
-| GET | `/api/health` | API / DB / vector / pipeline flags |
+| GET | `/api/health` | API / DB / vector / pipeline; `trayVisionInference` + `speciesInference` (`remote` or `simulated`) |
 | GET | `/api/camera/latest` | `?trayId=` optional |
 | POST | `/api/camera/ingest` | JSON body — frame metadata |
 | GET | `/api/predictions/latest` | `?trayId=` optional |

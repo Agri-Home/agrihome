@@ -26,10 +26,13 @@ export const env = {
     apiKey: process.env.QDRANT_API_KEY ?? "",
     collection: process.env.QDRANT_COLLECTION ?? "agrihome-image-embeddings"
   },
-  /** Optional HTTP endpoint for tray photo → plant count + boxes (see docs/CV_KAGGLE_PIPELINE.md). */
+  /** Optional HTTP endpoints for CV (see docs/CV_PIPELINE.md). */
   cv: {
     trayInferenceUrl: process.env.CV_TRAY_INFERENCE_URL ?? "",
-    trayInferenceApiKey: process.env.CV_TRAY_INFERENCE_API_KEY ?? ""
+    trayInferenceApiKey: process.env.CV_TRAY_INFERENCE_API_KEY ?? "",
+    /** Close-up / leaf photo → species labels (train on e.g. Kaggle plant-identification). */
+    speciesInferenceUrl: process.env.CV_SPECIES_INFERENCE_URL ?? "",
+    speciesInferenceApiKey: process.env.CV_SPECIES_INFERENCE_API_KEY ?? ""
   }
 };
 
@@ -42,3 +45,5 @@ export const hasPostgresConfig = Boolean(
 export const hasVectorConfig = Boolean(env.qdrant.url);
 
 export const hasTrayVisionInferenceConfig = Boolean(env.cv.trayInferenceUrl);
+
+export const hasSpeciesInferenceConfig = Boolean(env.cv.speciesInferenceUrl);
