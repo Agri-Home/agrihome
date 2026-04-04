@@ -4,14 +4,16 @@
 
 This document describes what has been implemented so far in the AgriHome Vision Console, how the current system is structured, which APIs are available, and what the most important next enhancements should be.
 
-The current application is a full-stack monitoring console for a future plant-health hardware platform. It is designed to work today with mock data and later switch to real hardware cameras, ML inference, MariaDB persistence, and vector-search-backed image recognition.
+The current application is a full-stack monitoring console for a future plant-health hardware platform. It is designed to work today with mock data and later switch to real hardware cameras, ML inference, PostgreSQL persistence, and vector-search-backed image recognition.
+
+**Diagrams (Mermaid):** [docs/diagrams/README.md](./diagrams/README.md) — architecture, integrations, UML-style domain/services, and use cases.
 
 ## 2. Current Scope
 
 Implemented so far:
 
 - A Next.js App Router application with TypeScript and Tailwind CSS
-- A modern monitoring dashboard UI based on the `Plant Health Monitoring App` design direction
+- A mobile-first Vision Console UI: overview, tray drill-down, plant detail (charts, reports), mesh, schedules, and photo-first “add plant”
 - Multi-tray monitoring
 - Tray-specific live image, prediction, and monitoring views
 - Individual plant tracking within trays
@@ -20,7 +22,7 @@ Implemented so far:
 - Mesh creation to group trays/systems into monitoring topologies
 - REST API routes for camera, prediction, monitoring, trays, mesh, health, and GraphQL
 - GraphQL Yoga endpoint for read access and mesh creation
-- MariaDB-ready service and schema layer
+- PostgreSQL-ready service and schema layer (`src/lib/db/postgres.ts`)
 - Qdrant-ready vector-search abstraction
 - Mock-first data and simulation layer so the app works before hardware and ML integration are ready
 - GitHub Actions workflow for Docker image release after successful validation
@@ -29,75 +31,65 @@ Not fully implemented yet:
 
 - Real hardware camera ingestion from deployed devices
 - Real ML model inference pipeline
-- Persistent MariaDB writes for tray systems, meshes, predictions, and monitoring in all flows
+- Persistent PostgreSQL writes for all flows in every edge case (some paths still mock-fallback on error)
 - Real vector embeddings and full image-recognition pipeline
 - Authentication, authorization, and multi-user operations
 - Mesh visualization and mesh-level orchestration logic
 
 ## 3. High-Level Architecture
 
+Visual overview: [docs/diagrams/01-architecture.md](./diagrams/01-architecture.md).
+
 ### Frontend
 
-Main UI:
-
-- Dashboard page: [src/app/page.tsx](/Users/laxmanbhusal/agrihome/src/app/page.tsx)
-- Main client template: [src/components/templates/DashboardTemplate.tsx](/Users/laxmanbhusal/agrihome/src/components/templates/DashboardTemplate.tsx)
-
-Design system:
-
-- Atoms: [src/components/atoms](/Users/laxmanbhusal/agrihome/src/components/atoms)
-- Molecules: [src/components/molecules](/Users/laxmanbhusal/agrihome/src/components/molecules)
-- Global styling: [src/app/globals.css](/Users/laxmanbhusal/agrihome/src/app/globals.css)
+- Root layout: [src/app/layout.tsx](../src/app/layout.tsx) — `PwaProvider`, `AppShell` (sidebar desktop, bottom nav mobile).
+- Shell: [src/components/shell/AppShell.tsx](../src/components/shell/AppShell.tsx).
+- Routes (App Router):
+  - Overview: [src/app/page.tsx](../src/app/page.tsx)
+  - Trays: [src/app/trays/page.tsx](../src/app/trays/page.tsx), [src/app/trays/[trayId]/page.tsx](../src/app/trays/[trayId]/page.tsx)
+  - Plants: [src/app/plants/[plantId]/page.tsx](../src/app/plants/[plantId]/page.tsx), [src/app/plants/new/](../src/app/plants/new/) (photo-first add + auto species + health report)
+  - Mesh: [src/app/mesh/page.tsx](../src/app/mesh/page.tsx), [src/app/mesh/[meshId]/page.tsx](../src/app/mesh/[meshId]/page.tsx)
+  - Schedule: [src/app/schedule/page.tsx](../src/app/schedule/page.tsx)
+- Charts (Recharts, client-only framing): [src/components/charts/](../src/components/charts/), [src/components/media/PlantImage.tsx](../src/components/media/PlantImage.tsx) (uploads vs optimized images).
+- Design system: [src/components/atoms/](../src/components/atoms/), [src/components/app/](../src/components/app/), [src/app/globals.css](../src/app/globals.css).
 
 ### Backend
 
-REST API routes:
+REST API routes (representative):
 
-- [src/app/api/camera/latest/route.ts](/Users/laxmanbhusal/agrihome/src/app/api/camera/latest/route.ts)
-- [src/app/api/camera/ingest/route.ts](/Users/laxmanbhusal/agrihome/src/app/api/camera/ingest/route.ts)
-- [src/app/api/predictions/latest/route.ts](/Users/laxmanbhusal/agrihome/src/app/api/predictions/latest/route.ts)
-- [src/app/api/monitoring/log/route.ts](/Users/laxmanbhusal/agrihome/src/app/api/monitoring/log/route.ts)
-- [src/app/api/trays/route.ts](/Users/laxmanbhusal/agrihome/src/app/api/trays/route.ts)
-- [src/app/api/mesh/route.ts](/Users/laxmanbhusal/agrihome/src/app/api/mesh/route.ts)
-- [src/app/api/health/route.ts](/Users/laxmanbhusal/agrihome/src/app/api/health/route.ts)
-- [src/app/api/graphql/route.ts](/Users/laxmanbhusal/agrihome/src/app/api/graphql/route.ts)
+- Camera: [src/app/api/camera/latest/route.ts](../src/app/api/camera/latest/route.ts), [src/app/api/camera/ingest/route.ts](../src/app/api/camera/ingest/route.ts)
+- Predictions: [src/app/api/predictions/latest/route.ts](../src/app/api/predictions/latest/route.ts)
+- Monitoring: [src/app/api/monitoring/log/route.ts](../src/app/api/monitoring/log/route.ts)
+- Topology: [src/app/api/trays/route.ts](../src/app/api/trays/route.ts), [src/app/api/mesh/route.ts](../src/app/api/mesh/route.ts)
+- Plants & reports: [src/app/api/plants/route.ts](../src/app/api/plants/route.ts), [src/app/api/plants/manual/route.ts](../src/app/api/plants/manual/route.ts), [src/app/api/plants/from-photo/route.ts](../src/app/api/plants/from-photo/route.ts), [src/app/api/plants/[plantId]/photo/route.ts](../src/app/api/plants/[plantId]/photo/route.ts), [src/app/api/reports/route.ts](../src/app/api/reports/route.ts)
+- Schedules: [src/app/api/schedules/route.ts](../src/app/api/schedules/route.ts)
+- Health & GraphQL: [src/app/api/health/route.ts](../src/app/api/health/route.ts), [src/app/api/graphql/route.ts](../src/app/api/graphql/route.ts)
 
 Service layer:
 
-- Camera service: [src/lib/services/camera-service.ts](/Users/laxmanbhusal/agrihome/src/lib/services/camera-service.ts)
-- Prediction service: [src/lib/services/prediction-service.ts](/Users/laxmanbhusal/agrihome/src/lib/services/prediction-service.ts)
-- Monitoring service: [src/lib/services/monitoring-service.ts](/Users/laxmanbhusal/agrihome/src/lib/services/monitoring-service.ts)
-- Topology service: [src/lib/services/topology-service.ts](/Users/laxmanbhusal/agrihome/src/lib/services/topology-service.ts)
-- Plant service: [src/lib/services/plant-service.ts](/Users/laxmanbhusal/agrihome/src/lib/services/plant-service.ts)
-- Schedule service: [src/lib/services/schedule-service.ts](/Users/laxmanbhusal/agrihome/src/lib/services/schedule-service.ts)
-- Vector service: [src/lib/services/vector-service.ts](/Users/laxmanbhusal/agrihome/src/lib/services/vector-service.ts)
-- Mock store: [src/lib/services/mock-store.ts](/Users/laxmanbhusal/agrihome/src/lib/services/mock-store.ts)
+- Camera, prediction, monitoring, topology, plant, schedule, vector — under [src/lib/services/](../src/lib/services/)
+- Manual / photo flows: [src/lib/services/plant-manual-service.ts](../src/lib/services/plant-manual-service.ts), [src/lib/services/plant-detection-service.ts](../src/lib/services/plant-detection-service.ts) (simulated species ID from image bytes)
+- Mock: [src/lib/services/mock-store.ts](../src/lib/services/mock-store.ts), seed [src/lib/mocks/data.ts](../src/lib/mocks/data.ts)
 
-### Persistence and Infrastructure
+### Persistence and infrastructure
 
-- MariaDB connection pool: [src/lib/db/mariadb.ts](/Users/laxmanbhusal/agrihome/src/lib/db/mariadb.ts)
-- GraphQL schema: [src/lib/graphql/schema.ts](/Users/laxmanbhusal/agrihome/src/lib/graphql/schema.ts)
-- Environment config: [src/lib/config/env.ts](/Users/laxmanbhusal/agrihome/src/lib/config/env.ts)
-- Domain models: [src/lib/types/domain.ts](/Users/laxmanbhusal/agrihome/src/lib/types/domain.ts)
-- SQL schema: [db/schema.sql](/Users/laxmanbhusal/agrihome/db/schema.sql)
+- PostgreSQL pool: [src/lib/db/postgres.ts](../src/lib/db/postgres.ts) (env also accepts legacy `MARIADB_*` names as aliases in [src/lib/config/env.ts](../src/lib/config/env.ts))
+- GraphQL schema: [src/lib/graphql/schema.ts](../src/lib/graphql/schema.ts)
+- Environment: [src/lib/config/env.ts](../src/lib/config/env.ts)
+- Domain types: [src/lib/types/domain.ts](../src/lib/types/domain.ts)
+- SQL: [db/schema.sql](../db/schema.sql)
 
 ## 4. Implemented Functional Areas
 
-### 4.1 Dashboard UI
+### 4.1 Vision Console UI
 
-The dashboard currently supports:
-
-- Tray selection for monitoring one tray/system at a time
-- Live image display for the selected tray
-- Auto-refresh and manual refresh
-- Placeholder state if the selected tray has no current image
-- Latest prediction result with severity and recommendation
-- Plant-level health cards inside each tray
-- Plant-level diagnosis reports including disease candidates, deficiencies, and recommended action
-- Editable tray capture schedule management
-- Similar image references from the vector-search layer
-- Monitoring log scoped to the selected tray
-- Mesh creation, mesh listing, and mesh-oriented schedule management
+- **Home (`/`)** — Latest frame (when available), tray list, summary chart.
+- **Trays** — List and **tray detail** with latest image, monitoring area chart, plant rows (thumbnails), monitoring events.
+- **Plants** — **Plant detail** with last image, health line chart (reports), monitoring log, report history.
+- **Add plant (`/plants/new`)** — Tray picker, single photo upload; **auto species/cultivar** (simulated from image hash) + **health report** via `POST /api/plants/from-photo`.
+- **Mesh** — List, create form, **mesh detail** with merged monitoring chart and plant list.
+- **Schedule** — List/edit capture schedules (tray or mesh scope).
+- **PWA** — Service worker + install hints via `PwaProvider`.
 
 ### 4.2 Camera Flow
 
@@ -107,7 +99,7 @@ Current behavior:
 - Optional `trayId` query parameter scopes the response to one tray
 - `POST /api/camera/ingest` accepts a new frame for a tray
 - If the app is running in mock mode, the data is stored in the in-memory mock store
-- If MariaDB is configured and mock mode is disabled, the service is structured to write to the database
+- If PostgreSQL is configured and mock mode is disabled, captures are written to the database (with mock fallback on error)
 
 ### 4.3 Prediction Flow
 
@@ -124,7 +116,7 @@ Current behavior:
 Current behavior:
 
 - `GET /api/monitoring/log` returns event history
-- Supports `limit` and optional `trayId`
+- Supports `limit`, optional `trayId`, optional `plantId`
 - Events represent hardware, prediction, and environmental states
 - The UI uses these events to show tray-level operational detail
 
@@ -163,7 +155,7 @@ Current behavior:
 
 ## 5. Domain Model
 
-Key entities from [domain.ts](/Users/laxmanbhusal/agrihome/src/lib/types/domain.ts):
+Key entities from [domain.ts](../src/lib/types/domain.ts):
 
 ### TraySystem
 
@@ -236,6 +228,8 @@ Key entities from [domain.ts](/Users/laxmanbhusal/agrihome/src/lib/types/domain.
 - `status`
 - `lastReportAt`
 - `latestDiagnosis`
+- `lastImageUrl` (nullable)
+- `lastImageAt`
 
 ### PlantReport
 
@@ -330,7 +324,7 @@ Purpose:
 Current behavior:
 
 - Stores to mock store in mock mode
-- Structured to write to MariaDB in real mode
+- Structured to write to PostgreSQL in live mode
 
 ### 6.4 Latest Prediction
 
@@ -416,7 +410,37 @@ Purpose:
 
 - Returns individual plants for a tray or for all trays
 
-### 6.10 Plant Reports
+### 6.10 Create plant (manual JSON)
+
+`POST /api/plants/manual`
+
+Body (JSON):
+
+```json
+{
+  "name": "Kitchen basil",
+  "cultivar": "Ocimum basilicum 'Genovese'",
+  "trayId": "tray-manual"
+}
+```
+
+- Creates a plant row (mock store or PostgreSQL). Tray defaults to `tray-manual` (“My plants”) when omitted.
+
+### 6.11 Create plant from photo (auto species + health report)
+
+`POST /api/plants/from-photo`
+
+- `multipart/form-data`: field `photo` (file), optional `trayId`, optional `displayName`, optional `cultivar` override.
+- Runs simulated species detection from image bytes, creates the plant, saves file under `public/uploads/plants/`, ingests capture, generates prediction + plant report.
+
+### 6.12 Analyze existing plant photo
+
+`POST /api/plants/{plantId}/photo`
+
+- `multipart/form-data`: field `photo` (file).
+- Attaches image and runs health analysis for an existing plant.
+
+### 6.13 Plant Reports
 
 `GET /api/reports`
 
@@ -430,7 +454,7 @@ Purpose:
 
 - Returns plant-level diagnostic reports, including disease and deficiency information
 
-### 6.11 Capture Schedules
+### 6.14 Capture Schedules
 
 `GET /api/schedules`
 
@@ -480,13 +504,13 @@ Endpoint:
 
 Schema source:
 
-- [src/lib/graphql/schema.ts](/Users/laxmanbhusal/agrihome/src/lib/graphql/schema.ts)
+- [src/lib/graphql/schema.ts](../src/lib/graphql/schema.ts)
 
 ### Supported Queries
 
 - `latestImage(trayId: String)`
 - `latestPrediction(trayId: String)`
-- `monitoringLog(limit: Int, trayId: String)`
+- `monitoringLog(limit: Int, trayId: String, plantId: String)`
 - `traySystems`
 - `meshNetworks`
 - `plants(trayId: String)`
@@ -561,7 +585,7 @@ Current SQL schema:
 
 Schema file:
 
-- [db/schema.sql](/Users/laxmanbhusal/agrihome/db/schema.sql)
+- [db/schema.sql](../db/schema.sql)
 
 Important current design notes:
 
@@ -578,32 +602,27 @@ Important current design notes:
 
 Configuration source:
 
-- [src/lib/config/env.ts](/Users/laxmanbhusal/agrihome/src/lib/config/env.ts)
+- [src/lib/config/env.ts](../src/lib/config/env.ts)
 
-Important variables:
+Important variables (see `.env.example`):
 
-- `NEXT_PUBLIC_USE_MOCK_DATA`
-- `MARIADB_HOST`
-- `MARIADB_PORT`
-- `MARIADB_USER`
-- `MARIADB_PASSWORD`
-- `MARIADB_DATABASE`
-- `QDRANT_URL`
-- `QDRANT_API_KEY`
-- `QDRANT_COLLECTION`
+- `NEXT_PUBLIC_USE_MOCK_DATA` — default behavior in code treats unset as mock-friendly; set to `false` for DB-backed runs
+- `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DATABASE`
+- Legacy aliases still read in [env.ts](../src/lib/config/env.ts): `MARIADB_HOST`, `MARIADB_PORT`, `MARIADB_USER`, `MARIADB_PASSWORD`, `MARIADB_DATABASE`
+- `QDRANT_URL`, `QDRANT_API_KEY`, `QDRANT_COLLECTION`
 
 Current runtime behavior:
 
 - If mock mode is enabled, services read from the in-memory mock store
-- If mock mode is disabled and MariaDB is configured, services attempt database access
+- If mock mode is disabled and PostgreSQL is configured, services attempt database access (many code paths fall back to mock on query failure)
 - If Qdrant is configured, vector lookups can move from mock similarity matches to real vector search
 
 ## 10. Docker and Release Automation
 
 Files:
 
-- Dockerfile: [Dockerfile](/Users/laxmanbhusal/agrihome/Dockerfile)
-- Workflow: [docker-release.yml](/Users/laxmanbhusal/agrihome/.github/workflows/docker-release.yml)
+- Dockerfile: [Dockerfile](../Dockerfile)
+- Workflow: [docker-release.yml](../.github/workflows/docker-release.yml)
 
 Current pipeline behavior:
 
@@ -624,7 +643,7 @@ Image tagging:
 Reasonably ready:
 
 - Next.js application structure
-- Dashboard shell and tray-aware monitoring UI
+- App shell and drill-down monitoring UI (trays, plants, mesh, schedules)
 - REST and GraphQL endpoint shape
 - Service-layer separation
 - Database schema direction
@@ -636,7 +655,7 @@ Still mocked or partial:
 - Embedding generation
 - Real Qdrant population and query strategy
 - Hardware camera streaming and transport
-- Persistent topology management beyond mock-first flows
+- Persistent topology management for every code path (some still mock-fallback)
 - Security hardening
 - Auditability and observability
 
@@ -645,7 +664,7 @@ Still mocked or partial:
 ### Immediate
 
 - Add authentication and role-based access control
-- Persist trays, captures, predictions, events, and meshes fully in MariaDB
+- Persist trays, captures, predictions, events, and meshes fully in PostgreSQL without silent mock fallback
 - Add request validation with a schema library such as Zod
 - Add API error normalization and structured error responses
 - Add unit and integration tests for services and API routes
@@ -668,7 +687,7 @@ Still mocked or partial:
 
 ### Mesh and Topology
 
-- Add a mesh detail page
+- Add mesh topology graph / node visualization beyond the current mesh detail page
 - Add tray-to-tray link visualization
 - Add mesh-level aggregate health scoring
 - Add mesh alert propagation rules
@@ -686,7 +705,7 @@ Still mocked or partial:
 
 ### Milestone 1
 
-- Real MariaDB persistence
+- Hardened PostgreSQL persistence (no silent fallback where inappropriate)
 - Route validation
 - Test coverage for API routes
 
