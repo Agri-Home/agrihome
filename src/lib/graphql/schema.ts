@@ -11,6 +11,10 @@ import {
   listTraySystems
 } from "@/lib/services/topology-service";
 import {
+  deletePlantById,
+  updatePlantById
+} from "@/lib/services/plant-service";
+import {
   hasSpeciesInferenceConfig,
   hasTrayVisionInferenceConfig
 } from "@/lib/config/env";
@@ -103,6 +107,7 @@ export const schema = createSchema({
       meshIds: [String!]!
       name: String!
       cultivar: String!
+      description: String
       slotLabel: String!
       row: Int!
       column: Int!
@@ -166,6 +171,13 @@ export const schema = createSchema({
 
     type Mutation {
       createMeshNetwork(name: String!, trayIds: [String!]!): MeshNetwork!
+      updatePlant(
+        plantId: ID!
+        name: String
+        cultivar: String
+        description: String
+      ): PlantUnit!
+      deletePlant(plantId: ID!): Boolean!
       upsertSchedule(
         id: String
         scopeType: String!
@@ -211,6 +223,29 @@ export const schema = createSchema({
         _parent,
         args: { name: string; trayIds: string[] }
       ) => createMeshNetwork(args),
+      updatePlant: async (
+        _parent,
+        args: {
+          plantId: string;
+          name?: string | null;
+          cultivar?: string | null;
+          description?: string | null;
+        }
+      ) => {
+        const plant = await updatePlantById(args.plantId, {
+          ...(args.name != null ? { name: args.name } : {}),
+          ...(args.cultivar != null ? { cultivar: args.cultivar } : {}),
+          ...(args.description !== undefined
+            ? { description: args.description }
+            : {})
+        });
+        if (!plant) {
+          throw new Error("Plant not found");
+        }
+        return plant;
+      },
+      deletePlant: (_parent, args: { plantId: string }) =>
+        deletePlantById(args.plantId),
       upsertSchedule: (
         _parent,
         args: {

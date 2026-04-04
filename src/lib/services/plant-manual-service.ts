@@ -70,8 +70,8 @@ async function createManualPlantPostgres(
   await pool.query(
     `INSERT INTO plants
       (id, tray_id, mesh_ids, name, cultivar, slot_label, row_index, column_index,
-       health_score, status, last_report_at, latest_diagnosis, last_image_url, last_image_at)
-     VALUES ($1,$2,$3::json,$4,$5,$6,$7,$8,88,'healthy',$9,$10,NULL,NULL)`,
+       health_score, status, last_report_at, latest_diagnosis, description, last_image_url, last_image_at)
+     VALUES ($1,$2,$3::json,$4,$5,$6,$7,$8,88,'healthy',$9,$10,NULL,NULL,NULL)`,
     [
       plantId,
       trayId,
@@ -97,6 +97,7 @@ async function createManualPlantPostgres(
     meshIds: [],
     name,
     cultivar,
+    description: null,
     slotLabel: `M-${n}`,
     row: Math.ceil(n / 3),
     column: ((n - 1) % 3) + 1,
@@ -168,6 +169,7 @@ export async function analyzePlantPhotoFromUpload(
   file: Buffer,
   mime: string
 ): Promise<{
+  plant: PlantUnit;
   captureId: string;
   imageUrl: string;
   report: PlantReport;
@@ -177,7 +179,12 @@ export async function analyzePlantPhotoFromUpload(
   if (!plant) {
     throw new Error("Plant not found");
   }
-  return persistPlantPhotoAndAnalyze(plant, file, mime);
+  const out = await persistPlantPhotoAndAnalyze(plant, file, mime);
+  const updated = await getPlantById(plantId);
+  return {
+    plant: updated ?? plant,
+    ...out
+  };
 }
 
 /**

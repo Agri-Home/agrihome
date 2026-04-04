@@ -78,8 +78,9 @@ The server uses **OpenCV** to decode bytes and optional **CLAHE** in LAB space f
 | Tray analysis | `POST /api/trays/{trayId}/vision` — multipart `photo` |
 | Leaf ID + disease hint | `POST /api/plants/from-photo` → `detectPlantSpeciesFromImage` → optional **`CV_SPECIES_INFERENCE_URL`** |
 | Species inference | Requires **`CV_SPECIES_INFERENCE_URL`** (no local simulator) |
+| Custom plants | Plant page: new leaf photo anytime (`POST /api/plants/{id}/photo`), edit name / species label / description (`PATCH /api/plants/{id}`), delete (`DELETE /api/plants/{id}`) |
 
-Run **`db/migrations/001_tray_vision.sql`** if your DB predates tray vision columns.
+Run **`db/migrations/001_tray_vision.sql`** if your DB predates tray vision columns. Run **`db/migrations/002_plant_description.sql`** if `plants.description` is missing.
 
 ## HTTP contract for species / disease inference (`CV_SPECIES_INFERENCE_URL`)
 

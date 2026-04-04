@@ -7,12 +7,13 @@ import { Badge } from "@/components/atoms/Badge";
 import { BackLink } from "@/components/app/BackLink";
 import { Card, SectionTitle } from "@/components/app/Section";
 import { ClientChartFrame } from "@/components/charts/ClientChartFrame";
-import { PlantImage } from "@/components/media/PlantImage";
 import { PlantHealthLineChart } from "@/components/charts/PlantHealthLineChart";
 import { getMonitoringLog } from "@/lib/services/monitoring-service";
 import { getPlantById, listPlantReports } from "@/lib/services/plant-service";
 import { getTrayById, listMeshNetworks } from "@/lib/services/topology-service";
 import { clampPercent, formatDateTime, formatRelativeTimestamp } from "@/lib/utils";
+
+import { PlantDetailClient } from "./PlantDetailClient";
 
 function plantTone(status: string) {
   if (status === "alert") return "critical" as const;
@@ -63,23 +64,7 @@ export default async function PlantDetailPage({
         <Badge tone={plantTone(plant.status)}>{plant.status}</Badge>
       </div>
 
-      {plant.lastImageUrl ? (
-        <Card className="mt-4 overflow-hidden border-lime/30 p-0 shadow-[0_12px_40px_rgba(61,159,108,0.18)] ring-2 ring-lime/20">
-          <div className="relative aspect-[4/3] w-full max-h-[280px] bg-mist">
-            <PlantImage
-              src={plant.lastImageUrl}
-              alt=""
-              fill
-              className="object-cover"
-              sizes="(max-width: 768px) 100vw, 480px"
-              priority
-            />
-          </div>
-          <p className="px-3 py-2 text-xs text-ink/45">
-            Last plant image · {formatRelativeTimestamp(plant.lastImageAt)}
-          </p>
-        </Card>
-      ) : null}
+      <PlantDetailClient plant={plant} />
 
       <dl className="mt-4 grid grid-cols-2 gap-3 text-sm">
         <div>
