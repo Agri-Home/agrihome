@@ -9,7 +9,9 @@
     "start": "next start",
     "start:standalone": "node .next/standalone/server.js",
     "lint": "eslint .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "db:seed": "node scripts/seed-postgres.cjs",
+    "db:schema": "node scripts/seed-postgres.cjs --schema-only"
   },
   "dependencies": {
     "@qdrant/js-client-rest": "^1.11.0",

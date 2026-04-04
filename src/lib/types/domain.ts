@@ -1,4 +1,4 @@
-export type DataSource = "mock" | "postgres";
+export type DataSource = "postgres";
 
 export type CaptureStatus = "available" | "processing" | "missing";
 
@@ -106,7 +106,7 @@ export interface PredictionResult {
   confidence: number;
   severity: Severity;
   recommendation: string;
-  vectorSource: "mock" | "qdrant";
+  vectorSource: "qdrant" | "classifier" | "mock";
   createdAt: string;
   similarMatches: SimilarImageMatch[];
 }
@@ -141,13 +141,13 @@ export interface MonitoringEvent {
 
 export interface SystemHealth {
   api: "healthy" | "degraded";
-  database: "connected" | "mock";
-  vectorStore: "connected" | "mock";
+  database: "connected" | "disconnected";
+  vectorStore: "connected" | "disconnected";
   cameraPipeline: "online" | "simulated";
   /** Tray photo → plant count / boxes: remote HTTP vs built-in simulator. */
   trayVisionInference: "remote" | "simulated";
-  /** Close-up plant photo → species: remote HTTP vs built-in simulator. */
-  speciesInference: "remote" | "simulated";
+  /** Close-up plant photo → species: requires CV_SPECIES_INFERENCE_URL. */
+  speciesInference: "remote" | "unconfigured";
 }
 
 export interface DashboardSnapshot {

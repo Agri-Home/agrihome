@@ -1,34 +1,11 @@
-import { createHash } from "crypto";
-
-import { env } from "@/lib/config/env";
+import { env, hasSpeciesInferenceConfig } from "@/lib/config/env";
 
 /**
- * Species / disease from a leaf image. Remote: `CV_SPECIES_INFERENCE_URL` (e.g. cv-backend
+ * Species / disease from a leaf image via `CV_SPECIES_INFERENCE_URL` (e.g. cv-backend
  * trained on PlantVillage). See docs/CV_PIPELINE.md.
  *
  * Dataset reference: https://github.com/spMohanty/PlantVillage-Dataset/tree/master/raw/color
  */
-const SPECIES_CATALOG = [
-  { commonName: "Sweet basil", cultivar: "Ocimum basilicum 'Genovese'" },
-  { commonName: "Cherry tomato", cultivar: "Solanum lycopersicum (cherry type)" },
-  { commonName: "Butterhead lettuce", cultivar: "Lactuca sativa 'Butterhead'" },
-  { commonName: "Bell pepper", cultivar: "Capsicum annuum (sweet)" },
-  { commonName: "Cilantro", cultivar: "Coriandrum sativum" },
-  { commonName: "Curly kale", cultivar: "Brassica oleracea (Acephala group)" },
-  { commonName: "English cucumber", cultivar: "Cucumis sativus (greenhouse type)" },
-  { commonName: "Strawberry", cultivar: "Fragaria × ananassa" }
-] as const;
-
-/** PlantVillage-style simulated rows (Crop___Condition). */
-const PV_STYLE_SIM = [
-  { rawLabel: "Tomato___healthy", isHealthy: true },
-  { rawLabel: "Tomato___Early_blight", isHealthy: false },
-  { rawLabel: "Pepper,_bell___Bacterial_spot", isHealthy: false },
-  { rawLabel: "Potato___healthy", isHealthy: true },
-  { rawLabel: "Strawberry___Leaf_scorch", isHealthy: false },
-  { rawLabel: "Corn_(maize)___healthy", isHealthy: true }
-] as const;
-
 export interface PlantSpeciesDetection {
   commonName: string;
   cultivar: string;
@@ -88,28 +65,6 @@ function parsePlantVillageStyleLabel(label: string): {
     plantCondition: h,
     rawLabel,
     isHealthy: false
-  };
-}
-
-function simulatedDetectPlantSpeciesFromImage(
-  imageBytes: Buffer
-): PlantSpeciesDetection {
-  const digest = createHash("sha256").update(imageBytes).digest();
-  const i = digest[0] % SPECIES_CATALOG.length;
-  const base = SPECIES_CATALOG[i];
-  const jitter = (digest[1] / 255) * 0.08 - 0.04;
-  const identificationConfidence = Math.min(0.97, Math.max(0.74, 0.86 + jitter));
-
-  const pv = PV_STYLE_SIM[digest[2] % PV_STYLE_SIM.length];
-  const parsed = parsePlantVillageStyleLabel(pv.rawLabel);
-
-  return {
-    commonName: base.commonName,
-    cultivar: parsed.cultivar,
-    identificationConfidence: Math.round(identificationConfidence * 1000) / 1000,
-    plantCondition: parsed.plantCondition,
-    rawLabel: pv.rawLabel,
-    isHealthy: pv.isHealthy
   };
 }
 
@@ -189,14 +144,19 @@ function parseRemoteSpecies(body: RemoteSpeciesPayload): PlantSpeciesDetection |
   return null;
 }
 
-async function remoteDetectPlantSpeciesFromImage(
+/**
+ * Leaf image → crop + condition. Requires `CV_SPECIES_INFERENCE_URL` (no local simulator).
+ */
+export async function detectPlantSpeciesFromImage(
   imageBytes: Buffer
-): Promise<PlantSpeciesDetection | null> {
-  const url = env.cv.speciesInferenceUrl.trim();
-  if (!url) {
-    return null;
+): Promise<PlantSpeciesDetection> {
+  if (!hasSpeciesInferenceConfig) {
+    throw new Error(
+      "CV_SPECIES_INFERENCE_URL is required for species classification (see docs/CV_PIPELINE.md)."
+    );
   }
 
+  const url = env.cv.speciesInferenceUrl.trim();
   const headers: Record<string, string> = {
     "Content-Type": "application/json"
   };
@@ -204,8 +164,9 @@ async function remoteDetectPlantSpeciesFromImage(
     headers.Authorization = `Bearer ${env.cv.speciesInferenceApiKey}`;
   }
 
+  let res: Response;
   try {
-    const res = await fetch(url, {
+    res = await fetch(url, {
       method: "POST",
       headers,
       body: JSON.stringify({
@@ -213,26 +174,24 @@ async function remoteDetectPlantSpeciesFromImage(
       }),
       signal: AbortSignal.timeout(60_000)
     });
-    if (!res.ok) {
-      return null;
-    }
-    const body = (await res.json()) as RemoteSpeciesPayload;
-    return parseRemoteSpecies(body);
-  } catch {
-    return null;
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error(`Species classifier request failed: ${msg}`);
   }
-}
 
-/**
- * Leaf image → crop + condition (and optional disease). Uses `CV_SPECIES_INFERENCE_URL`
- * when set; otherwise a deterministic simulator with PlantVillage-shaped labels.
- */
-export async function detectPlantSpeciesFromImage(
-  imageBytes: Buffer
-): Promise<PlantSpeciesDetection> {
-  const remote = await remoteDetectPlantSpeciesFromImage(imageBytes);
-  if (remote) {
-    return remote;
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `Species classifier HTTP ${res.status}: ${text.slice(0, 280)}`
+    );
   }
-  return simulatedDetectPlantSpeciesFromImage(imageBytes);
+
+  const body = (await res.json()) as RemoteSpeciesPayload;
+  const parsed = parseRemoteSpecies(body);
+  if (!parsed) {
+    throw new Error(
+      "Species classifier returned a response that could not be parsed."
+    );
+  }
+  return parsed;
 }

@@ -199,11 +199,11 @@ export const schema = createSchema({
       ) => listSchedules(args),
       health: async () => ({
         api: "healthy",
-        database: (await isPostgresHealthy()) ? "connected" : "mock",
-        vectorStore: getVectorSource() === "qdrant" ? "connected" : "mock",
+        database: (await isPostgresHealthy()) ? "connected" : "disconnected",
+        vectorStore: getVectorSource() === "qdrant" ? "connected" : "disconnected",
         cameraPipeline: "simulated",
         trayVisionInference: hasTrayVisionInferenceConfig ? "remote" : "simulated",
-        speciesInference: hasSpeciesInferenceConfig ? "remote" : "simulated"
+        speciesInference: hasSpeciesInferenceConfig ? "remote" : "unconfigured"
       })
     },
     Mutation: {

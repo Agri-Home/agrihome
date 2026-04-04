@@ -15,11 +15,11 @@ export async function GET() {
   return NextResponse.json({
     data: {
       api: "healthy",
-      database: databaseHealthy ? "connected" : "mock",
-      vectorStore: getVectorSource() === "qdrant" ? "connected" : "mock",
+      database: databaseHealthy ? "connected" : "disconnected",
+      vectorStore: getVectorSource() === "qdrant" ? "connected" : "disconnected",
       cameraPipeline: "simulated",
       trayVisionInference: hasTrayVisionInferenceConfig ? "remote" : "simulated",
-      speciesInference: hasSpeciesInferenceConfig ? "remote" : "simulated"
+      speciesInference: hasSpeciesInferenceConfig ? "remote" : "unconfigured"
     },
     generatedAt: new Date().toISOString()
   });

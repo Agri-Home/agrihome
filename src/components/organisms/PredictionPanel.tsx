@@ -26,7 +26,7 @@ export function PredictionPanel({
       <PanelHeader
         eyebrow="Prediction engine"
         title="Latest recognition result"
-        description="Current output from the mock-ready inference service, enriched by vector similarity matches so the API contract is already aligned with future image recognition."
+        description="Latest row from prediction_results (leaf classifier + stored reports). Similar images appear when Qdrant is configured."
       />
       {latestPrediction ? (
         <div className="mt-6 space-y-6">
@@ -82,8 +82,8 @@ export function PredictionPanel({
         </div>
       ) : (
         <div className="mt-6 rounded-[1.75rem] bg-white/70 p-6 text-sm text-ink/65 ring-1 ring-ink/8">
-          No prediction result is available yet. The backend will return mock
-          classification data until the real ML service is connected.
+          No prediction is stored yet for this tray. Run a plant photo analysis
+          (leaf classifier) or ingest a capture that writes prediction_results.
         </div>
       )}
     </Card>

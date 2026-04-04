@@ -30,7 +30,7 @@ export function LiveCameraPanel({
       <PanelHeader
         eyebrow="Camera feed"
         title="Latest frame from the hardware camera path"
-        description="Fetch the newest capture from the backend, refresh on demand, or leave auto-refresh enabled while the hardware pipeline is still mocked."
+        description="Fetch the newest capture stored in PostgreSQL, refresh on demand, or leave auto-refresh on while the camera pipeline ingests frames."
         action={
           <div className="flex flex-wrap gap-3">
             <Button variant="secondary" onClick={onToggleAutoRefresh}>

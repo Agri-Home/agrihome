@@ -2,6 +2,8 @@
 
 Trains and serves a **single multi-class model** on the [PlantVillage `raw/color`](https://github.com/spMohanty/PlantVillage-Dataset/tree/master/raw/color) layout: each folder name is **`Crop___Condition`** (disease or `healthy`). That matches **plant ID + disease detection** in one head.
 
+**Full-stack Docker guide (`plant-trainer` + `plant-classifier`):** [docs/PLANT_TRAINER_AND_CLASSIFIER.md](../docs/PLANT_TRAINER_AND_CLASSIFIER.md).
+
 ## Setup
 
 ```bash
@@ -25,6 +27,20 @@ export PV_COLOR="$PWD/PlantVillage-Dataset/raw/color"
 ```bash
 python train.py --data-dir "$PV_COLOR" --epochs 20 --output-dir ./artifacts
 ```
+
+### Multiple datasets (PlantDoc + plant-leaf-dataset)
+
+Clone [PlantDoc-Dataset](https://github.com/pratikkayal/PlantDoc-Dataset) and [plant-leaf-dataset](https://github.com/bhusallaxman22/plant-leaf-dataset). Use each repo’s **`train/`** folder (class subfolders). Folder names are mapped to PlantVillage-style labels in **`dataset_label_map.json`**.
+
+```bash
+python train.py \
+  --data-dir "$PV_COLOR" \
+  --extra-dataset plantdoc="$PWD/PlantDoc-Dataset/train" \
+  --extra-dataset plant_leaf="$PWD/plant-leaf-dataset/train" \
+  --epochs 20 --output-dir ./artifacts
+```
+
+`classes.json` will list every canonical label that appears in the combined data (PlantVillage’s 38 classes plus any extras such as `Potato___Leafroll_virus`). Restart **`serve.py`** / **`plant-classifier`** after training so it loads the new `classes.json` and `best.pt`.
 
 Outputs:
 
@@ -56,6 +72,20 @@ CV_SPECIES_INFERENCE_URL=http://127.0.0.1:8765/v1/classify
 
 - `POST /v1/classify` — body `{ "imageBase64": "..." }` → JSON with `commonName`, `cultivar`, `plantCondition`, `rawLabel`, `isHealthy`, `identificationConfidence`.  
 - `GET /health` — process up and class count.
+
+## Troubleshooting: “pull access denied for agrihome-plant-cv” / “path …/cv-backend not found”
+
+Compose **builds** `agrihome-plant-cv:cuda` from a **local folder** that must exist on the server (`Dockerfile.cuda` inside it). If the build context path is wrong, the build fails and Compose tries to **pull** that image name from a registry → **access denied**.
+
+**Fix:** Ensure the repo’s **`cv-backend/`** directory exists where `build.context` points (clone the full repo, or copy `cv-backend/` to the server). With [docker-compose.full-stack.yml](../docker-compose.full-stack.yml), set a `.env` next to the compose file if needed:
+
+```env
+AGRIHOME_CV_BACKEND=/absolute/path/to/agrihome/cv-backend
+```
+
+Then `docker compose -f docker-compose.full-stack.yml build plant-classifier`.
+
+---
 
 ## Server: Docker Compose + NVIDIA (Tesla P40, etc.)
 

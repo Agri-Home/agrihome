@@ -2,6 +2,8 @@
 
 This document connects **ML training** to AgriHome APIs.
 
+**Docker GPU stack:** For **`plant-trainer`** and **`plant-classifier`** (compose, volumes, training vs inference workflows), see [PLANT_TRAINER_AND_CLASSIFIER.md](./PLANT_TRAINER_AND_CLASSIFIER.md).
+
 | Use case | Dataset / approach | AgriHome integration |
 |----------|-------------------|----------------------|
 | **Crop + disease from leaf image** | [PlantVillage](https://github.com/spMohanty/PlantVillage-Dataset) (`raw/color` class folders) | `CV_SPECIES_INFERENCE_URL` → `cv-backend` FastAPI (`/v1/classify`) |
@@ -14,7 +16,39 @@ PlantVillage folders use the pattern **`Crop___Condition`** (e.g. `Tomato___Earl
 - **Repository:** [spMohanty/PlantVillage-Dataset](https://github.com/spMohanty/PlantVillage-Dataset)  
 - **RGB images:** [raw/color](https://github.com/spMohanty/PlantVillage-Dataset/tree/master/raw/color) — each subdirectory is one class (38 classes in the standard split).
 
-Clone and use the `raw/color` tree as **`torchvision.datasets.ImageFolder`** root (or symlink that folder to `cv-backend/data/plantvillage`).
+Clone and use the `raw/color` tree as **`torchvision.datasets.ImageFolder`** root (or symlink that folder to `cv-backend/data/plantvillage`). If you point at **`raw/`** instead, class names become **`color` / `grayscale` / `segmented`** and the app will show nonsense labels — always use **`raw/color`**.
+
+### Troubleshooting: API returns `"commonName": "color"` / `"rawLabel": "color"`
+
+**A) `classes.json` on the host really is `Apple___…` (you `cat` the file and it looks correct)**  
+Then the HTTP response is **not** using that file path inside the running process. Common causes:
+
+1. **`plant-classifier` was not restarted** after you replaced `artifacts/` — Python loads `classes.json` **once at startup**. Old labels stay in memory until you restart the container/process.
+2. **AgriHome calls a different URL** than the host you checked — verify **`CV_SPECIES_INFERENCE_URL`** in the app’s `.env` matches the machine/port where you run **`serve.py`** (not an old laptop or another NAS service on port 8765).
+
+**Verify the running server (not only the file on disk):**
+
+```bash
+curl -s http://<classifier-host>:8765/health
+```
+
+**Smoke-test classify** with a real tiny image (empty `imageBase64` returns **400**, not 500):
+
+```bash
+# Encode one JPEG (GNU: base64 -w0 file; macOS: base64 -i file | tr -d '\n')
+B64=$(base64 -w0 ./some-leaf.jpg 2>/dev/null || base64 ./some-leaf.jpg | tr -d '\n')
+curl -s -X POST "http://<classifier-host>:8754/v1/classify" \
+  -H "Content-Type: application/json" \
+  -d "{\"imageBase64\":\"$B64\"}"
+```
+
+You should see **`first_class": "Apple___Apple_scab"`** (or whatever is first in **your** JSON), **`classes_file`** pointing at the mounted path (e.g. `/workspace/artifacts/classes.json`), and **`num_classes`** matching the length of your list. If **`first_class` is `color`**, the process is still on an old load — **restart** `plant-classifier`.
+
+**B) `classes.json` on disk actually lists `color` / `grayscale` / `segmented`**  
+Training used PlantVillage **`raw/`** as the ImageFolder root instead of **`raw/color`**. Retrain with **`--data-dir .../raw/color`**. **`train.py`** and **`serve.py`** reject split-folder names in `classes.json` so new bad configs fail fast.
+
+**C) `best.pt` and `classes.json` are from different runs**  
+**`serve.py`** now requires **`len(classes.json) == checkpoint `fc` output size**; it will refuse to start if they disagree. Fix by copying both files from the same **`artifacts/`** directory after one training run.
 
 ```bash
 git clone https://github.com/spMohanty/PlantVillage-Dataset.git
@@ -32,7 +66,8 @@ Python backend lives in **`cv-backend/`**:
 4. **Serve:**  
    `python cv-backend/serve.py --checkpoint cv-backend/artifacts/best.pt --classes cv-backend/artifacts/classes.json --host 0.0.0.0 --port 8765`
 5. In AgriHome **`.env`**:  
-   `CV_SPECIES_INFERENCE_URL=http://localhost:8765/v1/classify`
+   `CV_SPECIES_INFERENCE_URL=http://localhost:8765/v1/classify`  
+   Use the **host port** you publish (e.g. Compose `ports: ["8754:8765"]` → `http://192.168.0.142:8754/v1/classify`). The value must include **`/v1/classify`** — the app does not append it.
 
 The server uses **OpenCV** to decode bytes and optional **CLAHE** in LAB space for more stable lighting (`USE_CLAHE=1`). Inference is **PyTorch** (ResNet-18 backbone by default).
 
@@ -42,7 +77,7 @@ The server uses **OpenCV** to decode bytes and optional **CLAHE** in LAB space f
 |------------|----------|
 | Tray analysis | `POST /api/trays/{trayId}/vision` — multipart `photo` |
 | Leaf ID + disease hint | `POST /api/plants/from-photo` → `detectPlantSpeciesFromImage` → optional **`CV_SPECIES_INFERENCE_URL`** |
-| Default | Simulators when URLs unset |
+| Species inference | Requires **`CV_SPECIES_INFERENCE_URL`** (no local simulator) |
 
 Run **`db/migrations/001_tray_vision.sql`** if your DB predates tray vision columns.
 
