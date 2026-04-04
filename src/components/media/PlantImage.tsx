@@ -14,9 +14,9 @@ type PlantImageProps = {
 };
 
 /**
- * User uploads live under `/public/uploads`. The dev client bundle may not
- * receive full `images.localPatterns` for `next/image`, which throws. Raw
- * `<img>` avoids that; other plant images still use the optimizer.
+ * Leaf originals are served from `/api/files/originals/...` (disk outside
+ * `public/`). Older rows may still use `/public/uploads/...`. Raw `<img>`
+ * avoids `next/image` local pattern issues for those paths.
  */
 export function PlantImage({
   src,
@@ -26,7 +26,7 @@ export function PlantImage({
   sizes,
   priority
 }: PlantImageProps) {
-  if (src.startsWith("/uploads/")) {
+  if (src.startsWith("/uploads/") || src.startsWith("/api/files/")) {
     if (fill) {
       return (
         <img

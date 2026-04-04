@@ -1,7 +1,6 @@
 import { QdrantClient } from "@qdrant/js-client-rest";
 
 import { env, hasVectorConfig } from "@/lib/config/env";
-import { mockSimilarMatches } from "@/lib/mocks/data";
 import type { CameraCapture, SimilarImageMatch } from "@/lib/types/domain";
 
 declare global {
@@ -22,7 +21,7 @@ const buildPseudoEmbedding = (seed: string) => {
 };
 
 const getQdrantClient = () => {
-  if (!hasVectorConfig || env.useMockData) {
+  if (!hasVectorConfig) {
     return null;
   }
 
@@ -36,8 +35,7 @@ const getQdrantClient = () => {
   return globalThis.__agrihomeQdrantClient__;
 };
 
-export const getVectorSource = () =>
-  getQdrantClient() ? "qdrant" : "mock";
+export const getVectorSource = () => (getQdrantClient() ? "qdrant" : "unavailable");
 
 export const findSimilarImages = async (
   capture: CameraCapture
@@ -45,7 +43,7 @@ export const findSimilarImages = async (
   const client = getQdrantClient();
 
   if (!client) {
-    return mockSimilarMatches;
+    return [];
   }
 
   try {
@@ -68,6 +66,6 @@ export const findSimilarImages = async (
           : capture.imageUrl
     }));
   } catch {
-    return mockSimilarMatches;
+    return [];
   }
 };
