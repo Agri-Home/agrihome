@@ -254,6 +254,7 @@ const makePlant = (
           : tray.crop === "Lettuce"
             ? "Butterhead"
             : `${tray.crop} (grow)`,
+    description: null,
     slotLabel: `R${Math.ceil(slotNumber / 3)}-C${((slotNumber - 1) % 3) + 1}`,
     row: Math.ceil(slotNumber / 3),
     column: ((slotNumber - 1) % 3) + 1,

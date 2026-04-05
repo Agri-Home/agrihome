@@ -153,8 +153,8 @@ export function NewPlantClient({ trays }: { trays: TraySystem[] }) {
                 Model confidence {(detection.identificationConfidence * 100).toFixed(1)}%
               </p>
               <p className="text-xs text-ink/45">
-                Saved as <span className="font-medium text-ink/70">{plant.name}</span> — rename on
-                the plant page if needed.
+                Saved as <span className="font-medium text-ink/70">{plant.name}</span>. Open the plant
+                to add a description, take more photos anytime, or edit details.
               </p>
             </Card>
           </section>
