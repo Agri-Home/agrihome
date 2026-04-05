@@ -4,13 +4,21 @@ import { cn } from "@/lib/utils";
 
 export function Card({
   children,
-  className
+  className,
+  interactive = false
 }: {
   children: ReactNode;
   className?: string;
+  interactive?: boolean;
 }) {
   return (
-    <section className={cn("glass-panel rounded-3xl p-6 md:rounded-[1.85rem]", className)}>
+    <section
+      className={cn(
+        interactive ? "glass-panel-interactive" : "glass-panel",
+        "rounded-3xl p-6 md:rounded-[1.85rem]",
+        className
+      )}
+    >
       {children}
     </section>
   );

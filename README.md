@@ -1,6 +1,6 @@
 # AgriHome Vision Console
 
-Full-stack **Next.js** monitoring UI for tray- and plant-level crop health: camera frames, simulated vision / health scoring, reports, meshes, and capture schedules. Runs out of the box on **mock data**; switch to **PostgreSQL** and **Qdrant** when you wire infrastructure.
+Full-stack **Next.js** monitoring UI for tray- and plant-level crop health: camera frames, CV-assisted counts and species ID, reports, meshes, and capture schedules. **PostgreSQL** is **required** for trays, plants, captures, and related APIs; **Qdrant** and remote CV URLs are optional extras.
 
 ## Stack
 
@@ -10,50 +10,56 @@ Full-stack **Next.js** monitoring UI for tray- and plant-level crop health: came
 | Styling | Tailwind CSS, mobile-first shell (sidebar + bottom nav) |
 | Charts | Recharts (client-mounted frames for SSR safety) |
 | API | REST route handlers + **GraphQL Yoga** (`POST /api/graphql`) |
-| Data (optional) | **PostgreSQL** (`pg`), schema in `db/schema.sql` |
-| Vectors (optional) | **Qdrant** for similarity-style matches |
+| Data | **PostgreSQL** (`pg`) — schema in `db/schema.sql`; use `npm run db:schema` / `npm run db:seed` |
+| Vectors (optional) | **Qdrant** for similarity search when `QDRANT_URL` is set |
+| File storage | Uploads under configurable `STORAGE_*` paths; served via **`GET /api/files/...`** (see `.env.example`) |
 | PWA | Service worker + install flow |
 
 ## Features
 
-- **Overview** (`/`) — Latest frame, tray list, chart snapshot.
+- **Dashboard** (`/`) — Latest frame, tray list, chart snapshot (page title: “Overview”).
 - **Trays** — List, tray detail (image, monitoring chart, plants with thumbnails, events). **Tray CV**: upload a top-down photo for **plant count + instance boxes** (`POST /api/trays/{trayId}/vision`); optional **`CV_TRAY_INFERENCE_URL`** ([docs/CV_PIPELINE.md](docs/CV_PIPELINE.md)).
-- **Plants** — Detail: last image, health trend, reports, monitoring log.
-- **Add plant** (`/plants/new`) — **Leaf photo → crop + disease/healthy** via `detectPlantSpeciesFromImage` (simulator by default, or **`CV_SPECIES_INFERENCE_URL`** pointing at **`cv-backend`** trained on [PlantVillage `raw/color`](https://github.com/spMohanty/PlantVillage-Dataset/tree/master/raw/color)) + health report (`POST /api/plants/from-photo`). See [docs/CV_PIPELINE.md](docs/CV_PIPELINE.md).
+- **Plants** — Detail: stats, latest finding, photo upload, edit (name / species / description), delete, health trend chart, report history, monitoring log (plant-scoped with tray fallback).
+- **Add plant** (`/plants/new`) — Tray picker + leaf photo; species/disease classification via **`CV_SPECIES_INFERENCE_URL`** (e.g. **`cv-backend`** on [PlantVillage `raw/color`](https://github.com/spMohanty/PlantVillage-Dataset/tree/master/raw/color)) is **required** for `POST /api/plants/from-photo` to succeed—there is no local simulator. See [docs/CV_PIPELINE.md](docs/CV_PIPELINE.md).
 - **Mesh** — Group trays; mesh detail with merged activity and plants.
 - **Schedule** — Capture intervals for trays or meshes.
 - **Standalone build** — `output: "standalone"`; `postbuild` copies static assets into `.next/standalone` for container runs.
 
-## Data mode: mock vs database
+## Configuration
 
-| Setting | Behavior |
-|---------|----------|
-| **`NEXT_PUBLIC_USE_MOCK_DATA`** not `false` (default in app logic) | In-memory **mock store** seeded from `src/lib/mocks/data.ts`. |
-| **`NEXT_PUBLIC_USE_MOCK_DATA=false`** + **`POSTGRES_*`** set | Reads/writes **PostgreSQL** where implemented; many paths **fall back to mock** if a query throws. |
+| Area | Notes |
+|------|--------|
+| **`POSTGRES_*`** | Required. `src/lib/db/postgres.ts` exposes `requirePostgresPool()` for write paths; listing trays/plants/etc. uses SQL queries. Legacy **`MARIADB_*`** names are still read as aliases in `src/lib/config/env.ts`. |
+| **`CV_SPECIES_INFERENCE_URL`** | Required for **add plant from photo** and for analyzing leaf uploads that call the species classifier. |
+| **`CV_TRAY_INFERENCE_URL`** | Optional; tray photo analysis can use a remote detector or the built-in simulator when unset. |
+| **`QDRANT_*`** | Optional; when unset, vector-dependent features degrade gracefully (empty similarity lists, health reports `vectorStore: disconnected`). |
 
-See `.env.example` for variables (including legacy `MARIADB_*` aliases read by `src/lib/config/env.ts`).
+See `.env.example` for full variable list and storage layout.
 
 ## Local setup
 
-1. Copy `.env.example` to `.env` / `.env.local` and adjust.
+1. Copy `.env.example` to `.env` / `.env.local` and set **`POSTGRES_*`** (and **`CV_SPECIES_INFERENCE_URL`** if you use photo flows).
 2. `npm install`
-3. `npm run dev` → [http://localhost:3000](http://localhost:3000)
-4. Production build: `npm run build` then `npm start` (or `npm run start:standalone` after build for the standalone server from repo root).
+3. Create the database user/db if needed, then apply schema: `npm run db:schema` (and optionally `npm run db:seed` for sample rows).
+4. `npm run dev` → [http://localhost:3000](http://localhost:3000)
+5. Production build: `npm run build` then `npm start` (or `npm run start:standalone` after build for the standalone server from repo root).
 
 ## Documentation
 
 | Doc | Description |
 |-----|-------------|
 | [docs/IMPLEMENTATION_GUIDE.md](docs/IMPLEMENTATION_GUIDE.md) | Scope, architecture pointers, REST/GraphQL, schema, env, roadmap |
+| [docs/UI_LAYOUT_AND_DESIGN.md](docs/UI_LAYOUT_AND_DESIGN.md) | App shell, navigation, visual tokens, component usage |
 | [docs/CV_PIPELINE.md](docs/CV_PIPELINE.md) | PlantVillage training + `cv-backend`, species/disease HTTP contract, tray CV |
 | [cv-backend/README.md](cv-backend/README.md) | PyTorch train/serve commands, Docker |
+| [docs/PLANT_TRAINER_AND_CLASSIFIER.md](docs/PLANT_TRAINER_AND_CLASSIFIER.md) | GPU Compose services for train vs classify |
 | [docs/diagrams/README.md](docs/diagrams/README.md) | **Mermaid** diagrams: architecture, integrations, UML-style domain/services, use cases |
 
 ## API routes (REST)
 
 | Method | Path | Notes |
 |--------|------|--------|
-| GET | `/api/health` | API / DB / vector / pipeline; `trayVisionInference` + `speciesInference` (`remote` or `simulated`) |
+| GET | `/api/health` | `api`, `database` (`connected` / `disconnected`), `vectorStore`, `cameraPipeline`, `trayVisionInference` (`remote` / `simulated`), `speciesInference` (`remote` / `unconfigured`) |
 | GET | `/api/camera/latest` | `?trayId=` optional |
 | POST | `/api/camera/ingest` | JSON body — frame metadata |
 | GET | `/api/predictions/latest` | `?trayId=` optional |
@@ -62,12 +68,15 @@ See `.env.example` for variables (including legacy `MARIADB_*` aliases read by `
 | POST | `/api/trays/{trayId}/vision` | Multipart `photo` — tray plant detection + count; persists CV fields on tray |
 | GET | `/api/plants` | `?trayId=` optional |
 | POST | `/api/plants/manual` | JSON — create plant by name/cultivar |
-| POST | `/api/plants/from-photo` | Multipart `photo` — auto ID + report |
+| POST | `/api/plants/from-photo` | Multipart `photo` — species via remote classifier + plant + report (requires `CV_SPECIES_INFERENCE_URL`) |
+| PATCH | `/api/plants/[plantId]` | JSON: `name`, `cultivar`, `description` (at least one) |
+| DELETE | `/api/plants/[plantId]` | Remove plant |
 | POST | `/api/plants/[plantId]/photo` | Multipart `photo` — analyze existing plant |
 | GET | `/api/reports` | `trayId`, `plantId`, `limit` |
+| GET | `/api/files/...` | Serves validated files from app storage (`STORAGE_*`; used with `next/image` local patterns) |
 | GET/POST | `/api/mesh` | List / create mesh |
-| GET/PATCH | `/api/schedules` | List / upsert schedules |
-| POST | `/api/graphql` | GraphQL |
+| GET/POST/PATCH | `/api/schedules` | List / create / update schedules |
+| POST | `/api/graphql` | GraphQL (queries + `createMeshNetwork`, `updatePlant`, `deletePlant`, `upsertSchedule`) |
 
 ## GraphQL example
 
@@ -98,8 +107,9 @@ query Snapshot {
 - `npm run start` — `next start`  
 - `npm run start:standalone` — `node .next/standalone/server.js` (from repo root, after build)  
 - `npm run lint` — ESLint (flat config)  
-- `npm run typecheck` — `tsc --noEmit`
+- `npm run typecheck` — `tsc --noEmit`  
+- `npm run db:schema` / `npm run db:seed` — apply `db/schema.sql` and optional seed to PostgreSQL (see script and `.env`)
 
 ## License / status
 
-Internal / project-specific; ML and hardware paths are **simulated** until you replace `plant-detection-service`, prediction derivation, and camera ingest with production services.
+Internal / project-specific. **Tray-level** vision can use a remote detector or the built-in simulator (`CV_TRAY_INFERENCE_URL` optional). **Leaf species** classification requires a running **`CV_SPECIES_INFERENCE_URL`** service (no hash simulator). Camera ingest and predictions remain mock-friendly until wired to production hardware and models.

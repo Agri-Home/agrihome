@@ -11,14 +11,23 @@ const badgeToneClasses: Record<BadgeTone, string> = {
   critical: "bg-[#ffe8ec] text-rose-900 ring-1 ring-rose-200/80"
 };
 
+const dotColor: Record<BadgeTone, string> = {
+  default: "bg-ink/40",
+  success: "bg-emerald-500",
+  warning: "bg-amber-500",
+  critical: "bg-rose-500"
+};
+
 export function Badge({
   children,
   tone = "default",
-  className
+  className,
+  live = false
 }: {
   children: ReactNode;
   tone?: BadgeTone;
   className?: string;
+  live?: boolean;
 }) {
   return (
     <span
@@ -28,6 +37,12 @@ export function Badge({
         className
       )}
     >
+      {live && (
+        <span className="relative flex h-2 w-2">
+          <span className={cn("absolute inline-flex h-full w-full rounded-full opacity-75 animate-live-pulse", dotColor[tone])} />
+          <span className={cn("relative inline-flex h-2 w-2 rounded-full", dotColor[tone])} />
+        </span>
+      )}
       {children}
     </span>
   );

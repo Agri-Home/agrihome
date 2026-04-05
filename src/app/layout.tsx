@@ -3,6 +3,7 @@ import { DM_Sans } from "next/font/google";
 
 import { AppShell } from "@/components/shell/AppShell";
 import { PwaProvider } from "@/components/providers/PwaProvider";
+import { SnackbarProvider } from "@/components/providers/SnackbarProvider";
 import "./globals.css";
 
 const dmSans = DM_Sans({
@@ -39,7 +40,9 @@ export default function RootLayout({
     <html lang="en">
       <body className={`${dmSans.variable} font-sans antialiased`}>
         <PwaProvider>
-          <AppShell>{children}</AppShell>
+          <SnackbarProvider>
+            <AppShell>{children}</AppShell>
+          </SnackbarProvider>
         </PwaProvider>
       </body>
     </html>

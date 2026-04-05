@@ -14,6 +14,10 @@ classDiagram
     +string zone
     +string crop
     +int plantCount
+    +int visionPlantCount
+    +string visionPlantCountAt
+    +float visionPlantCountConfidence
+    +list visionDetections
     +int healthScore
     +TrayHealthStatus status
     +string deviceId
@@ -26,6 +30,7 @@ classDiagram
     +string[] meshIds
     +string name
     +string cultivar
+    +string description
     +string slotLabel
     +int row
     +int column
@@ -111,6 +116,8 @@ classDiagram
     +listPlantsByTray()
     +getPlantById()
     +listPlantReports()
+    +updatePlantById()
+    +deletePlantById()
   }
 
   class TopologyService {
@@ -142,10 +149,9 @@ classDiagram
     +detectPlantSpeciesFromImage()
   }
 
-  class MockStore {
-    +getMockStore()
-    +ingestMockCapture()
-    +finalizePlantPhotoAnalysisForPlant()
+  class PostgresPool {
+    <<pg>>
+    SQL + storage paths
   }
 
   RouteHandlers --> PlantService
@@ -157,7 +163,7 @@ classDiagram
   PlantManualService --> PlantDetectionService
   PlantManualService --> PlantService
   PlantManualService --> CameraService
-  PlantService --> MockStore
-  TopologyService --> MockStore
-  CameraService --> MockStore
+  PlantService --> PostgresPool
+  TopologyService --> PostgresPool
+  CameraService --> PostgresPool
 ```

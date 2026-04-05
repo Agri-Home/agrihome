@@ -17,6 +17,7 @@ flowchart TB
   UC7([Open mesh detail])
   UC8([Manage capture schedules])
   UC9([Create mesh grouping trays])
+  UC10([Run tray photo CV count])
 
   Actor --> UC1
   Actor --> UC2
@@ -27,8 +28,10 @@ flowchart TB
   Actor --> UC7
   Actor --> UC8
   Actor --> UC9
+  Actor --> UC10
 
   UC3 --> UC4
+  UC3 --> UC10
   UC2 --> UC3
   UC6 --> UC7
 ```
@@ -44,7 +47,7 @@ flowchart TB
   subgraph AgriHome [AgriHome]
     UC_T([Select tray])
     UC_P([Upload or capture plant photo])
-    UC_D([Auto-detect species simulated])
+    UC_D([Auto-detect species via CV service])
     UC_C([Create plant record])
     UC_H([Run health analysis])
     UC_V([View identification and report])
@@ -70,12 +73,14 @@ flowchart TB
     Q2([Ingest camera frame])
     Q3([GraphQL consolidated read])
     Q4([Create mesh and schedule])
+    Q5([Update or delete plant])
   end
 
   Integrator --> Q1
   Integrator --> Q2
   Integrator --> Q3
   Integrator --> Q4
+  Integrator --> Q5
 ```
 
 ## Mapping to routes (operator UI)
@@ -90,3 +95,4 @@ flowchart TB
 | Mesh list / create | `/mesh` |
 | Mesh detail | `/mesh/[meshId]` |
 | Schedules | `/schedule` |
+| Tray CV photo | `/trays/[trayId]` (vision upload / analysis UI) |
