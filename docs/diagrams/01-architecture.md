@@ -1,6 +1,6 @@
 # Architecture diagram
 
-High-level view of the AgriHome Vision Console: Next.js full-stack app, service layer, and dual data paths (mock vs PostgreSQL).
+High-level view of the AgriHome Vision Console: Next.js full-stack app, service layer, PostgreSQL, and optional Qdrant / CV HTTP services.
 
 ```mermaid
 flowchart TB
@@ -10,7 +10,7 @@ flowchart TB
 
   subgraph next [Next.js application]
     Shell["AppShell — nav + layout"]
-    Pages["App Router pages\n/ · /trays · /plants · /mesh · /schedule"]
+    Pages["App Router pages\n/ · /trays · /plants · /mesh · /schedule · /plants/new"]
     RSC["Server Components — data fetch"]
     Client["Client Components — charts, forms, PWA"]
     API["REST route handlers\n/api/*"]
@@ -25,9 +25,7 @@ flowchart TB
   end
 
   subgraph lib [Service layer — src/lib/services]
-    Services["camera · prediction · plant · topology\nmonitoring · schedule · vector\nplant-manual · plant-detection"]
-    Mocks["mock-store + mocks/data\nsimulation + seed"]
-    Services --> Mocks
+    Services["camera · prediction · plant · topology\nmonitoring · schedule · vector\nplant-manual · plant-detection · tray-vision"]
   end
 
   subgraph persistence [Persistence — optional]
@@ -36,22 +34,23 @@ flowchart TB
   end
 
   subgraph static [Static assets]
-    Public["public/\nimages · uploads/plants · sw.js"]
+    Public["public/ · storage/\nimages · sw.js · originals"]
   end
 
   Browser --> Shell
-  Services -->|"NEXT_PUBLIC_USE_MOCK_DATA=false\n+ pool"| PG
+  Services -->|"POSTGRES_* pool"| PG
   Services -->|"QDRANT_* configured"| QD
   RSC --> Public
   Client --> Public
 ```
 
-## Runtime modes
+## Data path
 
-| Mode | Data source |
-|------|-------------|
-| **Mock (default)** | In-memory `mock-store` seeded from `createMockSeed()` |
-| **Live DB** | `NEXT_PUBLIC_USE_MOCK_DATA=false` and `POSTGRES_*` set → SQL queries; failures fall back to mock |
+| Component | Role |
+|-----------|------|
+| **PostgreSQL** | Canonical trays, plants, captures, predictions, reports, events, meshes, schedules (`db/schema.sql`) |
+| **Disk storage** | Optional `STORAGE_*` roots; images served via `GET /api/files/...` |
+| **Qdrant** | Optional similarity search when `QDRANT_URL` is set |
 
 ## Build output
 

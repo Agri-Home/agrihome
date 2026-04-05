@@ -9,4 +9,4 @@ These diagrams render in GitHub, GitLab, many IDEs, and [Mermaid Live Editor](ht
 | [03-uml.md](./03-uml.md) | Domain types and service relationships |
 | [04-use-cases.md](./04-use-cases.md) | Operator-facing use cases |
 
-See also the narrative guide: [../IMPLEMENTATION_GUIDE.md](../IMPLEMENTATION_GUIDE.md).
+See also: [../IMPLEMENTATION_GUIDE.md](../IMPLEMENTATION_GUIDE.md) (implementation narrative), [../UI_LAYOUT_AND_DESIGN.md](../UI_LAYOUT_AND_DESIGN.md) (shell and visual system).
