@@ -55,6 +55,8 @@ export interface PlantUnit {
   meshIds: string[];
   name: string;
   cultivar: string;
+  /** User notes (location, variety notes, care reminders). */
+  description: string | null;
   slotLabel: string;
   row: number;
   column: number;

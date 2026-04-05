@@ -31,7 +31,7 @@ ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO plants (
   id, tray_id, mesh_ids, name, cultivar, slot_label, row_index, column_index,
-  health_score, status, last_report_at, latest_diagnosis, last_image_url, last_image_at
+  health_score, status, last_report_at, latest_diagnosis, description, last_image_url, last_image_at
 )
 VALUES (
   'plant-seed-demo-1',
@@ -46,6 +46,7 @@ VALUES (
   'healthy',
   CURRENT_TIMESTAMP,
   'No analysis yet — upload a leaf photo',
+  'Demo plant from seed data.',
   NULL,
   NULL
 )
