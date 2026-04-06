@@ -1,10 +1,10 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/atoms/Button";
-import { Card } from "@/components/app/Section";
+import { Card } from "@/components/atoms/Card";
 import { PlantImage } from "@/components/media/PlantImage";
 import type { PlantUnit } from "@/lib/types/domain";
 import { formatRelativeTimestamp } from "@/lib/utils";
@@ -15,6 +15,7 @@ export function PlantDetailClient({
   plant: PlantUnit;
 }) {
   const router = useRouter();
+  const fileRef = useRef<HTMLInputElement>(null);
   const [plant, setPlant] = useState(initial);
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(initial.name);
@@ -121,42 +122,17 @@ export function PlantDetailClient({
   }
 
   return (
-    <div className="mt-4 space-y-4">
-      {err ? (
-        <p className="text-sm text-red-600" role="alert">
+    <div className="space-y-4">
+      {err && (
+        <div className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-rose-100" role="alert">
           {err}
-        </p>
-      ) : null}
-
-      <Card className="space-y-3 p-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-sm font-semibold text-ink/80">New leaf photo</p>
-          {photoBusy ? (
-            <span className="text-xs text-ink/45">Analyzing…</span>
-          ) : null}
         </div>
-        <p className="text-xs text-ink/45">
-          Take or upload anytime. The classifier updates health and report history.
-        </p>
-        <label className="block">
-          <input
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            capture="environment"
-            disabled={photoBusy}
-            className="block w-full text-sm text-ink/70 file:mr-3 file:rounded-lg file:border-0 file:bg-lime file:px-3 file:py-2 file:font-semibold file:text-ink"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) void uploadPhoto(f);
-              e.target.value = "";
-            }}
-          />
-        </label>
-      </Card>
+      )}
 
+      {/* Plant image with overlay upload button */}
       {plant.lastImageUrl ? (
-        <Card className="overflow-hidden border-lime/30 p-0 shadow-[0_12px_40px_rgba(61,159,108,0.18)] ring-2 ring-lime/20">
-          <div className="relative aspect-[4/3] w-full max-h-[280px] bg-mist">
+        <Card className="overflow-hidden p-0">
+          <div className="relative aspect-[4/3] w-full max-h-[300px] bg-mist">
             <PlantImage
               src={plant.lastImageUrl}
               alt=""
@@ -164,68 +140,116 @@ export function PlantDetailClient({
               className="object-cover"
               sizes="(max-width: 768px) 100vw, 480px"
             />
+            <div className="absolute inset-x-0 bottom-0 flex items-end justify-between bg-gradient-to-t from-black/50 to-transparent p-4">
+              <p className="text-xs font-medium text-white/80">
+                {formatRelativeTimestamp(plant.lastImageAt)}
+              </p>
+              <button
+                type="button"
+                onClick={() => fileRef.current?.click()}
+                disabled={photoBusy}
+                className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/20 text-white backdrop-blur-md transition-all hover:bg-white/30 active:scale-90 disabled:opacity-50"
+                aria-label="Upload new photo"
+              >
+                {photoBusy ? (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="animate-spin"><path d="M21 12a9 9 0 11-6.219-8.56" /></svg>
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z" /><circle cx="12" cy="13" r="4" /></svg>
+                )}
+              </button>
+            </div>
           </div>
-          <p className="px-3 py-2 text-xs text-ink/45">
-            Last plant image · {formatRelativeTimestamp(plant.lastImageAt)}
-          </p>
         </Card>
       ) : (
-        <p className="text-sm text-ink/45">No photo yet — use the control above.</p>
+        <Card className="p-0">
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            disabled={photoBusy}
+            className="flex w-full flex-col items-center justify-center gap-3 rounded-3xl border-2 border-dashed border-ink/10 p-10 transition-colors hover:border-leaf/30 hover:bg-lime/5"
+          >
+            <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-leaf to-moss text-white shadow-fab">
+              {photoBusy ? (
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="animate-spin"><path d="M21 12a9 9 0 11-6.219-8.56" /></svg>
+              ) : (
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
+              )}
+            </span>
+            <span className="text-sm font-medium text-ink/50">
+              {photoBusy ? "Analyzing..." : "Take or upload a photo"}
+            </span>
+            <span className="text-xs text-ink/30">The classifier updates health automatically</span>
+          </button>
+        </Card>
       )}
 
-      <Card className="space-y-3 p-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-sm font-semibold text-ink/80">Plant details</p>
-          {!editing ? (
-            <Button
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/jpeg,image/png,image/webp"
+        capture="environment"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) void uploadPhoto(f);
+          e.target.value = "";
+        }}
+      />
+
+      {/* Plant details card */}
+      <Card className="p-5">
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-semibold text-ink">Plant Details</p>
+          {!editing && (
+            <button
               type="button"
-              variant="secondary"
-              className="text-sm"
               onClick={() => setEditing(true)}
+              className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-leaf transition-colors hover:bg-lime/10"
             >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" /><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" /></svg>
               Edit
-            </Button>
-          ) : null}
+            </button>
+          )}
         </div>
 
         {editing ? (
-          <div className="space-y-3">
+          <div className="mt-4 space-y-3">
             <label className="block text-sm">
-              <span className="text-ink/70">Name</span>
+              <span className="text-xs font-medium text-ink/50">Name</span>
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="mt-1 w-full rounded-xl border border-ink/15 px-3 py-2 text-sm"
+                className="mt-1 w-full rounded-xl border border-ink/10 bg-white/80 px-3.5 py-2.5 text-sm transition-colors focus:border-leaf focus:outline-none"
                 maxLength={120}
               />
             </label>
             <label className="block text-sm">
-              <span className="text-ink/70">Species / cultivar label</span>
+              <span className="text-xs font-medium text-ink/50">Species / cultivar</span>
               <input
                 value={cultivar}
                 onChange={(e) => setCultivar(e.target.value)}
-                className="mt-1 w-full rounded-xl border border-ink/15 px-3 py-2 text-sm"
+                className="mt-1 w-full rounded-xl border border-ink/10 bg-white/80 px-3.5 py-2.5 text-sm transition-colors focus:border-leaf focus:outline-none"
                 maxLength={120}
               />
             </label>
             <label className="block text-sm">
-              <span className="text-ink/70">Description (optional)</span>
+              <span className="text-xs font-medium text-ink/50">Description (optional)</span>
               <textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                rows={4}
-                className="mt-1 w-full rounded-xl border border-ink/15 px-3 py-2 text-sm"
+                rows={3}
+                className="mt-1 w-full rounded-xl border border-ink/10 bg-white/80 px-3.5 py-2.5 text-sm transition-colors focus:border-leaf focus:outline-none"
                 maxLength={4000}
-                placeholder="Notes, location, care reminders…"
+                placeholder="Notes, location, care reminders..."
               />
             </label>
-            <div className="flex flex-wrap gap-2">
-              <Button type="button" disabled={busy} onClick={() => void saveEdit()}>
-                Save
+            <div className="flex gap-2 pt-1">
+              <Button type="button" disabled={busy} onClick={() => void saveEdit()} className="flex-1">
+                {busy ? "Saving..." : "Save"}
               </Button>
               <Button
                 type="button"
-                variant="secondary"
+                variant="ghost"
                 disabled={busy}
                 onClick={() => {
                   setEditing(false);
@@ -240,42 +264,43 @@ export function PlantDetailClient({
             </div>
           </div>
         ) : (
-          <div className="space-y-2 text-sm">
-            <p>
-              <span className="text-ink/45">Name · </span>
-              {plant.name}
-            </p>
-            <p>
-              <span className="text-ink/45">Species / cultivar · </span>
-              {plant.cultivar}
-            </p>
+          <div className="mt-3 space-y-2">
+            <div className="flex items-baseline gap-2 text-sm">
+              <span className="text-xs text-ink/35">Name</span>
+              <span className="font-medium text-ink">{plant.name}</span>
+            </div>
+            <div className="flex items-baseline gap-2 text-sm">
+              <span className="text-xs text-ink/35">Species</span>
+              <span className="font-medium text-ink">{plant.cultivar}</span>
+            </div>
             {plant.description ? (
-              <p className="whitespace-pre-wrap text-ink/70">{plant.description}</p>
+              <p className="whitespace-pre-wrap text-sm text-ink/60">{plant.description}</p>
             ) : (
-              <p className="text-ink/40">No description.</p>
+              <p className="text-xs text-ink/30">No description added.</p>
             )}
           </div>
         )}
       </Card>
 
-      <Card className="border-red-200/60 bg-red-50/40 p-4">
-        <p className="text-sm font-semibold text-ink/80">Delete plant</p>
-        <p className="mt-1 text-xs text-ink/50">
-          Removes the plant, its reports, and linked photo captures. This cannot be undone.
+      {/* Danger zone */}
+      <Card className="border-rose-100 bg-rose-50/30 p-5">
+        <p className="text-sm font-semibold text-ink/75">Delete Plant</p>
+        <p className="mt-1 text-xs text-ink/40">
+          Permanently removes this plant, reports, and photo captures.
         </p>
         {deleteConfirm ? (
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="mt-3 flex gap-2">
             <Button
               type="button"
-              className="bg-red-600 hover:bg-red-700"
+              className="bg-rose-600 hover:bg-rose-700"
               disabled={busy}
               onClick={() => void removePlant()}
             >
-              Confirm delete
+              {busy ? "Deleting..." : "Confirm delete"}
             </Button>
             <Button
               type="button"
-              variant="secondary"
+              variant="ghost"
               disabled={busy}
               onClick={() => setDeleteConfirm(false)}
             >
@@ -283,14 +308,13 @@ export function PlantDetailClient({
             </Button>
           </div>
         ) : (
-          <Button
+          <button
             type="button"
-            variant="secondary"
-            className="mt-3 border-red-200 text-red-700"
             onClick={() => setDeleteConfirm(true)}
+            className="mt-3 rounded-xl border border-rose-200 px-4 py-2 text-sm font-medium text-rose-600 transition-colors hover:bg-rose-50"
           >
-            Delete plant…
-          </Button>
+            Delete plant...
+          </button>
         )}
       </Card>
     </div>

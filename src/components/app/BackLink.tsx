@@ -4,9 +4,12 @@ export function BackLink({ href, children }: { href: string; children: React.Rea
   return (
     <Link
       href={href}
-      className="mb-4 inline-flex items-center gap-1 text-sm font-medium text-ink/55 hover:text-ink"
+      className="mb-5 inline-flex items-center gap-1.5 rounded-lg px-1 py-1 text-sm font-medium text-ink/55 transition-colors hover:text-ink"
     >
-      <span aria-hidden>←</span> {children}
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="15 18 9 12 15 6" />
+      </svg>
+      {children}
     </Link>
   );
 }
