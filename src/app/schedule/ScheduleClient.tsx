@@ -3,8 +3,11 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { Badge } from "@/components/atoms/Badge";
 import { Button } from "@/components/atoms/Button";
-import { Card } from "@/components/app/Section";
+import { Card } from "@/components/atoms/Card";
+import { StatusDot } from "@/components/atoms/StatusDot";
+import { SectionTitle } from "@/components/app/Section";
 import type { CaptureSchedule, MeshNetwork, TraySystem } from "@/lib/types/domain";
 import { formatRelativeTimestamp } from "@/lib/utils";
 
@@ -107,43 +110,68 @@ export function ScheduleClient({
 
   return (
     <div className="space-y-6">
-      <section>
-        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink/40">Saved</h2>
-        <ul className="flex flex-col gap-2">
-          {schedules.map((s) => (
-            <li key={s.id}>
-              <button
-                type="button"
-                onClick={() => setSelectedId(s.id === selectedId ? null : s.id)}
-                className={`w-full rounded-xl border px-3 py-2.5 text-left text-sm ${
-                  selectedId === s.id ? "border-leaf bg-lime/10" : "border-ink/10 hover:border-ink/20"
-                }`}
-              >
-                <span className="font-medium">{s.name}</span>
-                <span className="mt-0.5 block text-xs text-ink/45">
-                  Every {s.intervalMinutes} min · next {formatRelativeTimestamp(s.nextRunAt)}
-                  {s.active ? "" : " · paused"}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-        {schedules.length === 0 ? <p className="text-sm text-ink/45">None yet.</p> : null}
+      {/* Saved schedules */}
+      <section className="animate-fade-in stagger-1">
+        <SectionTitle>Saved Schedules</SectionTitle>
+        {schedules.length > 0 ? (
+          <ul className="flex flex-col gap-2">
+            {schedules.map((s) => (
+              <li key={s.id}>
+                <button
+                  type="button"
+                  onClick={() => setSelectedId(s.id === selectedId ? null : s.id)}
+                  className="w-full text-left"
+                >
+                  <Card
+                    interactive
+                    className={`flex items-center justify-between p-4 ${
+                      selectedId === s.id ? "ring-2 ring-leaf/30" : ""
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <StatusDot status={s.active ? "healthy" : "offline"} pulse={s.active} size="md" />
+                      <div>
+                        <p className="text-sm font-semibold text-ink">{s.name}</p>
+                        <p className="mt-0.5 text-xs text-ink/40">
+                          Every {s.intervalMinutes} min · next {formatRelativeTimestamp(s.nextRunAt)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge tone={s.active ? "success" : "default"}>
+                        {s.active ? "Active" : "Paused"}
+                      </Badge>
+                      {selectedId === s.id && (
+                        <span className="text-[10px] font-semibold text-leaf">editing</span>
+                      )}
+                    </div>
+                  </Card>
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <Card className="p-6 text-center">
+            <p className="text-sm text-ink/45">No schedules yet. Create one below.</p>
+          </Card>
+        )}
       </section>
 
-      <section>
-        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-ink/40">
-          {selectedId ? "Edit" : "New"}
-        </h2>
-        <Card className="space-y-3">
-          <div className="flex gap-1 rounded-lg bg-mist p-1">
+      {/* Form */}
+      <section className="animate-fade-in stagger-2">
+        <SectionTitle>{selectedId ? "Edit Schedule" : "New Schedule"}</SectionTitle>
+        <Card className="space-y-4 p-5">
+          {/* Scope toggle */}
+          <div className="flex gap-1 rounded-xl bg-mist/80 p-1">
             {(["tray", "mesh"] as const).map((t) => (
               <button
                 key={t}
                 type="button"
                 onClick={() => setScopeType(t)}
-                className={`flex-1 rounded-md py-2 text-xs font-semibold capitalize ${
-                  scopeType === t ? "bg-white shadow-sm" : "text-ink/45"
+                className={`flex-1 rounded-lg py-2.5 text-xs font-semibold capitalize transition-all ${
+                  scopeType === t
+                    ? "bg-white text-ink shadow-sm"
+                    : "text-ink/40 hover:text-ink/60"
                 }`}
               >
                 {t}
@@ -151,62 +179,69 @@ export function ScheduleClient({
             ))}
           </div>
 
-          <label className="block text-sm">
-            <span className="text-ink/50">Target</span>
+          <label className="block">
+            <span className="text-xs font-semibold uppercase tracking-wider text-ink/40">Target</span>
             <select
               value={scopeId}
               onChange={(e) => setScopeId(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-ink/15 px-3 py-2 text-sm outline-none focus:border-leaf"
+              className="mt-2 w-full rounded-xl border border-ink/10 bg-white/80 px-3.5 py-2.5 text-sm transition-colors focus:border-leaf focus:outline-none"
             >
               {targets.map((x) => (
-                <option key={x.id} value={x.id}>
-                  {x.name}
-                </option>
+                <option key={x.id} value={x.id}>{x.name}</option>
               ))}
             </select>
           </label>
 
-          <label className="block text-sm">
-            <span className="text-ink/50">Name</span>
+          <label className="block">
+            <span className="text-xs font-semibold uppercase tracking-wider text-ink/40">Name</span>
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-ink/15 px-3 py-2 text-sm outline-none focus:border-leaf"
+              className="mt-2 w-full rounded-xl border border-ink/10 bg-white/80 px-3.5 py-2.5 text-sm transition-colors focus:border-leaf focus:outline-none"
             />
           </label>
 
-          <label className="block text-sm">
-            <span className="text-ink/50">Interval (minutes)</span>
+          <label className="block">
+            <span className="text-xs font-semibold uppercase tracking-wider text-ink/40">Interval (minutes)</span>
             <input
               type="number"
               min={5}
               step={5}
               value={interval}
               onChange={(e) => setInterval(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-ink/15 px-3 py-2 text-sm outline-none focus:border-leaf"
+              className="mt-2 w-full rounded-xl border border-ink/10 bg-white/80 px-3.5 py-2.5 text-sm transition-colors focus:border-leaf focus:outline-none"
             />
           </label>
 
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={active}
-              onChange={(e) => setActive(e.target.checked)}
-              className="rounded accent-leaf"
-            />
-            Active
+          <label className="flex items-center gap-3 rounded-xl bg-mist/40 px-4 py-3">
+            <div className={`relative flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors ${active ? "bg-leaf" : "bg-ink/15"}`}>
+              <input
+                type="checkbox"
+                checked={active}
+                onChange={(e) => setActive(e.target.checked)}
+                className="peer absolute inset-0 cursor-pointer opacity-0"
+              />
+              <span className={`absolute h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${active ? "translate-x-[22px]" : "translate-x-0.5"}`} />
+            </div>
+            <span className="text-sm font-medium text-ink/70">
+              {active ? "Schedule active" : "Schedule paused"}
+            </span>
           </label>
 
-          {msg ? <p className="text-sm text-ink/55">{msg}</p> : null}
+          {msg && (
+            <p className={`text-sm ${msg === "Saved." ? "text-emerald-600" : "text-rose-600"}`}>
+              {msg}
+            </p>
+          )}
 
           <Button className="w-full" type="button" disabled={busy} onClick={() => void save()}>
-            {busy ? "Saving…" : "Save"}
+            {busy ? "Saving..." : selectedId ? "Update Schedule" : "Create Schedule"}
           </Button>
 
-          {selectedId ? (
+          {selectedId && (
             <button
               type="button"
-              className="w-full text-sm text-ink/45 hover:text-ink"
+              className="w-full rounded-xl py-2 text-sm font-medium text-ink/40 transition-colors hover:text-ink/60"
               onClick={() => {
                 setSelectedId(null);
                 setMsg(null);
@@ -214,12 +249,12 @@ export function ScheduleClient({
             >
               Clear selection
             </button>
-          ) : null}
+          )}
         </Card>
       </section>
 
-      <p className="text-xs text-ink/35">
-        Images post to: {schedules[0]?.destination ?? "computer-vision-backend"}
+      <p className="text-xs text-ink/25">
+        Destination: {schedules[0]?.destination ?? "computer-vision-backend"}
       </p>
     </div>
   );

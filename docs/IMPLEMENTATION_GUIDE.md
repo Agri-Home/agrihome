@@ -4,7 +4,7 @@
 
 This document describes what has been implemented so far in the AgriHome Vision Console, how the current system is structured, which APIs are available, and what the most important next enhancements should be.
 
-The current application is a full-stack monitoring console for a future plant-health hardware platform. It is designed to work today with mock data and later switch to real hardware cameras, ML inference, PostgreSQL persistence, and vector-search-backed image recognition.
+The current application is a full-stack monitoring console for a plant-health platform: **PostgreSQL** holds core domain data, optional **Qdrant** backs similarity search, and optional HTTP services provide **tray** and **leaf** computer vision. Hardware cameras and production ML can replace simulated or derived prediction paths over time.
 
 **Diagrams (Mermaid):** [docs/diagrams/README.md](./diagrams/README.md) — architecture, integrations, UML-style domain/services, and use cases.
 
@@ -13,25 +13,25 @@ The current application is a full-stack monitoring console for a future plant-he
 Implemented so far:
 
 - A Next.js App Router application with TypeScript and Tailwind CSS
-- A mobile-first Vision Console UI: overview, tray drill-down, plant detail (charts, reports), mesh, schedules, and photo-first “add plant”
-- Multi-tray monitoring
-- Tray-specific live image, prediction, and monitoring views
+- A mobile-first Vision Console UI: overview, tray drill-down, plant detail (stats, photo upload, edit/delete, charts, reports, log), mesh, schedules, and photo-first “add plant”
+- Multi-tray monitoring backed by **PostgreSQL** (required for core reads/writes)
+- Tray-specific live image, prediction, monitoring, and **tray CV** (plant count + boxes via `POST /api/trays/{trayId}/vision`)
 - Individual plant tracking within trays
 - Plant-level diagnosis reports covering disease and deficiency detection
 - Editable image-capture schedules for trays and meshes
 - Mesh creation to group trays/systems into monitoring topologies
-- REST API routes for camera, prediction, monitoring, trays, mesh, health, and GraphQL
-- GraphQL Yoga endpoint for read access and mesh creation
-- PostgreSQL-ready service and schema layer (`src/lib/db/postgres.ts`)
-- Qdrant-ready vector-search abstraction
-- Mock-first data and simulation layer so the app works before hardware and ML integration are ready
-- GitHub Actions workflow for Docker image release after successful validation
+- REST API routes for camera, prediction, monitoring, trays, tray vision, plants (CRUD + photos), files, mesh, health, schedules, and GraphQL
+- GraphQL Yoga endpoint for reads and mutations (`createMeshNetwork`, `updatePlant`, `deletePlant`, `upsertSchedule`)
+- PostgreSQL pool and SQL schema (`src/lib/db/postgres.ts`, `db/schema.sql`); optional `db/migrations/*.sql` for existing databases
+- Qdrant-ready vector-search abstraction (optional)
+- Optional remote **species** classifier (`CV_SPECIES_INFERENCE_URL`) and **tray** detector (`CV_TRAY_INFERENCE_URL`); tray vision can use a simulator when the tray URL is unset
+- GitHub Actions workflow for Docker image release after successful validation (including manual `workflow_dispatch`)
 
 Not fully implemented yet:
 
 - Real hardware camera ingestion from deployed devices
 - Real ML model inference pipeline
-- Persistent PostgreSQL writes for all flows in every edge case (some paths still mock-fallback on error)
+- Hardening for all edge cases (transactions, idempotency, partial failures)
 - Real vector embeddings and full image-recognition pipeline
 - Authentication, authorization, and multi-user operations
 - Mesh visualization and mesh-level orchestration logic
@@ -60,16 +60,17 @@ REST API routes (representative):
 - Camera: [src/app/api/camera/latest/route.ts](../src/app/api/camera/latest/route.ts), [src/app/api/camera/ingest/route.ts](../src/app/api/camera/ingest/route.ts)
 - Predictions: [src/app/api/predictions/latest/route.ts](../src/app/api/predictions/latest/route.ts)
 - Monitoring: [src/app/api/monitoring/log/route.ts](../src/app/api/monitoring/log/route.ts)
-- Topology: [src/app/api/trays/route.ts](../src/app/api/trays/route.ts), [src/app/api/mesh/route.ts](../src/app/api/mesh/route.ts)
-- Plants & reports: [src/app/api/plants/route.ts](../src/app/api/plants/route.ts), [src/app/api/plants/manual/route.ts](../src/app/api/plants/manual/route.ts), [src/app/api/plants/from-photo/route.ts](../src/app/api/plants/from-photo/route.ts), [src/app/api/plants/[plantId]/photo/route.ts](../src/app/api/plants/[plantId]/photo/route.ts), [src/app/api/reports/route.ts](../src/app/api/reports/route.ts)
+- Topology: [src/app/api/trays/route.ts](../src/app/api/trays/route.ts), [src/app/api/trays/[trayId]/vision/route.ts](../src/app/api/trays/[trayId]/vision/route.ts), [src/app/api/mesh/route.ts](../src/app/api/mesh/route.ts)
+- Plants & reports: [src/app/api/plants/route.ts](../src/app/api/plants/route.ts), [src/app/api/plants/manual/route.ts](../src/app/api/plants/manual/route.ts), [src/app/api/plants/from-photo/route.ts](../src/app/api/plants/from-photo/route.ts), [src/app/api/plants/[plantId]/route.ts](../src/app/api/plants/[plantId]/route.ts), [src/app/api/plants/[plantId]/photo/route.ts](../src/app/api/plants/[plantId]/photo/route.ts), [src/app/api/reports/route.ts](../src/app/api/reports/route.ts)
+- Stored files: [src/app/api/files/[...path]/route.ts](../src/app/api/files/[...path]/route.ts)
 - Schedules: [src/app/api/schedules/route.ts](../src/app/api/schedules/route.ts)
 - Health & GraphQL: [src/app/api/health/route.ts](../src/app/api/health/route.ts), [src/app/api/graphql/route.ts](../src/app/api/graphql/route.ts)
 
 Service layer:
 
 - Camera, prediction, monitoring, topology, plant, schedule, vector — under [src/lib/services/](../src/lib/services/)
-- Manual / photo flows: [src/lib/services/plant-manual-service.ts](../src/lib/services/plant-manual-service.ts), [src/lib/services/plant-detection-service.ts](../src/lib/services/plant-detection-service.ts) (simulated species ID from image bytes)
-- Mock: [src/lib/services/mock-store.ts](../src/lib/services/mock-store.ts), seed [src/lib/mocks/data.ts](../src/lib/mocks/data.ts)
+- Manual / photo flows: [src/lib/services/plant-manual-service.ts](../src/lib/services/plant-manual-service.ts), [src/lib/services/plant-detection-service.ts](../src/lib/services/plant-detection-service.ts) (HTTP client for `CV_SPECIES_INFERENCE_URL`; throws if unconfigured)
+- File persistence: [src/lib/storage/](../src/lib/storage/) (originals on disk; URLs often under `/api/files/...`)
 
 ### Persistence and infrastructure
 
@@ -84,9 +85,9 @@ Service layer:
 ### 4.1 Vision Console UI
 
 - **Home (`/`)** — Latest frame (when available), tray list, summary chart.
-- **Trays** — List and **tray detail** with latest image, monitoring area chart, plant rows (thumbnails), monitoring events.
-- **Plants** — **Plant detail** with last image, health line chart (reports), monitoring log, report history.
-- **Add plant (`/plants/new`)** — Tray picker, single photo upload; **auto species/cultivar** (simulated from image hash) + **health report** via `POST /api/plants/from-photo`.
+- **Trays** — List and **tray detail** with latest image, monitoring area chart, plant rows (thumbnails), monitoring events, **tray vision** upload (count + detection boxes when configured).
+- **Plants** — **Plant detail** with hero stats, latest finding, **photo upload**, **edit** (name, species/cultivar, description), **delete**, health line chart, report history, monitoring log (plant-scoped, falls back to tray events when empty).
+- **Add plant (`/plants/new`)** — Tray picker, single photo upload; **species/cultivar from remote classifier** + **health report** via `POST /api/plants/from-photo` (requires **`CV_SPECIES_INFERENCE_URL`**).
 - **Mesh** — List, create form, **mesh detail** with merged monitoring chart and plant list.
 - **Schedule** — List/edit capture schedules (tray or mesh scope).
 - **PWA** — Service worker + install hints via `PwaProvider`.
@@ -98,8 +99,7 @@ Current behavior:
 - `GET /api/camera/latest` returns the latest camera frame
 - Optional `trayId` query parameter scopes the response to one tray
 - `POST /api/camera/ingest` accepts a new frame for a tray
-- If the app is running in mock mode, the data is stored in the in-memory mock store
-- If PostgreSQL is configured and mock mode is disabled, captures are written to the database (with mock fallback on error)
+- Captures are written through the service layer to **PostgreSQL** (and linked storage paths as implemented)
 
 ### 4.3 Prediction Flow
 
@@ -107,9 +107,9 @@ Current behavior:
 
 - `GET /api/predictions/latest` returns the latest prediction
 - Optional `trayId` query parameter scopes the prediction to one tray
-- Mock predictions are generated when the real ML model is not ready
+- Predictions are produced from the prediction service (placeholders or derived from captures/reports depending on configuration)
 - Similar-image matches are returned through the vector-service abstraction
-- The app can later switch from mock similarity data to Qdrant
+- When Qdrant is configured, similarity matches are served from the collection; otherwise the UI receives an empty list
 
 ### 4.4 Monitoring Flow
 
@@ -163,7 +163,8 @@ Key entities from [domain.ts](../src/lib/types/domain.ts):
 - `name`
 - `zone`
 - `crop`
-- `plantCount`
+- `plantCount` (catalog count in AgriHome)
+- `visionPlantCount`, `visionPlantCountAt`, `visionPlantCountConfidence`, `visionDetections` (optional; from tray CV — see `db/migrations/001_tray_vision.sql` if upgrading)
 - `healthScore`
 - `status`
 - `deviceId`
@@ -221,6 +222,7 @@ Key entities from [domain.ts](../src/lib/types/domain.ts):
 - `meshIds`
 - `name`
 - `cultivar`
+- `description` (optional user notes — see `db/migrations/002_plant_description.sql` if upgrading)
 - `slotLabel`
 - `row`
 - `column`
@@ -276,13 +278,17 @@ Example response:
 {
   "data": {
     "api": "healthy",
-    "database": "mock",
-    "vectorStore": "mock",
-    "cameraPipeline": "simulated"
+    "database": "connected",
+    "vectorStore": "disconnected",
+    "cameraPipeline": "simulated",
+    "trayVisionInference": "simulated",
+    "speciesInference": "unconfigured"
   },
   "generatedAt": "2026-04-02T20:00:00.000Z"
 }
 ```
+
+`database` is `connected` or `disconnected` (PostgreSQL ping). `vectorStore` is `connected` when `QDRANT_URL` is set and used, else `disconnected`. `trayVisionInference` is `remote` when `CV_TRAY_INFERENCE_URL` is set, else `simulated`. `speciesInference` is `remote` when `CV_SPECIES_INFERENCE_URL` is set, else `unconfigured`.
 
 ### 6.2 Latest Camera Image
 
@@ -323,8 +329,7 @@ Purpose:
 
 Current behavior:
 
-- Stores to mock store in mock mode
-- Structured to write to PostgreSQL in live mode
+- Writes through the camera service to **PostgreSQL** (and associated storage where applicable)
 
 ### 6.4 Latest Prediction
 
@@ -350,6 +355,7 @@ Query params:
 
 - `limit` optional, default `10`
 - `trayId` optional
+- `plantId` optional (scopes events to one plant)
 
 Purpose:
 
@@ -359,6 +365,7 @@ Examples:
 
 - `GET /api/monitoring/log?limit=8`
 - `GET /api/monitoring/log?trayId=tray-basil-01&limit=8`
+- `GET /api/monitoring/log?plantId=tray-basil-01-plant-1&limit=8`
 
 ### 6.6 Tray List
 
@@ -368,7 +375,14 @@ Purpose:
 
 - Returns all tray systems available to the dashboard
 
-### 6.7 Mesh List
+### 6.7 Tray vision (plant count + boxes)
+
+`POST /api/trays/{trayId}/vision`
+
+- `multipart/form-data`: field `photo` (file).
+- Persists optional CV fields on the tray (`vision_plant_count`, detections JSON, etc.). Uses remote HTTP when `CV_TRAY_INFERENCE_URL` is set; otherwise a built-in simulator.
+
+### 6.8 Mesh List
 
 `GET /api/mesh`
 
@@ -376,7 +390,7 @@ Purpose:
 
 - Returns all defined mesh networks
 
-### 6.8 Mesh Create
+### 6.9 Mesh Create
 
 `POST /api/mesh`
 
@@ -398,7 +412,7 @@ Purpose:
 
 - Creates a new mesh network for grouped tray monitoring
 
-### 6.9 Plants
+### 6.10 Plants
 
 `GET /api/plants`
 
@@ -410,7 +424,7 @@ Purpose:
 
 - Returns individual plants for a tray or for all trays
 
-### 6.10 Create plant (manual JSON)
+### 6.11 Create plant (manual JSON)
 
 `POST /api/plants/manual`
 
@@ -424,23 +438,39 @@ Body (JSON):
 }
 ```
 
-- Creates a plant row (mock store or PostgreSQL). Tray defaults to `tray-manual` (“My plants”) when omitted.
+- Creates a plant row in **PostgreSQL**. Tray defaults to `tray-manual` (“My plants”) when omitted.
 
-### 6.11 Create plant from photo (auto species + health report)
+### 6.12 Create plant from photo (auto species + health report)
 
 `POST /api/plants/from-photo`
 
 - `multipart/form-data`: field `photo` (file), optional `trayId`, optional `displayName`, optional `cultivar` override.
-- Runs simulated species detection from image bytes, creates the plant, saves file under `public/uploads/plants/`, ingests capture, generates prediction + plant report.
+- Calls **`CV_SPECIES_INFERENCE_URL`** (`detectPlantSpeciesFromImage`), creates the plant, stores the image via the storage layer, ingests capture, generates prediction + plant report.
 
-### 6.12 Analyze existing plant photo
+### 6.13 Update or delete plant
+
+`PATCH /api/plants/{plantId}`
+
+- JSON body: any of `name`, `cultivar`, `description` (`null` clears description). At least one field required.
+
+`DELETE /api/plants/{plantId}`
+
+- Removes the plant (implementation-defined cascade for reports/captures).
+
+### 6.14 Analyze existing plant photo
 
 `POST /api/plants/{plantId}/photo`
 
 - `multipart/form-data`: field `photo` (file).
 - Attaches image and runs health analysis for an existing plant.
 
-### 6.13 Plant Reports
+### 6.15 Serve stored files
+
+`GET /api/files/{...path}`
+
+- Serves files from the configured storage roots (originals / processed / temp). Used by `next/image` `localPatterns` and upload URLs.
+
+### 6.16 Plant Reports
 
 `GET /api/reports`
 
@@ -454,7 +484,7 @@ Purpose:
 
 - Returns plant-level diagnostic reports, including disease and deficiency information
 
-### 6.14 Capture Schedules
+### 6.17 Capture Schedules
 
 `GET /api/schedules`
 
@@ -518,9 +548,11 @@ Schema source:
 - `schedules(scopeType: String, scopeId: String)`
 - `health`
 
-### Supported Mutation
+### Supported Mutations
 
 - `createMeshNetwork(name: String!, trayIds: [String!]!)`
+- `updatePlant(plantId: ID!, name: String, cultivar: String, description: String): PlantUnit!`
+- `deletePlant(plantId: ID!): Boolean!`
 - `upsertSchedule(id: String, scopeType: String!, scopeId: String!, name: String!, intervalMinutes: Int!, active: Boolean!)`
 
 ### Example Query
@@ -554,7 +586,7 @@ query TraySnapshot {
 }
 ```
 
-### Example Mutation
+### Example mutations
 
 ```graphql
 mutation CreateMesh {
@@ -566,6 +598,17 @@ mutation CreateMesh {
     name
     nodeCount
     status
+  }
+}
+```
+
+```graphql
+mutation RenamePlant {
+  updatePlant(plantId: "tray-basil-01-plant-1", name: "Basil A", description: "Bench 2") {
+    id
+    name
+    cultivar
+    description
   }
 }
 ```
@@ -589,8 +632,8 @@ Schema file:
 
 Important current design notes:
 
-- `tray_systems` is the parent entity for tray-level monitoring
-- `plants` stores individual monitored plants inside trays
+- `tray_systems` is the parent entity for tray-level monitoring (includes optional **tray CV** columns: `vision_plant_count`, timestamps, confidence, `vision_detections_json`)
+- `plants` stores individual monitored plants inside trays (includes optional `description` for user notes)
 - `camera_captures` references trays
 - `prediction_results` references both captures and trays
 - `plant_reports` stores plant-level diagnosis output
@@ -598,7 +641,7 @@ Important current design notes:
 - `mesh_networks` stores grouped tray IDs in JSON
 - `capture_schedules` defines automated capture cadence for trays and meshes
 
-## 9. Mock Mode vs Real Mode
+## 9. Environment and runtime configuration
 
 Configuration source:
 
@@ -606,16 +649,18 @@ Configuration source:
 
 Important variables (see `.env.example`):
 
-- `NEXT_PUBLIC_USE_MOCK_DATA` — default behavior in code treats unset as mock-friendly; set to `false` for DB-backed runs
-- `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DATABASE`
+- **`POSTGRES_HOST`**, **`POSTGRES_PORT`**, **`POSTGRES_USER`**, **`POSTGRES_PASSWORD`**, **`POSTGRES_DATABASE`** — required for normal operation (`requirePostgresPool()` throws if the core trio host/user/database is missing)
 - Legacy aliases still read in [env.ts](../src/lib/config/env.ts): `MARIADB_HOST`, `MARIADB_PORT`, `MARIADB_USER`, `MARIADB_PASSWORD`, `MARIADB_DATABASE`
-- `QDRANT_URL`, `QDRANT_API_KEY`, `QDRANT_COLLECTION`
+- **`QDRANT_URL`**, **`QDRANT_API_KEY`**, **`QDRANT_COLLECTION`** — optional vector store
+- **`CV_TRAY_INFERENCE_URL`**, **`CV_TRAY_INFERENCE_API_KEY`** — optional tray detector
+- **`CV_SPECIES_INFERENCE_URL`**, **`CV_SPECIES_INFERENCE_API_KEY`** — required for code paths that call `detectPlantSpeciesFromImage` (add plant from photo, etc.)
+- **`STORAGE_ROOT`** / related — optional; defaults under repo `storage/` (see `.env.example`)
 
 Current runtime behavior:
 
-- If mock mode is enabled, services read from the in-memory mock store
-- If mock mode is disabled and PostgreSQL is configured, services attempt database access (many code paths fall back to mock on query failure)
-- If Qdrant is configured, vector lookups can move from mock similarity matches to real vector search
+- Listing and mutating trays, plants, meshes, schedules, and related entities goes through **PostgreSQL**
+- When Qdrant is not configured, similarity search returns empty results and health reports `vectorStore: disconnected`
+- Tray vision uses a **remote** HTTP model when `CV_TRAY_INFERENCE_URL` is set, otherwise a **simulated** count/boxes path
 
 ## 10. Docker and Release Automation
 
@@ -626,7 +671,7 @@ Files:
 
 Current pipeline behavior:
 
-- Triggered on push to `main` or `master`
+- Triggered on push to `main` or `master`, or manually via **`workflow_dispatch`**
 - Runs `npm ci`
 - Runs `npm run typecheck`
 - Runs `npm run build`
@@ -638,7 +683,7 @@ Image tagging:
 - branch name
 - `latest` on the default branch
 
-## 11. What Is Production-Ready vs What Is Still Mocked
+## 11. What is production-ready vs still evolving
 
 Reasonably ready:
 
@@ -646,16 +691,14 @@ Reasonably ready:
 - App shell and drill-down monitoring UI (trays, plants, mesh, schedules)
 - REST and GraphQL endpoint shape
 - Service-layer separation
-- Database schema direction
+- PostgreSQL-backed domain model and SQL schema
 - CI/CD release workflow for container publishing
 
-Still mocked or partial:
+Still partial or environment-dependent:
 
-- ML classification logic
-- Embedding generation
-- Real Qdrant population and query strategy
+- Production-grade ML, embeddings, and Qdrant hygiene at scale
 - Hardware camera streaming and transport
-- Persistent topology management for every code path (some still mock-fallback)
+- Rich mesh topology management beyond list/create/detail
 - Security hardening
 - Auditability and observability
 
@@ -664,7 +707,6 @@ Still mocked or partial:
 ### Immediate
 
 - Add authentication and role-based access control
-- Persist trays, captures, predictions, events, and meshes fully in PostgreSQL without silent mock fallback
 - Add request validation with a schema library such as Zod
 - Add API error normalization and structured error responses
 - Add unit and integration tests for services and API routes
@@ -705,9 +747,9 @@ Still mocked or partial:
 
 ### Milestone 1
 
-- Hardened PostgreSQL persistence (no silent fallback where inappropriate)
-- Route validation
-- Test coverage for API routes
+- Route validation (e.g. Zod) and normalized API errors
+- Test coverage for API routes and services
+- Broader operational monitoring
 
 ### Milestone 2
 

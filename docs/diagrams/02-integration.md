@@ -36,25 +36,25 @@ flowchart LR
 
 | System | Role today | Protocol / notes |
 |--------|------------|------------------|
-| **PostgreSQL** | Canonical trays, plants, captures, predictions, reports, events, meshes, schedules | `pg` pool; env `POSTGRES_*` |
-| **Qdrant** | Optional vector similarity for “reference” matches | REST client; env `QDRANT_*`; often mocked |
+| **PostgreSQL** | Canonical trays, plants, captures, predictions, reports, events, meshes, schedules | `pg` pool; env `POSTGRES_*` (required) |
+| **Qdrant** | Optional vector similarity for “reference” matches | REST client; env `QDRANT_*` |
 | **Browser** | SPA + PWA (`PwaProvider`, `sw.js`) | HTTPS in production |
-| **File uploads** | User plant photos → `public/uploads/plants/` | Multipart `POST /api/plants/from-photo` |
+| **File uploads** | User plant photos → configurable `STORAGE_*` paths; URLs often under `/api/files/...` | Multipart `POST /api/plants/from-photo`, `POST /api/plants/{id}/photo`, tray `POST /api/trays/{id}/vision` |
 | **Edge cameras** | Not shipped; ingest contract via JSON body | `POST /api/camera/ingest` |
-| **Real ML** | Simulated: `derivePredictionFromCapture`, `detectPlantSpeciesFromImage` | Replace service internals |
+| **CV HTTP** | Optional `CV_TRAY_INFERENCE_URL`, `CV_SPECIES_INFERENCE_URL` | Species path requires configured URL; tray path can use simulator when unset |
 
 ```mermaid
 sequenceDiagram
   participant O as Operator
   participant N as Next.js API
   participant S as Services
-  participant M as Mock store / DB
+  participant DB as PostgreSQL + storage
 
   O->>N: POST /api/plants/from-photo (multipart)
   N->>S: createPlantFromPhotoWithAutoDetection
   S->>S: detectPlantSpeciesFromImage (bytes)
-  S->>M: create plant + capture + report
-  M-->>S: plant + analysis
+  S->>DB: create plant + capture + report
+  DB-->>S: plant + analysis
   S-->>N: JSON
   N-->>O: identification + health report
 ```
