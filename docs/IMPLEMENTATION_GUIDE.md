@@ -13,8 +13,10 @@ The current application is a full-stack monitoring console for a plant-health pl
 Implemented so far:
 
 - A Next.js App Router application with TypeScript and Tailwind CSS
+- Public landing page plus protected app routes guarded by authentication
 - A mobile-first Vision Console UI: overview, tray drill-down, plant detail (stats, photo upload, edit/delete, charts, reports, log), mesh, schedules, and photo-first “add plant”
 - Multi-tray monitoring backed by **PostgreSQL** (required for core reads/writes)
+- Firebase Authentication with email/password and Google sign-in, plus server-verified session cookies for protected routes and API handlers
 - Tray-specific live image, prediction, monitoring, and **tray CV** (plant count + boxes via `POST /api/trays/{trayId}/vision`)
 - Individual plant tracking within trays
 - Plant-level diagnosis reports covering disease and deficiency detection
@@ -33,7 +35,7 @@ Not fully implemented yet:
 - Real ML model inference pipeline
 - Hardening for all edge cases (transactions, idempotency, partial failures)
 - Real vector embeddings and full image-recognition pipeline
-- Authentication, authorization, and multi-user operations
+- Role-based authorization, password reset/account recovery flows, and broader multi-user operations
 - Mesh visualization and mesh-level orchestration logic
 
 ## 3. High-Level Architecture
@@ -45,17 +47,22 @@ Visual overview: [docs/diagrams/01-architecture.md](./diagrams/01-architecture.m
 - Root layout: [src/app/layout.tsx](../src/app/layout.tsx) — `PwaProvider`, `AppShell` (sidebar desktop, bottom nav mobile).
 - Shell: [src/components/shell/AppShell.tsx](../src/components/shell/AppShell.tsx).
 - Routes (App Router):
-  - Overview: [src/app/page.tsx](../src/app/page.tsx)
-  - Trays: [src/app/trays/page.tsx](../src/app/trays/page.tsx), [src/app/trays/[trayId]/page.tsx](../src/app/trays/[trayId]/page.tsx)
-  - Plants: [src/app/plants/[plantId]/page.tsx](../src/app/plants/[plantId]/page.tsx), [src/app/plants/new/](../src/app/plants/new/) (photo-first add + auto species + health report)
-  - Mesh: [src/app/mesh/page.tsx](../src/app/mesh/page.tsx), [src/app/mesh/[meshId]/page.tsx](../src/app/mesh/[meshId]/page.tsx)
-  - Schedule: [src/app/schedule/page.tsx](../src/app/schedule/page.tsx)
+  - Public landing: [src/app/page.tsx](../src/app/page.tsx)
+  - Login: [src/app/login/page.tsx](../src/app/login/page.tsx)
+  - Protected layout: [src/app/(protected)/layout.tsx](../src/app/(protected)/layout.tsx)
+  - Dashboard: [src/app/(protected)/dashboard/page.tsx](../src/app/(protected)/dashboard/page.tsx)
+  - Trays: [src/app/(protected)/trays/page.tsx](../src/app/(protected)/trays/page.tsx), [src/app/(protected)/trays/[trayId]/page.tsx](../src/app/(protected)/trays/[trayId]/page.tsx)
+  - Plants: [src/app/(protected)/plants/[plantId]/page.tsx](../src/app/(protected)/plants/[plantId]/page.tsx), [src/app/(protected)/plants/new/](../src/app/(protected)/plants/new/) (photo-first add + auto species + health report)
+  - Mesh: [src/app/(protected)/mesh/page.tsx](../src/app/(protected)/mesh/page.tsx), [src/app/(protected)/mesh/[meshId]/page.tsx](../src/app/(protected)/mesh/[meshId]/page.tsx)
+  - Schedule: [src/app/(protected)/schedule/page.tsx](../src/app/(protected)/schedule/page.tsx)
 - Charts (Recharts, client-only framing): [src/components/charts/](../src/components/charts/), [src/components/media/PlantImage.tsx](../src/components/media/PlantImage.tsx) (uploads vs optimized images).
 - Design system: [src/components/atoms/](../src/components/atoms/), [src/components/app/](../src/components/app/), [src/app/globals.css](../src/app/globals.css).
 
 ### Backend
 
 REST API routes (representative):
+
+- Auth: [src/app/api/auth/session/route.ts](../src/app/api/auth/session/route.ts), [src/app/api/auth/logout/route.ts](../src/app/api/auth/logout/route.ts)
 
 - Camera: [src/app/api/camera/latest/route.ts](../src/app/api/camera/latest/route.ts), [src/app/api/camera/ingest/route.ts](../src/app/api/camera/ingest/route.ts)
 - Predictions: [src/app/api/predictions/latest/route.ts](../src/app/api/predictions/latest/route.ts)
@@ -84,7 +91,9 @@ Service layer:
 
 ### 4.1 Vision Console UI
 
-- **Home (`/`)** — Latest frame (when available), tray list, summary chart.
+- **Public landing (`/`)** — Marketing-style overview and console preview before authentication.
+- **Login (`/login`)** — Email/password registration, email/password sign-in, and Google sign-in.
+- **Dashboard (`/dashboard`)** — Latest frame (when available), tray list, summary chart.
 - **Trays** — List and **tray detail** with latest image, monitoring area chart, plant rows (thumbnails), monitoring events, **tray vision** upload (count + detection boxes when configured).
 - **Plants** — **Plant detail** with hero stats, latest finding, **photo upload**, **edit** (name, species/cultivar, description), **delete**, health line chart, report history, monitoring log (plant-scoped, falls back to tray events when empty).
 - **Add plant (`/plants/new`)** — Tray picker, single photo upload; **species/cultivar from remote classifier** + **health report** via `POST /api/plants/from-photo` (requires **`CV_SPECIES_INFERENCE_URL`**).
@@ -92,7 +101,17 @@ Service layer:
 - **Schedule** — List/edit capture schedules (tray or mesh scope).
 - **PWA** — Service worker + install hints via `PwaProvider`.
 
-### 4.2 Camera Flow
+### 4.2 Authentication and Session Management
+
+Current behavior:
+
+- Firebase Authentication supports email/password registration, email/password sign-in, and Google sign-in.
+- The browser receives a Firebase ID token after sign-in, then exchanges it for an HTTP-only server session cookie through `POST /api/auth/session`.
+- Protected pages use `requireSessionAccountUser()` and protected API routes use `requireApiAccountUser()` or `requireApiUser()`.
+- Sign-out clears the session cookie through `POST /api/auth/logout`.
+- User-specific manual trays and data reads use the normalized authenticated email as the ownership key.
+
+### 4.3 Camera Flow
 
 Current behavior:
 
@@ -101,7 +120,7 @@ Current behavior:
 - `POST /api/camera/ingest` accepts a new frame for a tray
 - Captures are written through the service layer to **PostgreSQL** (and linked storage paths as implemented)
 
-### 4.3 Prediction Flow
+### 4.4 Prediction Flow
 
 Current behavior:
 
@@ -111,7 +130,7 @@ Current behavior:
 - Similar-image matches are returned through the vector-service abstraction
 - When Qdrant is configured, similarity matches are served from the collection; otherwise the UI receives an empty list
 
-### 4.4 Monitoring Flow
+### 4.5 Monitoring Flow
 
 Current behavior:
 
@@ -120,7 +139,7 @@ Current behavior:
 - Events represent hardware, prediction, and environmental states
 - The UI uses these events to show tray-level operational detail
 
-### 4.5 Tray and Mesh Topology
+### 4.6 Tray and Mesh Topology
 
 Current behavior:
 
@@ -134,7 +153,7 @@ This is the current meaning of a mesh in the system:
 - A mesh is a named network of trays/systems
 - It can later represent alert routing, irrigation coordination, topology-aware diagnostics, or hardware node relationships
 
-### 4.6 Individual Plant Reporting
+### 4.7 Individual Plant Reporting
 
 Current behavior:
 
@@ -143,7 +162,7 @@ Current behavior:
 - Each plant has its own health score, latest diagnosis, and last report timestamp
 - Each report can include disease candidates, deficiencies, anomalies, summary text, and recommended action
 
-### 4.7 Scheduled Imaging
+### 4.8 Scheduled Imaging
 
 Current behavior:
 
@@ -290,7 +309,29 @@ Example response:
 
 `database` is `connected` or `disconnected` (PostgreSQL ping). `vectorStore` is `connected` when `QDRANT_URL` is set and used, else `disconnected`. `trayVisionInference` is `remote` when `CV_TRAY_INFERENCE_URL` is set, else `simulated`. `speciesInference` is `remote` when `CV_SPECIES_INFERENCE_URL` is set, else `unconfigured`.
 
-### 6.2 Latest Camera Image
+### 6.2 Authentication session exchange
+
+`POST /api/auth/session`
+
+Required body:
+
+```json
+{
+  "idToken": "firebase-id-token"
+}
+```
+
+Purpose:
+
+- Verifies a freshly issued Firebase ID token and upgrades it into a secure HTTP-only session cookie for the app.
+
+`POST /api/auth/logout`
+
+Purpose:
+
+- Clears the current HTTP-only session cookie.
+
+### 6.3 Latest Camera Image
 
 `GET /api/camera/latest`
 
@@ -306,7 +347,7 @@ Example:
 
 `GET /api/camera/latest?trayId=tray-basil-01`
 
-### 6.3 Camera Ingest
+### 6.4 Camera Ingest
 
 `POST /api/camera/ingest`
 
@@ -331,7 +372,7 @@ Current behavior:
 
 - Writes through the camera service to **PostgreSQL** (and associated storage where applicable)
 
-### 6.4 Latest Prediction
+### 6.5 Latest Prediction
 
 `GET /api/predictions/latest`
 
@@ -347,7 +388,7 @@ Example:
 
 `GET /api/predictions/latest?trayId=tray-basil-01`
 
-### 6.5 Monitoring Log
+### 6.6 Monitoring Log
 
 `GET /api/monitoring/log`
 
@@ -367,7 +408,7 @@ Examples:
 - `GET /api/monitoring/log?trayId=tray-basil-01&limit=8`
 - `GET /api/monitoring/log?plantId=tray-basil-01-plant-1&limit=8`
 
-### 6.6 Tray List
+### 6.7 Tray List
 
 `GET /api/trays`
 
@@ -375,14 +416,14 @@ Purpose:
 
 - Returns all tray systems available to the dashboard
 
-### 6.7 Tray vision (plant count + boxes)
+### 6.8 Tray vision (plant count + boxes)
 
 `POST /api/trays/{trayId}/vision`
 
 - `multipart/form-data`: field `photo` (file).
 - Persists optional CV fields on the tray (`vision_plant_count`, detections JSON, etc.). Uses remote HTTP when `CV_TRAY_INFERENCE_URL` is set; otherwise a built-in simulator.
 
-### 6.8 Mesh List
+### 6.9 Mesh List
 
 `GET /api/mesh`
 
@@ -390,7 +431,7 @@ Purpose:
 
 - Returns all defined mesh networks
 
-### 6.9 Mesh Create
+### 6.10 Mesh Create
 
 `POST /api/mesh`
 
@@ -412,7 +453,7 @@ Purpose:
 
 - Creates a new mesh network for grouped tray monitoring
 
-### 6.10 Plants
+### 6.11 Plants
 
 `GET /api/plants`
 
@@ -424,7 +465,7 @@ Purpose:
 
 - Returns individual plants for a tray or for all trays
 
-### 6.11 Create plant (manual JSON)
+### 6.12 Create plant (manual JSON)
 
 `POST /api/plants/manual`
 
@@ -440,14 +481,14 @@ Body (JSON):
 
 - Creates a plant row in **PostgreSQL**. Tray defaults to `tray-manual` (“My plants”) when omitted.
 
-### 6.12 Create plant from photo (auto species + health report)
+### 6.13 Create plant from photo (auto species + health report)
 
 `POST /api/plants/from-photo`
 
 - `multipart/form-data`: field `photo` (file), optional `trayId`, optional `displayName`, optional `cultivar` override.
 - Calls **`CV_SPECIES_INFERENCE_URL`** (`detectPlantSpeciesFromImage`), creates the plant, stores the image via the storage layer, ingests capture, generates prediction + plant report.
 
-### 6.13 Update or delete plant
+### 6.14 Update or delete plant
 
 `PATCH /api/plants/{plantId}`
 
@@ -457,20 +498,20 @@ Body (JSON):
 
 - Removes the plant (implementation-defined cascade for reports/captures).
 
-### 6.14 Analyze existing plant photo
+### 6.15 Analyze existing plant photo
 
 `POST /api/plants/{plantId}/photo`
 
 - `multipart/form-data`: field `photo` (file).
 - Attaches image and runs health analysis for an existing plant.
 
-### 6.15 Serve stored files
+### 6.16 Serve stored files
 
 `GET /api/files/{...path}`
 
 - Serves files from the configured storage roots (originals / processed / temp). Used by `next/image` `localPatterns` and upload URLs.
 
-### 6.16 Plant Reports
+### 6.17 Plant Reports
 
 `GET /api/reports`
 
@@ -484,7 +525,7 @@ Purpose:
 
 - Returns plant-level diagnostic reports, including disease and deficiency information
 
-### 6.17 Capture Schedules
+### 6.18 Capture Schedules
 
 `GET /api/schedules`
 
@@ -651,6 +692,9 @@ Important variables (see `.env.example`):
 
 - **`POSTGRES_HOST`**, **`POSTGRES_PORT`**, **`POSTGRES_USER`**, **`POSTGRES_PASSWORD`**, **`POSTGRES_DATABASE`** — required for normal operation (`requirePostgresPool()` throws if the core trio host/user/database is missing)
 - Legacy aliases still read in [env.ts](../src/lib/config/env.ts): `MARIADB_HOST`, `MARIADB_PORT`, `MARIADB_USER`, `MARIADB_PASSWORD`, `MARIADB_DATABASE`
+- **`FIREBASE_API_KEY`**, **`FIREBASE_AUTH_DOMAIN`**, **`FIREBASE_PROJECT_ID`**, **`FIREBASE_APP_ID`** — required for browser authentication flows
+- **`FIREBASE_CLIENT_EMAIL`** + **`FIREBASE_PRIVATE_KEY`** or **`FIREBASE_SERVICE_ACCOUNT_JSON`** — required for server-side Firebase Admin verification and session cookies
+- **`FIREBASE_SESSION_COOKIE_NAME`** — optional override for the session cookie name
 - **`QDRANT_URL`**, **`QDRANT_API_KEY`**, **`QDRANT_COLLECTION`** — optional vector store
 - **`CV_TRAY_INFERENCE_URL`**, **`CV_TRAY_INFERENCE_API_KEY`** — optional tray detector
 - **`CV_SPECIES_INFERENCE_URL`**, **`CV_SPECIES_INFERENCE_API_KEY`** — required for code paths that call `detectPlantSpeciesFromImage` (add plant from photo, etc.)
@@ -688,6 +732,7 @@ Image tagging:
 Reasonably ready:
 
 - Next.js application structure
+- Baseline authentication and protected routes
 - App shell and drill-down monitoring UI (trays, plants, mesh, schedules)
 - REST and GraphQL endpoint shape
 - Service-layer separation
@@ -706,11 +751,12 @@ Still partial or environment-dependent:
 
 ### Immediate
 
-- Add authentication and role-based access control
+- Add role-based access control and password-reset/account-recovery flows on top of the current authentication baseline
 - Add request validation with a schema library such as Zod
 - Add API error normalization and structured error responses
 - Add unit and integration tests for services and API routes
 - Add frontend loading skeletons and optimistic mesh creation feedback
+- Add tray alert notifications (email or push) for critical states
 
 ### Hardware Integration
 
@@ -747,9 +793,10 @@ Still partial or environment-dependent:
 
 ### Milestone 1
 
+- Auth hardening: password reset, role scaffolding, and session-flow test coverage
 - Route validation (e.g. Zod) and normalized API errors
 - Test coverage for API routes and services
-- Broader operational monitoring
+- Broader operational monitoring and alert delivery
 
 ### Milestone 2
 
@@ -767,12 +814,13 @@ Still partial or environment-dependent:
 
 - Mesh topology visualization
 - Mesh-level analytics and automation
-- User accounts and operational roles
+- Expanded admin tooling and operational roles
 
 ## 14. Summary
 
 The system now provides a working full-stack foundation for:
 
+- authenticated access to protected greenhouse data
 - tray-specific plant-health monitoring
 - live image retrieval and placeholder handling
 - prediction and monitoring event presentation

@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { DM_Sans } from "next/font/google";
 
-import { AppShell } from "@/components/shell/AppShell";
 import { PwaProvider } from "@/components/providers/PwaProvider";
 import { SnackbarProvider } from "@/components/providers/SnackbarProvider";
 import "./globals.css";
@@ -41,7 +40,7 @@ export default function RootLayout({
       <body className={`${dmSans.variable} font-sans antialiased`}>
         <PwaProvider>
           <SnackbarProvider>
-            <AppShell>{children}</AppShell>
+            {children}
           </SnackbarProvider>
         </PwaProvider>
       </body>

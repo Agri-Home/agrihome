@@ -57,6 +57,8 @@ export interface PlantUnit {
   cultivar: string;
   /** User notes (location, variety notes, care reminders). */
   description: string | null;
+  /** Optional external ID (label, RFID, lab code). */
+  plantIdentifier: string | null;
   slotLabel: string;
   row: number;
   column: number;

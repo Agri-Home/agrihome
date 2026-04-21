@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { requireApiAccountUser } from "@/lib/auth/session";
 import { listSchedules, upsertSchedule } from "@/lib/services/schedule-service";
 import type { CaptureSchedule } from "@/lib/types/domain";
 
@@ -7,12 +8,21 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
+  const authResult = await requireApiAccountUser();
+  if (authResult instanceof Response) {
+    return authResult;
+  }
+
   const { searchParams } = new URL(request.url);
   const scopeType =
     (searchParams.get("scopeType") as CaptureSchedule["scopeType"] | null) ??
     undefined;
   const scopeId = searchParams.get("scopeId") ?? undefined;
-  const data = await listSchedules({ scopeType, scopeId });
+  const data = await listSchedules({
+    ownerEmail: authResult.email,
+    scopeType,
+    scopeId
+  });
 
   return NextResponse.json({
     data,
@@ -22,6 +32,11 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const authResult = await requireApiAccountUser();
+  if (authResult instanceof Response) {
+    return authResult;
+  }
+
   const payload = (await request.json()) as {
     scopeType?: CaptureSchedule["scopeType"];
     scopeId?: string;
@@ -44,18 +59,30 @@ export async function POST(request: Request) {
     );
   }
 
-  const data = await upsertSchedule({
-    scopeType: payload.scopeType,
-    scopeId: payload.scopeId,
-    name: payload.name,
-    intervalMinutes: payload.intervalMinutes,
-    active: payload.active ?? true
-  });
+  try {
+    const data = await upsertSchedule({
+      ownerEmail: authResult.email,
+      scopeType: payload.scopeType,
+      scopeId: payload.scopeId,
+      name: payload.name,
+      intervalMinutes: payload.intervalMinutes,
+      active: payload.active ?? true
+    });
 
-  return NextResponse.json({ data, message: "Schedule created" }, { status: 201 });
+    return NextResponse.json({ data, message: "Schedule created" }, { status: 201 });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Schedule create failed";
+    const status = msg === "Scope not found" ? 404 : 400;
+    return NextResponse.json({ error: msg }, { status });
+  }
 }
 
 export async function PATCH(request: Request) {
+  const authResult = await requireApiAccountUser();
+  if (authResult instanceof Response) {
+    return authResult;
+  }
+
   const payload = (await request.json()) as {
     id?: string;
     scopeType?: CaptureSchedule["scopeType"];
@@ -80,14 +107,22 @@ export async function PATCH(request: Request) {
     );
   }
 
-  const data = await upsertSchedule({
-    id: payload.id,
-    scopeType: payload.scopeType,
-    scopeId: payload.scopeId,
-    name: payload.name,
-    intervalMinutes: payload.intervalMinutes,
-    active: payload.active ?? true
-  });
+  try {
+    const data = await upsertSchedule({
+      ownerEmail: authResult.email,
+      id: payload.id,
+      scopeType: payload.scopeType,
+      scopeId: payload.scopeId,
+      name: payload.name,
+      intervalMinutes: payload.intervalMinutes,
+      active: payload.active ?? true
+    });
 
-  return NextResponse.json({ data, message: "Schedule updated" });
+    return NextResponse.json({ data, message: "Schedule updated" });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Schedule update failed";
+    const status =
+      msg === "Scope not found" || msg === "Schedule not found" ? 404 : 400;
+    return NextResponse.json({ error: msg }, { status });
+  }
 }

@@ -1,0 +1,29 @@
+\subsection{Purpose}
+
+The \textbf{AgriHome Vision Console} is a web-based monitoring and decision-support product for controlled-environment agriculture and laboratory plant studies. Operators and researchers use it to observe tray-level imagery, track individual plants, review automated health assessments, organize trays into logical \textbf{meshes}, and manage image-capture schedules. This \textbf{Architectural Design Specification (ADS)} records how the product is decomposed into layers and subsystems, how data moves among them, and which interfaces connect internal components to each other and to external partners.
+
+This document is a companion to the team's \textbf{System Requirements Specification (SRS)} for the same project.\cite{srs} The SRS states \emph{what} the system must do for customers (for example, plant health presentation, automatic capture, environmental data, dashboards, authentication, and secure storage). This ADS states \emph{how} those responsibilities are allocated to software structure: presentation, application orchestration, processing (vision and analytics adapters), and persistent data.
+
+\subsection{Scope}
+
+\textbf{In scope} for this ADS are: the logical four-layer architecture; subsystem names, assumptions, responsibilities, and interface summaries; major data flows from user action to storage; identification of optional processing and search backends; and deployment context at the level of application, database, and object storage.
+
+\textbf{Out of scope} are: user-interface visual design mockups beyond structural responsibilities; detailed REST or GraphQL field specifications; source file paths and build commands (covered in engineering documentation); formal threat models; and training procedures for ML models.
+
+\subsection{System summary}
+
+AgriHome addresses limitations of ad hoc spreadsheets, disconnected camera feeds, and manual record-keeping by providing a \textbf{single console} that ties together:
+
+\begin{itemize}
+  \item \textbf{Identity and access} — authenticated users interact only with their permitted trays, plants, and meshes.
+  \item \textbf{Observation} — latest captures, charts, and monitoring history support the requirements for plant status display, historical data, and dashboard-style summaries.
+  \item \textbf{Interpretation} — health reports and optional model-backed inference enrich raw imagery (where configured).
+  \item \textbf{Planning} — schedules express when captures or checks should occur, supporting automatic image capture policies described in the SRS.
+  \item \textbf{Persistence} — relational storage holds authoritative domain state; object storage holds images and large artifacts referenced from that state.
+\end{itemize}
+
+The reference implementation uses a modern full-stack web platform (browser and installable PWA client, server-hosted application, PostgreSQL, file storage, Firebase Authentication, and optional HTTP-based inference services). The architecture in this document is described so that those technologies could be substituted behind the same layer boundaries where a future maintainer requires it.
+
+\subsection{Document organization}
+
+Section~2 presents the \textbf{project overview} and describes the four primary layers. Section~3 gives a \textbf{system description} with a consolidated subsystem-and-data-flow view. Sections~4--7 document \textbf{data}, \textbf{presentation}, \textbf{application}, and \textbf{processing} layer subsystems respectively, each with assumptions, responsibilities, and interface tables. The \textbf{References} section lists external citations and the companion SRS.

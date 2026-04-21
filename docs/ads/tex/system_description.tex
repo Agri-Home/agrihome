@@ -1,0 +1,63 @@
+\label{sec:systemdesc}
+
+This section provides a consolidated \textbf{subsystem definition} and \textbf{data-flow} narrative for the AgriHome Vision Console. Figure~\ref{fig:subsys-flow} maps major building blocks to the four layers introduced in Section~2. The text following the figure walks through each layer and explains how information moves from user intent to durable storage and back.
+
+\begin{figure}[H]
+\centering
+\scalebox{0.88}{
+\begin{tikzpicture}[
+  font=\footnotesize,
+  arr/.style={-{Stealth}, thick},
+  band/.style={draw, rounded corners, align=left, inner sep=7pt, text width=12.8cm},
+]
+\node[band, fill=leafgreen!16] (r1) {
+  \textbf{Presentation Layer}\par
+  Auth \& registration UI \textbullet{} Dashboard \textbullet{} Tray console \textbullet{} Plant detail \textbullet{} Mesh views \textbullet{} Schedule editor \textbullet{} PWA shell
+};
+\node[band, fill=blue!7, below=0.5cm of r1] (r2) {
+  \textbf{Application Layer}\par
+  HTTP/GraphQL entry \textbullet{} Session \& auth broker \textbullet{} Input validation \textbullet{} Domain orchestration (trays, plants, meshes, schedules) \textbullet{} Monitoring \& prediction coordination \textbullet{} Media URL orchestration \textbullet{} Response assembly
+};
+\node[band, fill=orange!12, below=0.5cm of r2] (r3) {
+  \textbf{Processing Layer (optional)}\par
+  Species/leaf inference adapter \textbullet{} Tray vision adapter \textbullet{} Result normalization
+};
+\node[band, fill=gray!13, below=0.5cm of r3] (r4) {
+  \textbf{Data Layer}\par
+  Write coordination \textbullet{} Integrity \& constraints \textbullet{} Query \& transaction execution \textbullet{} PostgreSQL domain store \textbullet{} Image/media object store \textbullet{} (optional) vector index
+};
+\draw[arr] (r1.south) -- (r2.north);
+\draw[arr, dashed] (r2.south) -- node[right, font=\scriptsize] {invoke when required} (r3.north);
+\draw[arr] (r3.south) -- (r4.north);
+\draw[arr, bend left=14] (r2.west) to node[left, font=\scriptsize, sloped, pos=0.45] {CRUD} (r4.west);
+\end{tikzpicture}
+}
+\caption{Subsystem definitions and primary vertical data flow (application also reads/writes the data layer directly for most CRUD paths).}
+\label{fig:subsys-flow}
+\end{figure}
+
+\subsection{Presentation layer composition}
+
+The Presentation Layer is organized around \textbf{workspaces} that match operator mental models. \textbf{Authentication and registration} establish identity and tie the browser to a server session. The \textbf{dashboard} summarizes tray health and recent activity for SRS-aligned ``at a glance'' monitoring. The \textbf{tray console} shows imagery, monitoring charts, and plant rows for a single tray. \textbf{Plant detail} focuses on one organism: photos, editable metadata, report history, and plant-scoped logs. \textbf{Mesh views} aggregate multiple trays for experiments or facility zones. The \textbf{schedule editor} binds capture policy to trays or meshes. The \textbf{PWA shell} supplies offline-friendly installation and static asset caching where supported.
+
+User gestures in these areas become HTTPS requests to the Application Layer; no presentation component queries the database directly.
+
+\subsection{Application layer composition}
+
+The Application Layer terminates TLS, verifies cookies or tokens, and maps the caller to an \textbf{account context}. \textbf{Validation} rejects malformed payloads before any side effect. \textbf{Domain orchestration} implements use cases: create or update plants, attach photos, record monitoring events, link trays into meshes, upsert schedules, and fetch history for charts. When a use case requires inference, the same layer forwards work to the Processing Layer and merges outcomes into domain writes. \textbf{Response assembly} maps internal results to JSON or GraphQL shapes consumed by the UI.
+
+This layer is the only tier that routinely touches both the Data Layer and (optionally) the Processing Layer.
+
+\subsection{Processing layer composition}
+
+The Processing Layer is deliberately \textbf{thin at the product boundary}: it exposes inference contracts, not user workflows. A \textbf{species or leaf adapter} may classify a single-plant photo for onboarding flows. A \textbf{tray vision adapter} may estimate plant count or regions on a tray image. \textbf{Result normalization} ensures that bounding boxes, labels, and scores share a consistent schema before the Application Layer persists them.
+
+If adapters are offline, the Application Layer may return errors or deterministic stand-ins according to deployment policy; the SRS still governs what the customer should observe in those cases.
+
+\subsection{Data layer composition}
+
+The Data Layer splits \textbf{transactional} concerns from \textbf{bulk media}. A \textbf{write coordination} path sequences inserts and updates so that relational rows and file metadata stay aligned. \textbf{Integrity and constraints} guard required fields, foreign keys, and business invariants. \textbf{Query and transaction execution} runs SELECT/INSERT/UPDATE/DELETE operations against \textbf{PostgreSQL}. The \textbf{object store} retains images and large binaries; the relational model stores pointers or paths. An optional \textbf{vector index} supports similarity workflows without becoming the system of record.
+
+\subsection{End-to-end data flow summary}
+
+The data flow begins when a user interacts with the Presentation Layer. Requests pass to the Application Layer, which authorizes and validates them. For ordinary reads, the Application Layer queries the Data Layer and returns results. For vision-assisted actions, the Application Layer calls the Processing Layer, then commits structured outputs through the Data Layer. Responses propagate back to the Presentation Layer for rendering, completing the loop required by the SRS for health display, history, and dashboard experiences.

@@ -14,14 +14,16 @@ interface ScheduleRow {
 }
 
 export const listSchedules = async ({
+  ownerEmail,
   scopeType,
   scopeId
 }: {
+  ownerEmail: string;
   scopeType?: CaptureSchedule["scopeType"];
   scopeId?: string;
-} = {}): Promise<CaptureSchedule[]> => {
-  const clauses: string[] = [];
-  const params: string[] = [];
+}): Promise<CaptureSchedule[]> => {
+  const clauses: string[] = [`owner_email = $1`];
+  const params: string[] = [ownerEmail];
 
   if (scopeType) {
     params.push(scopeType);
@@ -58,6 +60,7 @@ export const listSchedules = async ({
 };
 
 export const upsertSchedule = async (payload: {
+  ownerEmail: string;
   id?: string;
   scopeType: CaptureSchedule["scopeType"];
   scopeId: string;
@@ -66,6 +69,19 @@ export const upsertSchedule = async (payload: {
   active: boolean;
 }): Promise<CaptureSchedule> => {
   const pool = requirePostgresPool();
+  const scopeTable =
+    payload.scopeType === "tray" ? "tray_systems" : "mesh_networks";
+  const scopeCheck = await pool.query<{ id: string }>(
+    `SELECT id
+     FROM ${scopeTable}
+     WHERE id = $1 AND owner_email = $2`,
+    [payload.scopeId, payload.ownerEmail]
+  );
+
+  if (scopeCheck.rowCount === 0) {
+    throw new Error("Scope not found");
+  }
+
   const schedule: CaptureSchedule = {
     id: payload.id ?? `schedule-${Date.now()}`,
     scopeType: payload.scopeType,
@@ -80,29 +96,58 @@ export const upsertSchedule = async (payload: {
     destination: "computer-vision-backend"
   };
 
-  await pool.query(
-    `INSERT INTO capture_schedules
-      (id, scope_type, scope_id, name, interval_minutes, active, next_run_at, destination)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-     ON CONFLICT (id) DO UPDATE SET
-       scope_type = EXCLUDED.scope_type,
-       scope_id = EXCLUDED.scope_id,
-       name = EXCLUDED.name,
-       interval_minutes = EXCLUDED.interval_minutes,
-       active = EXCLUDED.active,
-       next_run_at = EXCLUDED.next_run_at,
-       destination = EXCLUDED.destination`,
-    [
-      schedule.id,
-      schedule.scopeType,
-      schedule.scopeId,
-      schedule.name,
-      schedule.intervalMinutes,
-      schedule.active,
-      schedule.nextRunAt,
-      schedule.destination
-    ]
-  );
+  if (payload.id) {
+    const existing = await pool.query<{ id: string }>(
+      `SELECT id
+       FROM capture_schedules
+       WHERE id = $1 AND owner_email = $2`,
+      [payload.id, payload.ownerEmail]
+    );
+
+    if (existing.rowCount === 0) {
+      throw new Error("Schedule not found");
+    }
+
+    await pool.query(
+      `UPDATE capture_schedules
+       SET scope_type = $1,
+           scope_id = $2,
+           name = $3,
+           interval_minutes = $4,
+           active = $5,
+           next_run_at = $6,
+           destination = $7
+       WHERE id = $8 AND owner_email = $9`,
+      [
+        schedule.scopeType,
+        schedule.scopeId,
+        schedule.name,
+        schedule.intervalMinutes,
+        schedule.active,
+        schedule.nextRunAt,
+        schedule.destination,
+        schedule.id,
+        payload.ownerEmail
+      ]
+    );
+  } else {
+    await pool.query(
+      `INSERT INTO capture_schedules
+        (id, owner_email, scope_type, scope_id, name, interval_minutes, active, next_run_at, destination)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [
+        schedule.id,
+        payload.ownerEmail,
+        schedule.scopeType,
+        schedule.scopeId,
+        schedule.name,
+        schedule.intervalMinutes,
+        schedule.active,
+        schedule.nextRunAt,
+        schedule.destination
+      ]
+    );
+  }
 
   return schedule;
 };

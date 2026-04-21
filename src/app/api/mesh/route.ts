@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { requireApiAccountUser } from "@/lib/auth/session";
 import {
   createMeshNetwork,
   listMeshNetworks
@@ -9,7 +10,12 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET() {
-  const data = await listMeshNetworks();
+  const authResult = await requireApiAccountUser();
+  if (authResult instanceof Response) {
+    return authResult;
+  }
+
+  const data = await listMeshNetworks(authResult.email);
 
   return NextResponse.json({
     data,
@@ -19,6 +25,11 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const authResult = await requireApiAccountUser();
+  if (authResult instanceof Response) {
+    return authResult;
+  }
+
   const payload = (await request.json()) as {
     name?: string;
     trayIds?: string[];
@@ -33,16 +44,22 @@ export async function POST(request: Request) {
     );
   }
 
-  const data = await createMeshNetwork({
-    name: payload.name,
-    trayIds: payload.trayIds
-  });
+  try {
+    const data = await createMeshNetwork({
+      ownerEmail: authResult.email,
+      name: payload.name,
+      trayIds: payload.trayIds
+    });
 
-  return NextResponse.json(
-    {
-      data,
-      message: "Mesh created"
-    },
-    { status: 201 }
-  );
+    return NextResponse.json(
+      {
+        data,
+        message: "Mesh created"
+      },
+      { status: 201 }
+    );
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Failed to create mesh";
+    return NextResponse.json({ error: msg }, { status: 400 });
+  }
 }

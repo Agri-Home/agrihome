@@ -1,0 +1,22 @@
+\begin {longtable}{@{}|l|l|>{\hsize =\vhAuthorColWidth }X|>{\hsize =\vhChangeColWidth }X|@{}}\hline 
+\textbf {\vhversionname }
+ & \textbf {\vhdatename }
+ & \textbf {\vhauthorname }
+ & \textbf {\vhchangename }\\\hline 
+0.1
+ & 03.04.2026
+ & \listset {Team}
+ & Document created; initial architecture draft\\\hline 
+1.0
+ & 03.04.2026
+ & \listset {Team}
+ & Layered overview, figures, PDF verified\\\hline 
+1.1
+ & 03.04.2026
+ & \listset {Team}
+ & Raised system-level abstraction in overview sections\\\hline 
+2.0
+ & 03.04.2026
+ & \listset {GA, LB, TD, SK, MSM, AT, NNT}
+ & Restructure to CSE 4316 ADS format; subsystems, interfaces; team roster\\\hline 
+\end {longtable}
