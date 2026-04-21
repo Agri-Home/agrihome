@@ -240,6 +240,76 @@ a {
   }
 }
 
+@keyframes float-y {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(0, -10px, 0);
+  }
+}
+
+@keyframes orbit-slow {
+  0% {
+    transform: rotate(0deg) translateX(0);
+  }
+  50% {
+    transform: rotate(180deg) translateX(12px);
+  }
+  100% {
+    transform: rotate(360deg) translateX(0);
+  }
+}
+
+@keyframes gradient-shift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes scan-sweep {
+  0% {
+    opacity: 0;
+    transform: translateX(-120%);
+  }
+  18% {
+    opacity: 0.9;
+  }
+  55% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(120%);
+  }
+}
+
+@keyframes grid-pan {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+  100% {
+    transform: translate3d(-28px, -28px, 0);
+  }
+}
+
+@keyframes bob-rotate {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-2deg);
+  }
+  50% {
+    transform: translateY(-8px) rotate(2deg);
+  }
+}
+
 .animate-live-pulse {
   animation: live-pulse 2s ease-in-out infinite;
 }
@@ -262,6 +332,45 @@ a {
 
 .animate-pulse-ring {
   animation: pulse-ring 2s infinite;
+}
+
+.animate-float {
+  animation: float-y 6s ease-in-out infinite;
+}
+
+.animate-float-delayed {
+  animation: float-y 7.2s ease-in-out infinite;
+  animation-delay: 0.9s;
+}
+
+.animate-orbit-slow {
+  animation: orbit-slow 18s linear infinite;
+}
+
+.animate-gradient-shift {
+  animation: gradient-shift 7s ease infinite;
+  background-size: 200% 200%;
+}
+
+.animate-scan-sweep {
+  animation: scan-sweep 4.2s ease-in-out infinite;
+}
+
+.animate-grid-pan {
+  animation: grid-pan 16s linear infinite;
+}
+
+.animate-bob-rotate {
+  animation: bob-rotate 7s ease-in-out infinite;
+}
+
+.mesh-grid {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.07) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.07) 1px, transparent 1px);
+  background-size: 28px 28px;
+  mask-image: radial-gradient(circle at center, black 40%, transparent 88%);
+  -webkit-mask-image: radial-gradient(circle at center, black 40%, transparent 88%);
 }
 
 .stagger-1 { animation-delay: 50ms; }

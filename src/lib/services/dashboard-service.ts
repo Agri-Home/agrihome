@@ -5,18 +5,18 @@ import { getLatestPrediction } from "@/lib/services/prediction-service";
 import { listSchedules } from "@/lib/services/schedule-service";
 import { listMeshNetworks, listTraySystems } from "@/lib/services/topology-service";
 
-export const getDashboardData = async () => {
-  const trays = await listTraySystems();
+export const getDashboardData = async (ownerEmail: string) => {
+  const trays = await listTraySystems(ownerEmail);
   const selectedTrayId = trays[0]?.id;
   const [latestImage, latestPrediction, monitoringLog, meshes, plants, reports, schedules] =
     await Promise.all([
-      getLatestCameraCapture(selectedTrayId),
-      getLatestPrediction(selectedTrayId),
-      getMonitoringLog(8, selectedTrayId),
-      listMeshNetworks(),
-      listPlantsByTray(),
-      listPlantReports({ trayId: selectedTrayId, limit: 12 }),
-      listSchedules()
+      getLatestCameraCapture(ownerEmail, selectedTrayId),
+      getLatestPrediction(ownerEmail, selectedTrayId),
+      getMonitoringLog({ ownerEmail, limit: 8, trayId: selectedTrayId }),
+      listMeshNetworks(ownerEmail),
+      listPlantsByTray(ownerEmail),
+      listPlantReports({ ownerEmail, trayId: selectedTrayId, limit: 12 }),
+      listSchedules({ ownerEmail })
     ]);
 
   return {

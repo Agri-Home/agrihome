@@ -1,5 +1,5 @@
 /**
- * Applies db/schema.sql then db/seed.sql (CREATE IF NOT EXISTS + idempotent seed).
+ * Applies db/schema.sql, db/migrations/*.sql, then db/seed.sql.
  * Loads repo-root `.env` then `.env.local` when vars are not already set (like Next.js).
  * Usage: yarn db:seed   or   POSTGRES_HOST=... node scripts/seed-postgres.cjs
  * Flags:
@@ -74,9 +74,22 @@ const pool = new Pool({
 });
 
 const schemaPath = path.join(rootDir, "db", "schema.sql");
+const migrationsDir = path.join(rootDir, "db", "migrations");
 const seedPath = path.join(rootDir, "db", "seed.sql");
 const schemaOnly = process.argv.includes("--schema-only");
 const seedOnly = process.argv.includes("--seed-only");
+
+function getMigrationPaths() {
+  if (!fs.existsSync(migrationsDir)) {
+    return [];
+  }
+
+  return fs
+    .readdirSync(migrationsDir)
+    .filter((name) => name.endsWith(".sql"))
+    .sort((a, b) => a.localeCompare(b))
+    .map((name) => path.join(migrationsDir, name));
+}
 
 async function main() {
   if (schemaOnly && seedOnly) {
@@ -88,6 +101,12 @@ async function main() {
     const schemaSql = fs.readFileSync(schemaPath, "utf8");
     await pool.query(schemaSql);
     console.log("Schema applied:", schemaPath);
+
+    for (const migrationPath of getMigrationPaths()) {
+      const migrationSql = fs.readFileSync(migrationPath, "utf8");
+      await pool.query(migrationSql);
+      console.log("Migration applied:", migrationPath);
+    }
   }
 
   if (!schemaOnly) {

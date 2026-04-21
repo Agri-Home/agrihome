@@ -18,27 +18,32 @@ interface PredictionRow {
 export const getPredictionDataSource = async () => "postgres" as const;
 
 export const getLatestPrediction = async (
+  ownerEmail: string,
   trayId?: string
 ): Promise<PredictionResult | null> => {
-  const latestCapture = await getLatestCameraCapture(trayId);
+  const latestCapture = await getLatestCameraCapture(ownerEmail, trayId);
 
   if (!latestCapture) {
     return null;
   }
 
-  const values: string[] = [];
-  const whereClause = trayId
-    ? (() => {
-        values.push(trayId);
-        return `WHERE tray_id = $${values.length}`;
-      })()
-    : "";
+  const values: string[] = [ownerEmail];
+  const clauses = [`t.owner_email = $1`];
+
+  if (trayId) {
+    values.push(trayId);
+    clauses.push(`pr.tray_id = $${values.length}`);
+  }
+
   const rows = await queryRows<PredictionRow>(
-    `SELECT id, capture_id, tray_id, label, confidence, severity, recommendation,
-            vector_source, created_at
-     FROM prediction_results
-     ${whereClause}
-     ORDER BY created_at DESC
+    `SELECT pr.id AS id, pr.capture_id AS capture_id, pr.tray_id AS tray_id,
+            pr.label AS label, pr.confidence AS confidence,
+            pr.severity AS severity, pr.recommendation AS recommendation,
+            pr.vector_source AS vector_source, pr.created_at AS created_at
+     FROM prediction_results pr
+     INNER JOIN tray_systems t ON t.id = pr.tray_id
+     WHERE ${clauses.join(" AND ")}
+     ORDER BY pr.created_at DESC
      LIMIT 1`,
     values
   );

@@ -1,0 +1,1 @@
+ALTER TABLE plants ADD COLUMN IF NOT EXISTS plant_identifier VARCHAR(120) NULL;

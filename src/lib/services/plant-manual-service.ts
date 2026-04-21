@@ -1,4 +1,5 @@
 import { MANUAL_TRAY_ID } from "@/lib/constants/manual-tray";
+import { buildManualTrayId } from "@/lib/auth/account";
 import { requirePostgresPool } from "@/lib/db/postgres";
 import { buildPredictionAndReportFromSpeciesDetection } from "@/lib/services/species-detection-report";
 import { ingestCameraCapture } from "@/lib/services/camera-service";
@@ -7,23 +8,44 @@ import {
   type PlantSpeciesDetection
 } from "@/lib/services/plant-detection-service";
 import { getPlantById } from "@/lib/services/plant-service";
-import { getTrayById } from "@/lib/services/topology-service";
+import { getTrayById, syncTrayStatsFromPlants } from "@/lib/services/topology-service";
 import { savePlantLeafOriginal } from "@/lib/storage/save-original";
 import type {
   CameraCapture,
+  PlantHealthStatus,
   PlantReport,
   PlantUnit,
   PredictionResult
 } from "@/lib/types/domain";
 
+const HEALTH_STATUSES: PlantHealthStatus[] = ["healthy", "watch", "alert"];
+
+function clampHealth(n: number): number {
+  return Math.max(0, Math.min(100, Math.round(n)));
+}
+
 const MAX_UPLOAD_BYTES = 6 * 1024 * 1024;
 
 export async function createManualPlant(input: {
+  ownerEmail: string;
   name: string;
   cultivar: string;
   trayId?: string;
+  row?: number;
+  column?: number;
+  slotLabel?: string;
+  plantIdentifier?: string | null;
+  description?: string | null;
+  healthScore?: number;
+  status?: PlantHealthStatus;
+  latestDiagnosis?: string;
 }): Promise<PlantUnit> {
-  const trayId = input.trayId?.trim() || MANUAL_TRAY_ID;
+  const defaultManualTrayId = buildManualTrayId(input.ownerEmail);
+  const requestedTrayId = input.trayId?.trim();
+  const trayId =
+    !requestedTrayId || requestedTrayId === MANUAL_TRAY_ID
+      ? defaultManualTrayId
+      : requestedTrayId;
   const name = input.name?.trim();
   const cultivar = input.cultivar?.trim();
   if (!name || !cultivar) {
@@ -31,83 +53,157 @@ export async function createManualPlant(input: {
   }
 
   const pool = requirePostgresPool();
-  return createManualPlantPostgres(pool, { name, cultivar, trayId });
+  return createManualPlantPostgres(pool, {
+    ownerEmail: input.ownerEmail,
+    name,
+    cultivar,
+    trayId,
+    row: input.row,
+    column: input.column,
+    slotLabel: input.slotLabel,
+    plantIdentifier: input.plantIdentifier,
+    description: input.description,
+    healthScore: input.healthScore,
+    status: input.status,
+    latestDiagnosis: input.latestDiagnosis
+  });
 }
 
 async function createManualPlantPostgres(
   pool: import("pg").Pool,
   {
+    ownerEmail,
     name,
     cultivar,
-    trayId
-  }: { name: string; cultivar: string; trayId: string }
+    trayId,
+    row: rowIn,
+    column: colIn,
+    slotLabel: slotIn,
+    plantIdentifier: pidIn,
+    description: descIn,
+    healthScore: healthIn,
+    status: statusIn,
+    latestDiagnosis: diagIn
+  }: {
+    ownerEmail: string;
+    name: string;
+    cultivar: string;
+    trayId: string;
+    row?: number;
+    column?: number;
+    slotLabel?: string;
+    plantIdentifier?: string | null;
+    description?: string | null;
+    healthScore?: number;
+    status?: PlantHealthStatus;
+    latestDiagnosis?: string;
+  }
 ): Promise<PlantUnit> {
-  if (trayId === MANUAL_TRAY_ID) {
+  const defaultManualTrayId = buildManualTrayId(ownerEmail);
+
+  if (trayId === defaultManualTrayId) {
     await pool.query(
       `INSERT INTO tray_systems
-        (id, name, zone, crop, plant_count, health_score, status, device_id, last_capture_at)
-       VALUES ($1, $2, $3, $4, 0, 92, 'healthy', 'user-device', NOW())
+        (id, owner_email, name, zone, crop, plant_count, health_score, status, device_id, last_capture_at)
+       VALUES ($1, $2, $3, $4, $5, 0, 92, 'healthy', 'user-device', NOW())
        ON CONFLICT (id) DO NOTHING`,
-      [MANUAL_TRAY_ID, "My plants", "Manual entry", "Custom"]
+      [defaultManualTrayId, ownerEmail, "My plants", "Manual entry", "Custom"]
     );
   }
 
-  const trayCheck = await pool.query(`SELECT id FROM tray_systems WHERE id = $1`, [
-    trayId
-  ]);
+  const trayCheck = await pool.query(
+    `SELECT id
+     FROM tray_systems
+     WHERE id = $1 AND owner_email = $2`,
+    [trayId, ownerEmail]
+  );
   if (trayCheck.rowCount === 0) {
     throw new Error("Tray not found");
   }
 
   const countRes = await pool.query<{ c: string }>(
-    `SELECT COUNT(*)::int AS c FROM plants WHERE tray_id = $1`,
-    [trayId]
+    `SELECT COUNT(*)::int AS c
+     FROM plants
+     WHERE tray_id = $1 AND owner_email = $2`,
+    [trayId, ownerEmail]
   );
   const n = Number(countRes.rows[0].c) + 1;
+
+  const hasRow = rowIn !== undefined && Number.isFinite(rowIn);
+  const hasCol = colIn !== undefined && Number.isFinite(colIn);
+  if (hasRow !== hasCol) {
+    throw new Error("Provide both row and column, or neither for auto layout");
+  }
+
+  const row = hasRow ? Math.max(1, Math.floor(rowIn!)) : Math.ceil(n / 3);
+  const column = hasCol ? Math.max(1, Math.floor(colIn!)) : ((n - 1) % 3) + 1;
+  const slotLabel =
+    slotIn !== undefined && slotIn.trim()
+      ? slotIn.trim().slice(0, 32)
+      : hasRow
+        ? `R${row}C${column}`
+        : `M-${n}`;
+
+  const plantIdentifier =
+    pidIn === undefined
+      ? null
+      : pidIn === null || pidIn === ""
+        ? null
+        : pidIn.trim().slice(0, 120);
+
+  const description =
+    descIn === undefined
+      ? null
+      : descIn === null || descIn === ""
+        ? null
+        : descIn.trim().slice(0, 4000);
+
+  const healthScore =
+    healthIn !== undefined ? clampHealth(healthIn) : 88;
+  const status =
+    statusIn !== undefined ? statusIn : "healthy";
+  if (!HEALTH_STATUSES.includes(status)) {
+    throw new Error("Invalid health status");
+  }
+  const latestDiagnosis =
+    diagIn !== undefined
+      ? diagIn.trim().slice(0, 160)
+      : "Awaiting first photo analysis";
+
   const plantId = `plant-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
   const now = new Date().toISOString();
 
   await pool.query(
     `INSERT INTO plants
-      (id, tray_id, mesh_ids, name, cultivar, slot_label, row_index, column_index,
+      (id, owner_email, tray_id, mesh_ids, name, cultivar, plant_identifier, slot_label, row_index, column_index,
        health_score, status, last_report_at, latest_diagnosis, description, last_image_url, last_image_at)
-     VALUES ($1,$2,$3::json,$4,$5,$6,$7,$8,88,'healthy',$9,$10,NULL,NULL,NULL)`,
+     VALUES ($1,$2,$3,$4::json,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,NULL,NULL)`,
     [
       plantId,
+      ownerEmail,
       trayId,
       JSON.stringify([]),
       name,
       cultivar,
-      `M-${n}`,
-      Math.ceil(n / 3),
-      ((n - 1) % 3) + 1,
+      plantIdentifier,
+      slotLabel,
+      row,
+      column,
+      healthScore,
+      status,
       now,
-      "Awaiting first photo analysis"
+      latestDiagnosis,
+      description
     ]
   );
 
-  await pool.query(
-    `UPDATE tray_systems SET plant_count = plant_count + 1 WHERE id = $1`,
-    [trayId]
-  );
+  await syncTrayStatsFromPlants(ownerEmail, trayId);
 
-  return {
-    id: plantId,
-    trayId,
-    meshIds: [],
-    name,
-    cultivar,
-    description: null,
-    slotLabel: `M-${n}`,
-    row: Math.ceil(n / 3),
-    column: ((n - 1) % 3) + 1,
-    healthScore: 88,
-    status: "healthy",
-    lastReportAt: now,
-    latestDiagnosis: "Awaiting first photo analysis",
-    lastImageUrl: null,
-    lastImageAt: now
-  };
+  const loaded = await getPlantById(ownerEmail, plantId);
+  if (!loaded) {
+    throw new Error("Plant was not created");
+  }
+  return loaded;
 }
 
 function assertImageMime(mime: string): "png" | "webp" | "jpg" {
@@ -126,6 +222,7 @@ function assertImageMime(mime: string): "png" | "webp" | "jpg" {
 }
 
 export async function persistPlantPhotoAndAnalyze(
+  ownerEmail: string,
   plant: PlantUnit,
   file: Buffer,
   mime: string,
@@ -144,7 +241,7 @@ export async function persistPlantPhotoAndAnalyze(
   const ext = assertImageMime(mime);
   const { imageUrl } = await savePlantLeafOriginal(file, ext);
 
-  const tray = await getTrayById(plant.trayId);
+  const tray = await getTrayById(ownerEmail, plant.trayId);
   const trayName = tray?.name ?? plant.trayId;
 
   const capture = await ingestCameraCapture({
@@ -161,10 +258,18 @@ export async function persistPlantPhotoAndAnalyze(
   const detection =
     speciesDetection ?? (await detectPlantSpeciesFromImage(file));
 
-  return finalizePhotoPostgres(pool, plant, capture, imageUrl, detection);
+  return finalizePhotoPostgres(
+    pool,
+    ownerEmail,
+    plant,
+    capture,
+    imageUrl,
+    detection
+  );
 }
 
 export async function analyzePlantPhotoFromUpload(
+  ownerEmail: string,
   plantId: string,
   file: Buffer,
   mime: string
@@ -175,12 +280,12 @@ export async function analyzePlantPhotoFromUpload(
   report: PlantReport;
   prediction: PredictionResult;
 }> {
-  const plant = await getPlantById(plantId);
+  const plant = await getPlantById(ownerEmail, plantId);
   if (!plant) {
     throw new Error("Plant not found");
   }
-  const out = await persistPlantPhotoAndAnalyze(plant, file, mime);
-  const updated = await getPlantById(plantId);
+  const out = await persistPlantPhotoAndAnalyze(ownerEmail, plant, file, mime);
+  const updated = await getPlantById(ownerEmail, plantId);
   return {
     plant: updated ?? plant,
     ...out
@@ -191,6 +296,7 @@ export async function analyzePlantPhotoFromUpload(
  * Photo-first flow: species/cultivar from the leaf classifier, then plant row + health report.
  */
 export async function createPlantFromPhotoWithAutoDetection(input: {
+  ownerEmail: string;
   file: Buffer;
   mime: string;
   trayId?: string;
@@ -216,6 +322,7 @@ export async function createPlantFromPhotoWithAutoDetection(input: {
     input.cultivarOverride?.trim() || detection.cultivar;
 
   const plant = await createManualPlant({
+    ownerEmail: input.ownerEmail,
     name,
     cultivar,
     trayId: input.trayId
@@ -225,6 +332,7 @@ export async function createPlantFromPhotoWithAutoDetection(input: {
   const notes = `Species ID: ${detection.commonName} · ${cond} · ${(detection.identificationConfidence * 100).toFixed(0)}% confidence`;
 
   const analysis = await persistPlantPhotoAndAnalyze(
+    input.ownerEmail,
     plant,
     input.file,
     input.mime,
@@ -232,7 +340,7 @@ export async function createPlantFromPhotoWithAutoDetection(input: {
     detection
   );
 
-  const updated = await getPlantById(plant.id);
+  const updated = await getPlantById(input.ownerEmail, plant.id);
 
   return {
     plant: updated ?? plant,
@@ -243,6 +351,7 @@ export async function createPlantFromPhotoWithAutoDetection(input: {
 
 async function finalizePhotoPostgres(
   pool: import("pg").Pool,
+  ownerEmail: string,
   plant: PlantUnit,
   capture: CameraCapture,
   imagePublicPath: string,
@@ -325,6 +434,8 @@ async function finalizePhotoPostgres(
   } finally {
     client.release();
   }
+
+  await syncTrayStatsFromPlants(ownerEmail, plant.trayId);
 
   return {
     captureId: capture.id,

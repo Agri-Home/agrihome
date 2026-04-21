@@ -12,22 +12,40 @@ interface MonitoringRow {
   created_at: Date | string;
 }
 
-export const getMonitoringLog = async (
+export const getMonitoringLog = async ({
+  ownerEmail,
   limit = 10,
-  trayId?: string,
-  plantId?: string
-): Promise<MonitoringEvent[]> => {
-  const params: Array<string | number> = [];
-  const clauses: string[] = [];
+  trayId,
+  plantId
+}: {
+  ownerEmail: string;
+  limit?: number;
+  trayId?: string;
+  plantId?: string;
+}): Promise<MonitoringEvent[]> => {
+  const params: Array<string | number> = [ownerEmail];
+  const clauses: string[] = [
+    `(
+      (me.tray_id IS NOT NULL AND EXISTS (
+        SELECT 1 FROM tray_systems t
+        WHERE t.id = me.tray_id AND t.owner_email = $1
+      ))
+      OR
+      (me.plant_id IS NOT NULL AND EXISTS (
+        SELECT 1 FROM plants p
+        WHERE p.id = me.plant_id AND p.owner_email = $1
+      ))
+    )`
+  ];
 
   if (trayId) {
     params.push(trayId);
-    clauses.push(`tray_id = $${params.length}`);
+    clauses.push(`me.tray_id = $${params.length}`);
   }
 
   if (plantId) {
     params.push(plantId);
-    clauses.push(`plant_id = $${params.length}`);
+    clauses.push(`me.plant_id = $${params.length}`);
   }
 
   params.push(limit);
@@ -35,8 +53,8 @@ export const getMonitoringLog = async (
 
   const rows = await queryRows<MonitoringRow>(
     `SELECT id, capture_id, tray_id, plant_id, level, title, message, created_at
-     FROM monitoring_events
-     ${clauses.length ? `WHERE ${clauses.join(" AND ")}` : ""}
+     FROM monitoring_events me
+     WHERE ${clauses.join(" AND ")}
      ORDER BY created_at DESC
      LIMIT $${limitIdx}`,
     params
