@@ -1,11 +1,12 @@
 import { createYoga } from "graphql-yoga";
 
+import { requireApiAccountUser } from "@/lib/auth/session";
 import { schema } from "@/lib/graphql/schema";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const yoga = createYoga({
+const yoga = createYoga<{ userEmail: string }>({
   schema,
   graphqlEndpoint: "/api/graphql",
   fetchAPI: {
@@ -16,9 +17,19 @@ const yoga = createYoga({
 });
 
 export async function GET(request: Request) {
-  return yoga.handleRequest(request, {});
+  const authResult = await requireApiAccountUser();
+  if (authResult instanceof Response) {
+    return authResult;
+  }
+
+  return yoga.handleRequest(request, { userEmail: authResult.email });
 }
 
 export async function POST(request: Request) {
-  return yoga.handleRequest(request, {});
+  const authResult = await requireApiAccountUser();
+  if (authResult instanceof Response) {
+    return authResult;
+  }
+
+  return yoga.handleRequest(request, { userEmail: authResult.email });
 }

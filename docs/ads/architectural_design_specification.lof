@@ -1,0 +1,22 @@
+\contentsline {figure}{\numberline {1}{\ignorespaces AgriHome Vision Console: four-layer architecture and trust boundaries.}}{11}{figure.1}%
+\contentsline {figure}{\numberline {2}{\ignorespaces Subsystem definitions and primary vertical data flow (application also reads/writes the data layer directly for most CRUD paths).}}{12}{figure.2}%
+\contentsline {figure}{\numberline {3}{\ignorespaces Write coordination subsystem: accepts write intents and forwards them toward integrity checks.}}{14}{figure.3}%
+\contentsline {figure}{\numberline {4}{\ignorespaces Integrity subsystem: validates operations before execution.}}{14}{figure.4}%
+\contentsline {figure}{\numberline {5}{\ignorespaces Query executor: issues SQL and coordinates binary I/O with storage.}}{15}{figure.5}%
+\contentsline {figure}{\numberline {6}{\ignorespaces PostgreSQL domain database subsystem.}}{16}{figure.6}%
+\contentsline {figure}{\numberline {7}{\ignorespaces Image and media storage subsystem and relationship to application reads.}}{17}{figure.7}%
+\contentsline {figure}{\numberline {8}{\ignorespaces Authentication UI: user actions become authenticated API calls.}}{18}{figure.8}%
+\contentsline {figure}{\numberline {9}{\ignorespaces Dashboard subsystem requests summary aggregates from the application tier.}}{18}{figure.9}%
+\contentsline {figure}{\numberline {10}{\ignorespaces Tray console: drives reads and optional vision requests through the application layer.}}{19}{figure.10}%
+\contentsline {figure}{\numberline {11}{\ignorespaces Plant detail subsystem: CRUD and reporting views.}}{20}{figure.11}%
+\contentsline {figure}{\numberline {12}{\ignorespaces Mesh subsystem interacts with mesh and member tray aggregates.}}{20}{figure.12}%
+\contentsline {figure}{\numberline {13}{\ignorespaces Schedule subsystem persists policies via application APIs.}}{21}{figure.13}%
+\contentsline {figure}{\numberline {14}{\ignorespaces API entry: first server hop after the presentation layer.}}{22}{figure.14}%
+\contentsline {figure}{\numberline {15}{\ignorespaces Session broker: establishes trusted account context for downstream work.}}{22}{figure.15}%
+\contentsline {figure}{\numberline {16}{\ignorespaces Validation subsystem: rejects bad input early.}}{23}{figure.16}%
+\contentsline {figure}{\numberline {17}{\ignorespaces Domain orchestration: central business logic and integration point.}}{24}{figure.17}%
+\contentsline {figure}{\numberline {18}{\ignorespaces GraphQL facade: thin mapping to domain services.}}{24}{figure.18}%
+\contentsline {figure}{\numberline {19}{\ignorespaces Response handler: maps internal results to HTTP/GraphQL responses.}}{25}{figure.19}%
+\contentsline {figure}{\numberline {20}{\ignorespaces Species inference adapter: hosted model runtime may be external.}}{26}{figure.20}%
+\contentsline {figure}{\numberline {21}{\ignorespaces Tray vision adapter: round-trip inference for tray imagery.}}{26}{figure.21}%
+\contentsline {figure}{\numberline {22}{\ignorespaces Normalization: single canonical shape for downstream persistence.}}{27}{figure.22}%

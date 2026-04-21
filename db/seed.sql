@@ -1,12 +1,13 @@
 -- Initial data for AgriHome (run after schema.sql). Idempotent via ON CONFLICT.
 
 INSERT INTO tray_systems (
-  id, name, zone, crop, plant_count,
+  id, owner_email, name, zone, crop, plant_count,
   health_score, status, device_id, last_capture_at
 )
 VALUES
   (
     'tray-manual',
+    'admin@email.com',
     'My plants',
     'Manual entry',
     'Custom',
@@ -18,6 +19,7 @@ VALUES
   ),
   (
     'tray-demo-1',
+    'admin@email.com',
     'Demo tray',
     'Bay 1',
     'Basil',
@@ -30,11 +32,12 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO plants (
-  id, tray_id, mesh_ids, name, cultivar, slot_label, row_index, column_index,
+  id, owner_email, tray_id, mesh_ids, name, cultivar, slot_label, row_index, column_index,
   health_score, status, last_report_at, latest_diagnosis, description, last_image_url, last_image_at
 )
 VALUES (
   'plant-seed-demo-1',
+  'admin@email.com',
   'tray-demo-1',
   '[]'::json,
   'Sweet basil',

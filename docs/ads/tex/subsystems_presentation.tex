@@ -1,0 +1,259 @@
+The Presentation Layer implements all user-visible behavior described at a high level in the SRS: authentication, dashboards, plant health display, historical views, scheduling, and mesh-oriented navigation. Each subsystem below corresponds to a coherent screen family or cross-cutting UI concern.
+
+\subsection{Authentication and session UI subsystem}
+
+This subsystem collects credentials or OAuth flows, exchanges tokens for server sessions, and guards entry to protected routes. It satisfies SRS \textbf{user authentication} expectations at the UX level.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\scriptsize, box/.style={draw, rounded corners, align=center, minimum width=2.2cm, minimum height=0.7cm}, arr/.style={-{Stealth}, thick}]
+\node[box, fill=leafgreen!15] (login) {Login /\\register};
+\node[box, right=1.0cm of login, fill=blue!8] (api) {Application\\APIs};
+\draw[arr] (login) -- node[above] {HTTPS} (api);
+\end{tikzpicture}
+\caption{Authentication UI: user actions become authenticated API calls.}
+\label{fig:pres-auth}
+\end{figure}
+
+\subsubsection{Assumptions}
+\begin{itemize}
+  \item Users have network connectivity for initial sign-in.
+  \item Identity provider availability matches organizational SLA.
+\end{itemize}
+
+\subsubsection{Responsibilities}
+\begin{itemize}
+  \item Render sign-in, registration, and sign-out affordances.
+  \item Hold short-lived client tokens only as required by the chosen identity integration.
+  \item Redirect unauthenticated visitors away from protected console routes.
+\end{itemize}
+
+\subsubsection{Subsystem interfaces}
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|p{0.9cm}|p{3.4cm}|p{3.0cm}|p{3.5cm}|}
+\hline
+\textbf{ID} & \textbf{Description} & \textbf{Inputs} & \textbf{Outputs} \\
+\hline
+P-A1 & User $\rightarrow$ Auth UI & Credentials / OAuth & Sign-in intent \\
+\hline
+P-A2 & Auth UI $\rightarrow$ Application & Session exchange requests & HTTP-only session \\
+\hline
+\end{tabular}
+\caption{Authentication and session UI subsystem interfaces}
+\end{table}
+
+\subsection{Dashboard and overview subsystem}
+
+The \textbf{dashboard} aggregates tray summaries, recent captures or predictions where available, and entry points into deeper views. It supports SRS \textbf{dashboard interface} and high-level plant status visibility.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\scriptsize, box/.style={draw, rounded corners, align=center, minimum width=2.2cm, minimum height=0.7cm}, arr/.style={-{Stealth}, thick}]
+\node[box, fill=leafgreen!12] (dash) {Dashboard\\widgets};
+\node[box, right=1.0cm of dash, fill=blue!8] (api) {Application};
+\draw[arr] (dash) -- node[above] {fetch} (api);
+\end{tikzpicture}
+\caption{Dashboard subsystem requests summary aggregates from the application tier.}
+\label{fig:pres-dash}
+\end{figure}
+
+\subsubsection{Assumptions}
+\begin{itemize}
+  \item Summary data volume is bounded for interactive load times.
+  \item Chart libraries render only on supported browsers.
+\end{itemize}
+
+\subsubsection{Responsibilities}
+\begin{itemize}
+  \item Display tray list and key health indicators.
+  \item Link to tray detail, plants, and schedules.
+  \item Surface empty and error states clearly.
+\end{itemize}
+
+\subsubsection{Subsystem interfaces}
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|p{0.9cm}|p{3.4cm}|p{3.0cm}|p{3.5cm}|}
+\hline
+\textbf{ID} & \textbf{Description} & \textbf{Inputs} & \textbf{Outputs} \\
+\hline
+P-D1 & Dashboard $\rightarrow$ Application & Filter context & Summary DTOs \\
+\hline
+P-D2 & Application $\rightarrow$ Dashboard & JSON payloads & Rendered charts / lists \\
+\hline
+\end{tabular}
+\caption{Dashboard and overview subsystem interfaces}
+\end{table}
+
+\subsection{Tray monitoring console subsystem}
+
+The \textbf{tray console} shows the active tray: latest imagery, monitoring trends, plant thumbnails, events, and optional tray-level vision uploads. It aligns with \textbf{automatic image capture} presentation and tray-scoped monitoring in the SRS.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\scriptsize, box/.style={draw, rounded corners, align=center, minimum width=2.0cm, minimum height=0.65cm}, arr/.style={-{Stealth}, thick}]
+\node[box, fill=leafgreen!14] (ui) {Tray UI};
+\node[box, right=0.9cm of ui, fill=blue!8] (api) {API};
+\node[box, right=0.9cm of api, fill=orange!10, dashed] (cv) {Vision\\(opt.)};
+\draw[arr] (ui) -- (api);
+\draw[arr, dashed] (api) -- (cv);
+\end{tikzpicture}
+\caption{Tray console: drives reads and optional vision requests through the application layer.}
+\label{fig:pres-tray}
+\end{figure}
+
+\subsubsection{Assumptions}
+\begin{itemize}
+  \item Each tray identifier maps to authorized user scope.
+  \item Large images may be progressively loaded or thumbnailed.
+\end{itemize}
+
+\subsubsection{Responsibilities}
+\begin{itemize}
+  \item Render tray imagery, charts, and plant rows.
+  \item Submit tray-scoped uploads or vision jobs as permitted.
+  \item Poll or refresh data according to UX policy.
+\end{itemize}
+
+\subsubsection{Subsystem interfaces}
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|p{0.9cm}|p{3.4cm}|p{3.0cm}|p{3.5cm}|}
+\hline
+\textbf{ID} & \textbf{Description} & \textbf{Inputs} & \textbf{Outputs} \\
+\hline
+P-T1 & Tray UI $\rightarrow$ Application & Tray ID, actions & Tray detail DTO \\
+\hline
+P-T2 & Tray UI $\rightarrow$ Application & Image multipart & Vision job result \\
+\hline
+\end{tabular}
+\caption{Tray monitoring console subsystem interfaces}
+\end{table}
+
+\subsection{Plant detail and health history subsystem}
+
+\textbf{Plant detail} focuses on a single plant: editable metadata, photo gallery, health reports over time, and scoped monitoring logs. It directly supports SRS \textbf{plant health status} and \textbf{historical data display}.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\scriptsize, box/.style={draw, rounded corners, align=center, minimum width=2.0cm, minimum height=0.65cm}, arr/.style={-{Stealth}, thick}]
+\node[box, fill=leafgreen!14] (p) {Plant UI};
+\node[box, right=1.0cm of p, fill=blue!8] (api) {Application};
+\draw[arr] (p) -- node[above] {CRUD + history} (api);
+\end{tikzpicture}
+\caption{Plant detail subsystem: CRUD and reporting views.}
+\label{fig:pres-plant}
+\end{figure}
+
+\subsubsection{Assumptions}
+\begin{itemize}
+  \item Users may edit only plants they own or that policy allows.
+  \item Report history may be lengthy; pagination or lazy loading applies.
+\end{itemize}
+
+\subsubsection{Responsibilities}
+\begin{itemize}
+  \item Display health timeline and latest findings.
+  \item Support photo upload and deletion with confirmation.
+  \item Invoke ``add plant from photo'' flows when enabled.
+\end{itemize}
+
+\subsubsection{Subsystem interfaces}
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|p{0.9cm}|p{3.4cm}|p{3.0cm}|p{3.5cm}|}
+\hline
+\textbf{ID} & \textbf{Description} & \textbf{Inputs} & \textbf{Outputs} \\
+\hline
+P-P1 & Plant UI $\rightarrow$ Application & Plant ID & Detail + reports \\
+\hline
+P-P2 & Plant UI $\rightarrow$ Application & Edits / uploads & Updated plant \\
+\hline
+\end{tabular}
+\caption{Plant detail and health history subsystem interfaces}
+\end{table}
+
+\subsection{Mesh and topology subsystem}
+
+\textbf{Mesh views} let users group trays for aggregated charts and cross-tray plant listings, supporting experimental layouts described in the SRS's organizational needs without mandating a particular hardware topology.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\scriptsize, box/.style={draw, rounded corners, align=center, minimum width=2.0cm, minimum height=0.65cm}, arr/.style={-{Stealth}, thick}]
+\node[box, fill=leafgreen!12] (m) {Mesh UI};
+\node[box, right=1.0cm of m, fill=blue!8] (api) {Application};
+\draw[arr] (m) -- node[above] {mesh CRUD} (api);
+\end{tikzpicture}
+\caption{Mesh subsystem interacts with mesh and member tray aggregates.}
+\label{fig:pres-mesh}
+\end{figure}
+
+\subsubsection{Assumptions}
+\begin{itemize}
+  \item Mesh membership changes are infrequent relative to reads.
+\end{itemize}
+
+\subsubsection{Responsibilities}
+\begin{itemize}
+  \item Create and list meshes; show merged monitoring where available.
+  \item Navigate from mesh to constituent trays and plants.
+\end{itemize}
+
+\subsubsection{Subsystem interfaces}
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|p{0.9cm}|p{3.4cm}|p{3.0cm}|p{3.5cm}|}
+\hline
+\textbf{ID} & \textbf{Description} & \textbf{Inputs} & \textbf{Outputs} \\
+\hline
+P-M1 & Mesh UI $\rightarrow$ Application & Mesh ID / payload & Mesh DTO \\
+\hline
+\end{tabular}
+\caption{Mesh and topology subsystem interfaces}
+\end{table}
+
+\subsection{Schedule management subsystem}
+
+The \textbf{schedule editor} binds capture timing to trays or meshes, supporting SRS \textbf{automatic image capture} policies at the configuration level.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\scriptsize, box/.style={draw, rounded corners, align=center, minimum width=2.0cm, minimum height=0.65cm}, arr/.style={-{Stealth}, thick}]
+\node[box, fill=leafgreen!12] (s) {Schedule UI};
+\node[box, right=1.0cm of s, fill=blue!8] (api) {Application};
+\draw[arr] (s) -- node[above] {upsert} (api);
+\end{tikzpicture}
+\caption{Schedule subsystem persists policies via application APIs.}
+\label{fig:pres-sch}
+\end{figure}
+
+\subsubsection{Assumptions}
+\begin{itemize}
+  \item Schedules are stored in a timezone-aware or UTC-normalized manner in the data layer.
+\end{itemize}
+
+\subsubsection{Responsibilities}
+\begin{itemize}
+  \item List and edit schedules with clear scope (tray vs.\ mesh).
+  \item Validate user inputs (cadence, start/end) before submission.
+\end{itemize}
+
+\subsubsection{Subsystem interfaces}
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|p{0.9cm}|p{3.4cm}|p{3.0cm}|p{3.5cm}|}
+\hline
+\textbf{ID} & \textbf{Description} & \textbf{Inputs} & \textbf{Outputs} \\
+\hline
+P-S1 & Schedule UI $\rightarrow$ Application & Schedule DTO & Persisted schedule \\
+\hline
+\end{tabular}
+\caption{Schedule management subsystem interfaces}
+\end{table}

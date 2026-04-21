@@ -1,0 +1,149 @@
+%%% AgriHome Vision Console — Architectural Design Specification
+%%% Structure aligned with CSE 4316 / UTA senior design template
+
+\documentclass[11pt,letterpaper]{article}
+\usepackage[margin=1.0in]{geometry}
+\usepackage[T1]{fontenc}
+\usepackage[bitstream-charter]{mathdesign}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{hyphenat}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{sectsty}
+\usepackage[compact]{titlesec}
+\usepackage[tablegrid]{vhistory}
+\usepackage{pbox}
+\usepackage[titles]{tocloft}
+\cftsetindents{figure}{0em}{4.2em}
+\cftsetindents{table}{0em}{4.2em}
+\usepackage[hidelinks]{hyperref}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric,arrows.meta,positioning,fit,backgrounds,calc}
+
+\graphicspath{{images/}}
+
+\allsectionsfont{\color{accentcolor}\scshape\selectfont}
+
+%%% Definitions
+\definecolor{accentcolor}{rgb}{0.0,0.0,0.5}
+\definecolor{leafgreen}{RGB}{61,159,108}
+\newcommand{\teamname}{Agrihome}
+\newcommand{\coursename}{CSE 4316: Senior Design I}
+\newcommand{\semester}{Spring 2026}
+\newcommand{\docname}{Architectural Design Specification}
+\newcommand{\department}{Department of Computer Science \& Engineering}
+\newcommand{\university}{The University of Texas at Arlington}
+% Roster sorted alphabetically by family name
+\newcommand{\authors}{%
+  GOVINDA AWASTHI\\
+  LAXMAN BHUSHAL\\
+  THUC DANG\\
+  SAGAR KHADKA\\
+  MUHAMMAD SAAD MEMON\\
+  ALEX TABLIZO\\
+  NATHAN NGUYEN TRAN}
+
+%%% Headers and footers
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\usepackage{lastpage}
+\lhead{}
+\chead{}
+\rhead{}
+\lfoot{\footnotesize \teamname\ - \semester}
+\cfoot{}
+\rfoot{\footnotesize page \thepage\ of \pageref{LastPage}}
+\renewcommand{\headrulewidth}{0.0pt}
+\renewcommand{\footrulewidth}{0.4pt}
+
+\usepackage[runin]{abstract}
+\abslabeldelim{\quad}
+\setlength{\abstitleskip}{-10pt}
+\renewcommand{\abstractname}{}
+\renewcommand{\abstracttextfont}{\color{accentcolor} \small \slshape}
+
+\begin{document}
+
+%%% Cover sheet
+{\centering \huge \color{accentcolor} \scshape \textbf{\department \\ \university} \par}
+\vspace{0.65in}
+{\centering \huge \color{accentcolor} \scshape \textbf{\docname \\ \coursename \\ \semester} \par}
+\vspace{0.4in}
+\begin{center}
+	\includegraphics[width=0.52\textwidth]{agrihome-logo}\\[0.55em]
+	{\small\slshape AgriHome project logo: leaf and camera lens motif for vision-based agricultural monitoring.}
+\end{center}
+\vspace{0.45in}
+{\centering \huge \color{accentcolor} \scshape \textbf{\teamname} \par}
+\vspace{0.4in}
+{\centering \large \scshape \textbf{\authors} \par}
+\newpage
+
+\begin{versionhistory}
+	\vhEntry{0.1}{03.04.2026}{Team}{Document created; initial architecture draft}
+	\vhEntry{1.0}{03.04.2026}{Team}{Layered overview, figures, PDF verified}
+	\vhEntry{1.1}{03.04.2026}{Team}{Raised system-level abstraction in overview sections}
+	\vhEntry{2.0}{03.04.2026}{GA, LB, TD, SK, MSM, AT, NNT}{Restructure to CSE 4316 ADS format; subsystems, interfaces; team roster}
+\end{versionhistory}
+\newpage
+
+\setcounter{tocdepth}{3}
+\tableofcontents
+\newpage
+
+\listoffigures
+\listoftables
+\newpage
+
+\section{Introduction}
+\input{tex/introduction.tex}
+\newpage
+
+\section{Project Overview}
+\input{tex/project_overview.tex}
+\newpage
+
+\section{System Description}
+\input{tex/system_description.tex}
+\newpage
+
+\section{Data Layer Subsystems}
+\input{tex/subsystems_data.tex}
+\newpage
+
+\section{Presentation Layer Subsystems}
+\input{tex/subsystems_presentation.tex}
+\newpage
+
+\section{Application Layer Subsystems}
+\input{tex/subsystems_application.tex}
+\newpage
+
+\section{Processing Layer Subsystems}
+\input{tex/subsystems_processing.tex}
+\newpage
+
+% thebibliography already emits \section*{\refname}; do not add a second References heading
+\phantomsection
+\addcontentsline{toc}{section}{References}
+\begin{thebibliography}{9}
+\bibitem{srs}
+Agrihome. \textit{System Requirements Specification} (CSE 4316, Spring 2026). Companion requirements document.
+
+\bibitem{nextjs}
+Vercel, Inc. ``Next.js Documentation.'' \url{https://nextjs.org/docs} (accessed 2026).
+
+\bibitem{postgres}
+PostgreSQL Global Development Group. ``PostgreSQL Documentation.'' \url{https://www.postgresql.org/docs/} (accessed 2026).
+
+\bibitem{firebase}
+Google. ``Firebase Authentication.'' \url{https://firebase.google.com/docs/auth} (accessed 2026).
+
+\bibitem{pwa}
+W3C. ``Progressive Web Apps.'' \url{https://www.w3.org/TR/appmanifest/} (accessed 2026).
+\end{thebibliography}
+
+\end{document}

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { requireApiAccountUser } from "@/lib/auth/session";
 import {
   analyzeTrayImageForPlantInstances,
   persistTrayVisionResult
@@ -14,8 +15,13 @@ export async function POST(
   request: Request,
   context: { params: Promise<{ trayId: string }> }
 ) {
+  const authResult = await requireApiAccountUser();
+  if (authResult instanceof Response) {
+    return authResult;
+  }
+
   const { trayId } = await context.params;
-  const tray = await getTrayById(trayId);
+  const tray = await getTrayById(authResult.email, trayId);
   if (!tray) {
     return NextResponse.json({ error: "Tray not found" }, { status: 404 });
   }

@@ -1,5 +1,6 @@
 CREATE TABLE IF NOT EXISTS tray_systems (
   id VARCHAR(64) PRIMARY KEY,
+  owner_email VARCHAR(320) NOT NULL,
   name VARCHAR(120) NOT NULL,
   zone VARCHAR(120) NOT NULL,
   crop VARCHAR(120) NOT NULL,
@@ -17,6 +18,7 @@ CREATE TABLE IF NOT EXISTS tray_systems (
 
 CREATE TABLE IF NOT EXISTS plants (
   id VARCHAR(64) PRIMARY KEY,
+  owner_email VARCHAR(320) NOT NULL,
   tray_id VARCHAR(64) NOT NULL,
   mesh_ids JSON NOT NULL,
   name VARCHAR(120) NOT NULL,
@@ -29,6 +31,7 @@ CREATE TABLE IF NOT EXISTS plants (
   last_report_at TIMESTAMP NOT NULL,
   latest_diagnosis VARCHAR(160) NOT NULL,
   description TEXT NULL,
+  plant_identifier VARCHAR(120) NULL,
   last_image_url TEXT NULL,
   last_image_at TIMESTAMP NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -105,6 +108,7 @@ CREATE TABLE IF NOT EXISTS monitoring_events (
 
 CREATE TABLE IF NOT EXISTS mesh_networks (
   id VARCHAR(64) PRIMARY KEY,
+  owner_email VARCHAR(320) NOT NULL,
   name VARCHAR(160) NOT NULL,
   tray_ids JSON NOT NULL,
   node_count INT NOT NULL DEFAULT 0,
@@ -115,6 +119,7 @@ CREATE TABLE IF NOT EXISTS mesh_networks (
 
 CREATE TABLE IF NOT EXISTS capture_schedules (
   id VARCHAR(64) PRIMARY KEY,
+  owner_email VARCHAR(320) NOT NULL,
   scope_type VARCHAR(16) NOT NULL,
   scope_id VARCHAR(64) NOT NULL,
   name VARCHAR(160) NOT NULL,
@@ -127,4 +132,21 @@ CREATE TABLE IF NOT EXISTS capture_schedules (
 );
 
 -- Upgrades: `CREATE TABLE IF NOT EXISTS` does not add columns to existing tables.
+ALTER TABLE tray_systems
+  ADD COLUMN IF NOT EXISTS owner_email VARCHAR(320);
+ALTER TABLE plants
+  ADD COLUMN IF NOT EXISTS owner_email VARCHAR(320);
+ALTER TABLE mesh_networks
+  ADD COLUMN IF NOT EXISTS owner_email VARCHAR(320);
+ALTER TABLE capture_schedules
+  ADD COLUMN IF NOT EXISTS owner_email VARCHAR(320);
 ALTER TABLE plants ADD COLUMN IF NOT EXISTS description TEXT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_tray_systems_owner_email
+  ON tray_systems(owner_email);
+CREATE INDEX IF NOT EXISTS idx_plants_owner_email
+  ON plants(owner_email);
+CREATE INDEX IF NOT EXISTS idx_mesh_networks_owner_email
+  ON mesh_networks(owner_email);
+CREATE INDEX IF NOT EXISTS idx_capture_schedules_owner_email
+  ON capture_schedules(owner_email);

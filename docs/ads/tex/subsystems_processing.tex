@@ -1,0 +1,134 @@
+The Processing Layer encapsulates \textbf{model-based and computer-vision} work for AgriHome. It is optional in the sense that core monitoring and CRUD remain available without it; when present, it enriches the product with species hints, tray-level detections, and future scoring models aligned with the SRS's emphasis on plant health insight.
+
+\subsection{Species and leaf inference adapter subsystem}
+
+This adapter accepts a \textbf{plant or leaf image} (or derived crop) and returns a structured classification: proposed species or cultivar labels, confidence scores, and auxiliary metadata for the Application Layer to store alongside user-confirmed fields.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\scriptsize, box/.style={draw, rounded corners, align=center, minimum width=2.4cm, minimum height=0.72cm}, arr/.style={-{Stealth}, thick}]
+\node[box, fill=blue!8] (app) {Application};
+\node[box, right=1.2cm of app, fill=orange!14] (inf) {Species\\adapter};
+\node[box, right=1.2cm of inf, fill=gray!10, dashed] (gpu) {Model\\runtime};
+\draw[arr] (app) -- node[above] {image} (inf);
+\draw[arr, dashed] (inf) -- (gpu);
+\end{tikzpicture}
+\caption{Species inference adapter: hosted model runtime may be external.}
+\label{fig:proc-species}
+\end{figure}
+
+\subsubsection{Assumptions}
+\begin{itemize}
+  \item Network latency between application and adapter is acceptable for interactive flows or runs asynchronously.
+  \item Model versioning is tracked so historical reports can be interpreted correctly.
+\end{itemize}
+
+\subsubsection{Responsibilities}
+\begin{itemize}
+  \item Accept a well-defined inference request contract (image bytes or URL, optional tray/plant IDs).
+  \item Run the trained classifier or delegate to a managed inference endpoint.
+  \item Return normalized labels and scores without persisting domain state itself.
+\end{itemize}
+
+\subsubsection{Subsystem interfaces}
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|p{0.9cm}|p{3.4cm}|p{3.0cm}|p{3.5cm}|}
+\hline
+\textbf{ID} & \textbf{Description} & \textbf{Inputs} & \textbf{Outputs} \\
+\hline
+PR-S1 & Application $\rightarrow$ Species adapter & Image + context & Label JSON \\
+\hline
+PR-S2 & Species adapter $\rightarrow$ Application & HTTP response & Parsed DTO \\
+\hline
+\end{tabular}
+\caption{Species and leaf inference adapter interfaces}
+\end{table}
+
+\subsection{Tray vision and layout adapter subsystem}
+
+The \textbf{tray vision} adapter analyzes a tray-level photograph to estimate plant count, regions of interest, or other layout features needed for monitoring dashboards. Outputs are merged into tray records or ephemeral UI state per product rules.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\scriptsize, box/.style={draw, rounded corners, align=center, minimum width=2.4cm, minimum height=0.72cm}, arr/.style={-{Stealth}, thick}]
+\node[box, fill=blue!8] (app) {Application};
+\node[box, right=1.2cm of app, fill=orange!14] (tr) {Tray vision\\adapter};
+\draw[arr] (app) -- node[above] {tray image} (tr);
+\draw[arr] (tr) -- node[below] {detections} (app);
+\end{tikzpicture}
+\caption{Tray vision adapter: round-trip inference for tray imagery.}
+\label{fig:proc-tray}
+\end{figure}
+
+\subsubsection{Assumptions}
+\begin{itemize}
+  \item Images meet minimum resolution and lighting heuristics expected by the model.
+  \item A simulator or stub may substitute in development environments.
+\end{itemize}
+
+\subsubsection{Responsibilities}
+\begin{itemize}
+  \item Detect plants or regions; return geometry in a coordinate system agreed with the UI.
+  \item Report confidence and failure modes explicitly.
+\end{itemize}
+
+\subsubsection{Subsystem interfaces}
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|p{0.9cm}|p{3.4cm}|p{3.0cm}|p{3.5cm}|}
+\hline
+\textbf{ID} & \textbf{Description} & \textbf{Inputs} & \textbf{Outputs} \\
+\hline
+PR-T1 & Application $\rightarrow$ Tray adapter & Tray image & Detection set \\
+\hline
+\end{tabular}
+\caption{Tray vision and layout adapter interfaces}
+\end{table}
+
+\subsection{Inference normalization subsystem}
+
+\textbf{Normalization} converts heterogeneous model outputs into a single internal schema (units, label vocabularies, bounding-box ordering) so the Application Layer can persist results without adapter-specific branches scattered through domain code.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\scriptsize, box/.style={draw, rounded corners, align=center, minimum width=2.5cm, minimum height=0.72cm}, arr/.style={-{Stealth}, thick}]
+\node[box, fill=orange!12] (raw) {Raw model\\output};
+\node[box, right=1.1cm of raw, fill=orange!8] (norm) {Normalizer};
+\node[box, right=1.1cm of norm, fill=blue!8] (app) {Application};
+\draw[arr] (raw) -- (norm);
+\draw[arr] (norm) -- node[above] {canonical DTO} (app);
+\end{tikzpicture}
+\caption{Normalization: single canonical shape for downstream persistence.}
+\label{fig:proc-norm}
+\end{figure}
+
+\subsubsection{Assumptions}
+\begin{itemize}
+  \item Each adapter documents its native schema version.
+\end{itemize}
+
+\subsubsection{Responsibilities}
+\begin{itemize}
+  \item Map labels to controlled vocabularies where required.
+  \item Clamp or filter low-confidence results per policy.
+  \item Provide stable fields for database columns and UI rendering.
+\end{itemize}
+
+\subsubsection{Subsystem interfaces}
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|p{0.9cm}|p{3.4cm}|p{3.0cm}|p{3.5cm}|}
+\hline
+\textbf{ID} & \textbf{Description} & \textbf{Inputs} & \textbf{Outputs} \\
+\hline
+PR-N1 & Adapter $\rightarrow$ Normalizer & Vendor JSON & Canonical inference DTO \\
+\hline
+PR-N2 & Normalizer $\rightarrow$ Application & Canonical DTO & Ready for persist \\
+\hline
+\end{tabular}
+\caption{Inference normalization subsystem interfaces}
+\end{table}
