@@ -1,0 +1,101 @@
+\label{sec:overview}
+
+The AgriHome Vision Console is designed using a \textbf{layered architecture}. Each layer has a distinct role; layers interact through well-defined interfaces (HTTP APIs between client and server, internal service calls within the server, SQL and file I/O toward stores, and optional outbound calls to inference services). This separation improves modularity, testability, and the ability to scale or replace one concern (for example, swapping a vision provider) without rewriting unrelated areas.
+
+The system comprises \textbf{four primary layers}:
+
+\begin{enumerate}
+  \item \textbf{Presentation Layer} — user-facing experience in the browser or PWA: landing and marketing entry, authentication, dashboard, tray and plant views, mesh management, schedules, charts, and uploads.
+  \item \textbf{Application Layer} — server-side control: HTTP and GraphQL entry points, session verification, validation, routing of work to domain services, coordination of reads and writes to the data layer, and invocation of the processing layer when needed.
+  \item \textbf{Processing Layer} — computer-vision and analytics \emph{adapters}: optional services that accept images or features and return structured labels, detections, or scores for the application layer to persist or display. This layer may run on separate infrastructure (for example, GPU hosts).
+  \item \textbf{Data Layer} — durable storage: relational database for domain entities (trays, plants, meshes, schedules, reports, events, predictions), and object or file storage for imagery; optional vector index for similarity search when enabled.
+\end{enumerate}
+
+\subsection{Presentation layer description}
+
+The Presentation Layer is the primary interface between \textbf{people} and the product. It implements responsive layouts for desktop and mobile, supports installable PWA behavior for field-adjacent use, and communicates with the Application Layer exclusively through HTTPS (including authenticated cookie-based sessions after sign-in).
+
+Users register or sign in, navigate trays and plants, upload photos, trigger or view vision-assisted results, inspect monitoring history, configure schedules, and manage meshes. The layer is responsible for presenting SRS-mandated capabilities such as health status, historical trends, dashboard summaries, and settings-oriented flows at a user-experience level; it does not embed direct database access.
+
+\textbf{Key responsibilities:}
+\begin{itemize}
+  \item Capture user input (forms, file selection, navigation).
+  \item Render charts, tables, imagery, and status text clearly and accessibly.
+  \item Invoke application APIs and display responses or structured errors.
+  \item Encapsulate client-only concerns (progressive enhancement, local caching of shell assets where applicable).
+\end{itemize}
+
+\subsection{Application layer description}
+
+The Application Layer is the \textbf{central coordinator}. It receives every authenticated request from the Presentation Layer, interprets it, enforces authorization tied to the authenticated identity, validates payloads, delegates to domain-oriented modules (tray and plant lifecycle, mesh topology, schedules, monitoring logs, file references), and returns responses.
+
+It is also responsible for \textbf{bridging} to the Processing Layer: when a workflow requires species classification, tray-level detection, or similar inference, the application packages the request, calls the appropriate adapter, interprets the result, and maps it into domain records. It never exposes raw database credentials to clients.
+
+\textbf{Key responsibilities:}
+\begin{itemize}
+  \item Expose a stable API surface for the console and future integrators.
+  \item Maintain session integrity and ownership rules (which user owns which trays).
+  \item Orchestrate transactions across relational updates and file metadata.
+  \item Isolate failures in optional backends so core monitoring remains usable when possible.
+\end{itemize}
+
+\subsection{Processing layer description}
+
+The Processing Layer performs \textbf{compute-intensive or model-based} work that should not block the interactive path of the UI thread on the server. In AgriHome this includes, when configured, \textbf{species or leaf-level classification}, \textbf{tray-level vision} (for example plant counting or bounding regions), and any future scoring models. These functions may be implemented as separate HTTP services maintained by the same team or by an ML operations group.
+
+When no external model is available, the Application Layer may apply \textbf{deterministic or simulated} behavior for development and demonstration; the architecture still treats that path as ``processing'' logically because it produces structured inference output distinct from raw CRUD.
+
+\textbf{Key responsibilities:}
+\begin{itemize}
+  \item Accept image or feature input in a contract agreed with the application tier.
+  \item Run detection, embedding, or classification pipelines as implemented.
+  \item Return normalized results (labels, confidence, geometry) to the Application Layer.
+  \item Remain stateless with respect to long-term domain truth; persistence is always via the application and data layers.
+\end{itemize}
+
+\subsection{Data layer description}
+
+The Data Layer is the \textbf{authoritative foundation} for AgriHome. The relational store holds entities and relationships that satisfy SRS concepts: plant health records over time, capture references, environmental or monitoring events as modeled, mesh membership, and schedules. Object storage holds binary assets (camera frames, user uploads) referenced by identifiers or URLs in the relational model.
+
+Optional components such as a \textbf{vector database} participate in this layer when similarity or embedding search is required; they remain secondary to the relational system of record.
+
+\textbf{Key responsibilities:}
+\begin{itemize}
+  \item Persist and retrieve structured domain data with consistency expectations documented per operation.
+  \item Store and stream large binaries efficiently.
+  \item Enforce integrity through schema, constraints, and application-side validation.
+  \item Support backup, migration, and operational monitoring consistent with deployment policy.
+\end{itemize}
+
+\subsection{Layered architecture figure}
+
+Figure~\ref{fig:layer-arch} summarizes the four layers and primary external actors. Companion diagrams in Section~3 refine internal subsystems and data flow.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  font=\small,
+  layer/.style={draw, rounded corners, minimum width=11cm, minimum height=1.15cm, align=left, inner sep=10pt},
+  arr/.style={-{Stealth}, thick},
+]
+\node[layer, fill=leafgreen!18] (L1) {\textbf{Presentation Layer}\quad\textit{(browser / PWA user experience)}};
+\node[layer, below=0.42cm of L1, fill=blue!8] (L2) {\textbf{Application Layer}\quad\textit{(APIs, sessions, domain orchestration)}};
+\node[layer, below=0.42cm of L2, fill=orange!14] (L3) {\textbf{Processing Layer}\quad\textit{(optional vision / analytics adapters)}};
+\node[layer, below=0.42cm of L3, fill=gray!14] (L4) {\textbf{Data Layer}\quad\textit{(relational DB, object storage, optional vector index)}};
+
+\node[draw, circle, minimum size=0.6cm, left=0.55cm of L1, font=\scriptsize, inner sep=0pt] (u) {U};
+\node[draw, rounded corners, font=\scriptsize, right=0.35cm of L1, align=center, inner sep=4pt] (idp) {Identity\\provider};
+
+\draw[arr] (u) -- node[above, font=\scriptsize] {uses} (L1);
+\draw[arr, dashed] (L1.east) -- (idp.west);
+\draw[arr] (L1.south) -- (L2.north);
+\draw[arr, dashed] (L2.south) -- node[right, font=\scriptsize] {when needed} (L3.north);
+\draw[arr] (L3.south) -- (L4.north);
+\end{tikzpicture}
+\caption{AgriHome Vision Console: four-layer architecture and trust boundaries.}
+\label{fig:layer-arch}
+\end{figure}
+
+\subsection{System workflow overview}
+
+A typical end-to-end path begins when a signed-in user opens a \textbf{tray} or \textbf{plant} view in the Presentation Layer. The client requests data from the Application Layer, which reads the \textbf{Data Layer} (relational and, when needed, media URLs). When the user uploads an image or requests vision-assisted analysis, the Application Layer may forward pixels or references to the \textbf{Processing Layer}; results return as structured data, are validated, and are written to the database and/or file store. The updated state flows back to the Presentation Layer for display, satisfying SRS expectations for visible health status, history, and dashboards.

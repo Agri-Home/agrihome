@@ -1,11 +1,17 @@
 import { NextResponse } from "next/server";
 
+import { requireApiAccountUser } from "@/lib/auth/session";
 import { createPlantFromPhotoWithAutoDetection } from "@/lib/services/plant-manual-service";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
+  const authResult = await requireApiAccountUser();
+  if (authResult instanceof Response) {
+    return authResult;
+  }
+
   const form = await request.formData();
   const file = form.get("photo");
   if (!file || !(file instanceof File)) {
@@ -23,6 +29,7 @@ export async function POST(request: Request) {
   const buf = Buffer.from(await file.arrayBuffer());
   try {
     const data = await createPlantFromPhotoWithAutoDetection({
+      ownerEmail: authResult.email,
       file: buf,
       mime: file.type,
       trayId,

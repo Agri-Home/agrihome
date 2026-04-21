@@ -1,0 +1,267 @@
+The Application Layer implements the \textbf{control plane} of AgriHome: every client request is authenticated, validated, mapped to domain operations, and translated into data-layer and optional processing-layer calls. The subsystems below follow the decomposition style of the reference architectural document while reflecting AgriHome's agronomic domain.
+
+\subsection{API entry and routing subsystem}
+
+The \textbf{API entry} subsystem exposes HTTP routes and, where used, a GraphQL endpoint. It maps URLs and methods to internal handlers and enforces global concerns such as method allow-lists and body size limits.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\scriptsize, box/.style={draw, rounded corners, align=center, minimum width=2.3cm, minimum height=0.7cm}, arr/.style={-{Stealth}, thick}]
+\node[box, fill=leafgreen!12] (cli) {Presentation};
+\node[box, right=1.0cm of cli, fill=blue!10] (api) {API entry};
+\node[box, right=1.0cm of api, fill=blue!8] (sess) {Session\\broker};
+\draw[arr] (cli) -- (api);
+\draw[arr] (api) -- (sess);
+\end{tikzpicture}
+\caption{API entry: first server hop after the presentation layer.}
+\label{fig:app-api}
+\end{figure}
+
+\subsubsection{Assumptions}
+\begin{itemize}
+  \item All mutating operations require authenticated context unless explicitly public.
+  \item Rate limiting may be enforced externally (gateway) or internally per deployment.
+\end{itemize}
+
+\subsubsection{Responsibilities}
+\begin{itemize}
+  \item Accept REST and GraphQL traffic on documented paths.
+  \item Dispatch to validation and domain orchestration pipelines.
+  \item Normalize HTTP status codes and error envelopes.
+\end{itemize}
+
+\subsubsection{Subsystem interfaces}
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|p{0.9cm}|p{3.4cm}|p{3.0cm}|p{3.5cm}|}
+\hline
+\textbf{ID} & \textbf{Description} & \textbf{Inputs} & \textbf{Outputs} \\
+\hline
+A-R1 & Presentation $\rightarrow$ API entry & HTTP requests & Routed handler \\
+\hline
+A-R2 & API entry $\rightarrow$ Session broker & Raw request & Auth context \\
+\hline
+\end{tabular}
+\caption{API entry and routing subsystem interfaces}
+\end{table}
+
+\subsection{Session and authentication broker subsystem}
+
+This subsystem verifies \textbf{server sessions} established through the identity provider flow, binds the caller to an account key used for data scoping, and rejects stale or forged cookies.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\scriptsize, box/.style={draw, rounded corners, align=center, minimum width=2.4cm, minimum height=0.7cm}, arr/.style={-{Stealth}, thick}]
+\node[box, fill=blue!8] (sess) {Session\\broker};
+\node[box, right=1.2cm of sess, fill=gray!10, dashed] (idp) {Identity\\provider};
+\node[box, below=0.85cm of sess, fill=blue!6] (dom) {Domain\\orchestration};
+\draw[arr, dashed] (sess) -- node[above] {verify} (idp);
+\draw[arr] (sess) -- (dom);
+\end{tikzpicture}
+\caption{Session broker: establishes trusted account context for downstream work.}
+\label{fig:app-session}
+\end{figure}
+
+\subsubsection{Assumptions}
+\begin{itemize}
+  \item Session material is transported only over TLS.
+  \item Clock skew between servers remains within acceptable bounds for token validation.
+\end{itemize}
+
+\subsubsection{Responsibilities}
+\begin{itemize}
+  \item Validate session cookies or bearer tokens per integration.
+  \item Attach user identity and permissions context to the request scope.
+  \item Support sign-out by invalidating server-side session state as implemented.
+\end{itemize}
+
+\subsubsection{Subsystem interfaces}
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|p{0.9cm}|p{3.4cm}|p{3.0cm}|p{3.5cm}|}
+\hline
+\textbf{ID} & \textbf{Description} & \textbf{Inputs} & \textbf{Outputs} \\
+\hline
+A-S1 & API entry $\rightarrow$ Session broker & HTTP request & Principal or error \\
+\hline
+A-S2 & Session broker $\rightarrow$ Domain & Account context & Scoped operations \\
+\hline
+\end{tabular}
+\caption{Session and authentication broker subsystem interfaces}
+\end{table}
+
+\subsection{Input validation subsystem}
+
+\textbf{Input validation} enforces structural correctness: JSON schema, multipart boundaries, numeric ranges for schedules, and presence of foreign keys before any database call.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\scriptsize, box/.style={draw, rounded corners, align=center, minimum width=2.3cm, minimum height=0.7cm}, arr/.style={-{Stealth}, thick}]
+\node[box, fill=blue!8] (v) {Validator};
+\node[box, right=1.2cm of v, fill=blue!6] (dom) {Domain\\orchestration};
+\draw[arr] (v) -- node[above] {DTO} (dom);
+\end{tikzpicture}
+\caption{Validation subsystem: rejects bad input early.}
+\label{fig:app-val}
+\end{figure}
+
+\subsubsection{Assumptions}
+\begin{itemize}
+  \item All untrusted input arrives through the API entry path.
+\end{itemize}
+
+\subsubsection{Responsibilities}
+\begin{itemize}
+  \item Validate and sanitize payloads; coerce types where safe.
+  \item Emit field-level errors consumable by the Presentation Layer.
+\end{itemize}
+
+\subsubsection{Subsystem interfaces}
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|p{0.9cm}|p{3.4cm}|p{3.0cm}|p{3.5cm}|}
+\hline
+\textbf{ID} & \textbf{Description} & \textbf{Inputs} & \textbf{Outputs} \\
+\hline
+A-V1 & Session broker $\rightarrow$ Validator & Parsed body & Validated DTO \\
+\hline
+\end{tabular}
+\caption{Input validation subsystem interfaces}
+\end{table}
+
+\subsection{Domain orchestration subsystem}
+
+\textbf{Domain orchestration} implements AgriHome use cases: tray and plant CRUD, mesh membership, schedule upserts, monitoring log writes, prediction snapshots, and file handoffs. It is the primary caller of the Data Layer and the orchestrator of Processing Layer calls.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\scriptsize, box/.style={draw, rounded corners, align=center, minimum width=2.3cm, minimum height=0.7cm}, arr/.style={-{Stealth}, thick}]
+\node[box, fill=blue!6] (dom) {Domain\\services};
+\node[box, right=1.0cm of dom, fill=gray!14] (data) {Data Layer};
+\node[box, below=0.75cm of dom, fill=orange!12, dashed] (proc) {Processing};
+\draw[arr] (dom) -- (data);
+\draw[arr, dashed] (dom) -- (proc);
+\end{tikzpicture}
+\caption{Domain orchestration: central business logic and integration point.}
+\label{fig:app-dom}
+\end{figure}
+
+\subsubsection{Assumptions}
+\begin{itemize}
+  \item Domain rules may evolve faster than schema; feature flags may gate behavior.
+\end{itemize}
+
+\subsubsection{Responsibilities}
+\begin{itemize}
+  \item Implement transactional stories that satisfy SRS capabilities.
+  \item Map database rows to API DTOs and GraphQL types.
+  \item Coordinate retries or compensations when external services fail.
+\end{itemize}
+
+\subsubsection{Subsystem interfaces}
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|p{0.9cm}|p{3.4cm}|p{3.0cm}|p{3.5cm}|}
+\hline
+\textbf{ID} & \textbf{Description} & \textbf{Inputs} & \textbf{Outputs} \\
+\hline
+A-D1 & Validator $\rightarrow$ Domain & Valid DTOs & Side effects / results \\
+\hline
+A-D2 & Domain $\rightarrow$ Data Layer & SQL / storage ops & Persisted state \\
+\hline
+A-D3 & Domain $\rightarrow$ Processing & Images / metadata & Inference DTOs \\
+\hline
+\end{tabular}
+\caption{Domain orchestration subsystem interfaces}
+\end{table}
+
+\subsection{GraphQL query and mutation facade subsystem}
+
+Where enabled, \textbf{GraphQL} provides a typed alternative surface for reads and selected mutations (for example mesh creation, plant updates, schedule upserts). Resolvers delegate to the same domain orchestration as REST to avoid divergent business rules.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\scriptsize, box/.style={draw, rounded corners, align=center, minimum width=2.2cm, minimum height=0.7cm}, arr/.style={-{Stealth}, thick}]
+\node[box, fill=blue!10] (gql) {GraphQL\\engine};
+\node[box, right=1.0cm of gql, fill=blue!6] (dom) {Domain};
+\draw[arr] (gql) -- (dom);
+\end{tikzpicture}
+\caption{GraphQL facade: thin mapping to domain services.}
+\label{fig:app-gql}
+\end{figure}
+
+\subsubsection{Assumptions}
+\begin{itemize}
+  \item GraphQL complexity limits protect against abusive queries.
+\end{itemize}
+
+\subsubsection{Responsibilities}
+\begin{itemize}
+  \item Parse, validate, and execute schema operations.
+  \item Return typed errors suitable for client debugging.
+\end{itemize}
+
+\subsubsection{Subsystem interfaces}
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|p{0.9cm}|p{3.4cm}|p{3.0cm}|p{3.5cm}|}
+\hline
+\textbf{ID} & \textbf{Description} & \textbf{Inputs} & \textbf{Outputs} \\
+\hline
+A-G1 & Presentation $\rightarrow$ GraphQL & Query/mutation & JSON result \\
+\hline
+A-G2 & GraphQL $\rightarrow$ Domain & Resolver args & Domain outcomes \\
+\hline
+\end{tabular}
+\caption{GraphQL facade subsystem interfaces}
+\end{table}
+
+\subsection{Response and error handling subsystem}
+
+The \textbf{response handler} assembles payloads, sets cache headers where safe, logs structured errors, and ensures that sensitive internals are not leaked to clients—supporting SRS \textbf{security} themes at the API boundary.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\scriptsize, box/.style={draw, rounded corners, align=center, minimum width=2.3cm, minimum height=0.7cm}, arr/.style={-{Stealth}, thick}]
+\node[box, fill=blue!6] (dom) {Domain};
+\node[box, right=1.0cm of dom, fill=blue!10] (resp) {Response\\handler};
+\node[box, right=1.0cm of resp, fill=leafgreen!12] (cli) {Presentation};
+\draw[arr] (dom) -- (resp);
+\draw[arr] (resp) -- (cli);
+\end{tikzpicture}
+\caption{Response handler: maps internal results to HTTP/GraphQL responses.}
+\label{fig:app-resp}
+\end{figure}
+
+\subsubsection{Assumptions}
+\begin{itemize}
+  \item Central logging infrastructure exists in deployment environments.
+\end{itemize}
+
+\subsubsection{Responsibilities}
+\begin{itemize}
+  \item Serialize success and error bodies consistently.
+  \item Map domain exceptions to HTTP status codes.
+  \item Redact secrets from logs and client messages.
+\end{itemize}
+
+\subsubsection{Subsystem interfaces}
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|p{0.9cm}|p{3.4cm}|p{3.0cm}|p{3.5cm}|}
+\hline
+\textbf{ID} & \textbf{Description} & \textbf{Inputs} & \textbf{Outputs} \\
+\hline
+A-E1 & Domain $\rightarrow$ Response handler & Result / exception & Outbound DTO \\
+\hline
+A-E2 & Response handler $\rightarrow$ Presentation & HTTP response & Rendered UX \\
+\hline
+\end{tabular}
+\caption{Response and error handling subsystem interfaces}
+\end{table}

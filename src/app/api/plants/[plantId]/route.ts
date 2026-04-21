@@ -1,6 +1,13 @@
 import { NextResponse } from "next/server";
 
 import {
+  optInt,
+  optNullableString,
+  optPlantStatus,
+  optTrimmedString
+} from "@/lib/api/json-fields";
+import { requireApiAccountUser } from "@/lib/auth/session";
+import {
   deletePlantById,
   updatePlantById
 } from "@/lib/services/plant-service";
@@ -12,6 +19,11 @@ export async function PATCH(
   request: Request,
   context: { params: Promise<{ plantId: string }> }
 ) {
+  const authResult = await requireApiAccountUser();
+  if (authResult instanceof Response) {
+    return authResult;
+  }
+
   const { plantId } = await context.params;
   let body: unknown;
   try {
@@ -31,19 +43,48 @@ export async function PATCH(
       : typeof o.description === "string"
         ? o.description
         : undefined;
+  const plantIdentifier = optNullableString(o.plantIdentifier);
+  const slotLabel = optTrimmedString(o.slotLabel);
+  const row = optInt(o.row);
+  const column = optInt(o.column);
+  const healthScore = optInt(o.healthScore);
+  const status = optPlantStatus(o.status);
+  const latestDiagnosis = optTrimmedString(o.latestDiagnosis);
 
-  if (name === undefined && cultivar === undefined && description === undefined) {
+  const hasAny =
+    name !== undefined ||
+    cultivar !== undefined ||
+    description !== undefined ||
+    plantIdentifier !== undefined ||
+    slotLabel !== undefined ||
+    row !== undefined ||
+    column !== undefined ||
+    healthScore !== undefined ||
+    status !== undefined ||
+    latestDiagnosis !== undefined;
+
+  if (!hasAny) {
     return NextResponse.json(
-      { error: "Provide at least one of: name, cultivar, description" },
+      {
+        error:
+          "Provide at least one field to update (name, cultivar, description, plantIdentifier, slotLabel, row, column, healthScore, status, latestDiagnosis)"
+      },
       { status: 400 }
     );
   }
 
   try {
-    const plant = await updatePlantById(plantId, {
+    const plant = await updatePlantById(authResult.email, plantId, {
       ...(name !== undefined ? { name } : {}),
       ...(cultivar !== undefined ? { cultivar } : {}),
-      ...(description !== undefined ? { description } : {})
+      ...(description !== undefined ? { description } : {}),
+      ...(plantIdentifier !== undefined ? { plantIdentifier } : {}),
+      ...(slotLabel !== undefined ? { slotLabel } : {}),
+      ...(row !== undefined ? { row } : {}),
+      ...(column !== undefined ? { column } : {}),
+      ...(healthScore !== undefined ? { healthScore } : {}),
+      ...(status !== undefined ? { status } : {}),
+      ...(latestDiagnosis !== undefined ? { latestDiagnosis } : {})
     });
     if (!plant) {
       return NextResponse.json({ error: "Plant not found" }, { status: 404 });
@@ -59,9 +100,14 @@ export async function DELETE(
   _request: Request,
   context: { params: Promise<{ plantId: string }> }
 ) {
+  const authResult = await requireApiAccountUser();
+  if (authResult instanceof Response) {
+    return authResult;
+  }
+
   const { plantId } = await context.params;
   try {
-    const ok = await deletePlantById(plantId);
+    const ok = await deletePlantById(authResult.email, plantId);
     if (!ok) {
       return NextResponse.json({ error: "Plant not found" }, { status: 404 });
     }

@@ -7,8 +7,10 @@ import { getLatestPrediction } from "@/lib/services/prediction-service";
 import { listSchedules, upsertSchedule } from "@/lib/services/schedule-service";
 import {
   createMeshNetwork,
+  createTraySystem,
   listMeshNetworks,
-  listTraySystems
+  listTraySystems,
+  updateTraySystem
 } from "@/lib/services/topology-service";
 import {
   deletePlantById,
@@ -20,6 +22,11 @@ import {
 } from "@/lib/config/env";
 import { getVectorSource } from "@/lib/services/vector-service";
 import { isPostgresHealthy } from "@/lib/db/postgres";
+import type { PlantHealthStatus } from "@/lib/types/domain";
+
+interface GraphQLContext {
+  userEmail: string;
+}
 
 export const schema = createSchema({
   typeDefs: /* GraphQL */ `
@@ -108,6 +115,7 @@ export const schema = createSchema({
       name: String!
       cultivar: String!
       description: String
+      plantIdentifier: String
       slotLabel: String!
       row: Int!
       column: Int!
@@ -171,11 +179,26 @@ export const schema = createSchema({
 
     type Mutation {
       createMeshNetwork(name: String!, trayIds: [String!]!): MeshNetwork!
+      createTray(name: String!, zone: String!, crop: String!, deviceId: String): TraySystem!
+      updateTray(
+        trayId: ID!
+        name: String
+        zone: String
+        crop: String
+        deviceId: String
+      ): TraySystem!
       updatePlant(
         plantId: ID!
         name: String
         cultivar: String
         description: String
+        plantIdentifier: String
+        slotLabel: String
+        row: Int
+        column: Int
+        healthScore: Int
+        status: String
+        latestDiagnosis: String
       ): PlantUnit!
       deletePlant(plantId: ID!): Boolean!
       upsertSchedule(
@@ -190,25 +213,63 @@ export const schema = createSchema({
   `,
   resolvers: {
     Query: {
-      latestImage: (_parent, args: { trayId?: string }) =>
-        getLatestCameraCapture(args.trayId),
-      latestPrediction: (_parent, args: { trayId?: string }) =>
-        getLatestPrediction(args.trayId),
+      latestImage: (
+        _parent,
+        args: { trayId?: string },
+        context: GraphQLContext
+      ) => getLatestCameraCapture(context.userEmail, args.trayId),
+      latestPrediction: (
+        _parent,
+        args: { trayId?: string },
+        context: GraphQLContext
+      ) => getLatestPrediction(context.userEmail, args.trayId),
       monitoringLog: (
         _parent,
-        args: { limit?: number; trayId?: string; plantId?: string }
-      ) => getMonitoringLog(args.limit ?? 10, args.trayId, args.plantId),
-      traySystems: () => listTraySystems(),
-      meshNetworks: () => listMeshNetworks(),
-      plants: (_parent, args: { trayId?: string }) => listPlantsByTray(args.trayId),
+        args: { limit?: number; trayId?: string; plantId?: string },
+        context: GraphQLContext
+      ) =>
+        getMonitoringLog({
+          ownerEmail: context.userEmail,
+          limit: args.limit ?? 10,
+          trayId: args.trayId,
+          plantId: args.plantId
+        }),
+      traySystems: (
+        _parent,
+        _args: unknown,
+        context: GraphQLContext
+      ) => listTraySystems(context.userEmail),
+      meshNetworks: (
+        _parent,
+        _args: unknown,
+        context: GraphQLContext
+      ) => listMeshNetworks(context.userEmail),
+      plants: (
+        _parent,
+        args: { trayId?: string },
+        context: GraphQLContext
+      ) => listPlantsByTray(context.userEmail, args.trayId),
       reports: (
         _parent,
-        args: { trayId?: string; plantId?: string; limit?: number }
-      ) => listPlantReports(args),
+        args: { trayId?: string; plantId?: string; limit?: number },
+        context: GraphQLContext
+      ) =>
+        listPlantReports({
+          ownerEmail: context.userEmail,
+          trayId: args.trayId,
+          plantId: args.plantId,
+          limit: args.limit
+        }),
       schedules: (
         _parent,
-        args: { scopeType?: "tray" | "mesh"; scopeId?: string }
-      ) => listSchedules(args),
+        args: { scopeType?: "tray" | "mesh"; scopeId?: string },
+        context: GraphQLContext
+      ) =>
+        listSchedules({
+          ownerEmail: context.userEmail,
+          scopeType: args.scopeType,
+          scopeId: args.scopeId
+        }),
       health: async () => ({
         api: "healthy",
         database: (await isPostgresHealthy()) ? "connected" : "disconnected",
@@ -221,8 +282,55 @@ export const schema = createSchema({
     Mutation: {
       createMeshNetwork: (
         _parent,
-        args: { name: string; trayIds: string[] }
-      ) => createMeshNetwork(args),
+        args: { name: string; trayIds: string[] },
+        context: GraphQLContext
+      ) =>
+        createMeshNetwork({
+          ownerEmail: context.userEmail,
+          name: args.name,
+          trayIds: args.trayIds
+        }),
+      createTray: (
+        _parent,
+        args: {
+          name: string;
+          zone: string;
+          crop: string;
+          deviceId?: string | null;
+        },
+        context: GraphQLContext
+      ) =>
+        createTraySystem({
+          ownerEmail: context.userEmail,
+          name: args.name,
+          zone: args.zone,
+          crop: args.crop,
+          deviceId: args.deviceId ?? undefined
+        }),
+      updateTray: async (
+        _parent,
+        args: {
+          trayId: string;
+          name?: string | null;
+          zone?: string | null;
+          crop?: string | null;
+          deviceId?: string | null;
+        },
+        context: GraphQLContext
+      ) => {
+        const tray = await updateTraySystem({
+          ownerEmail: context.userEmail,
+          id: args.trayId,
+          name: args.name ?? undefined,
+          zone: args.zone ?? undefined,
+          crop: args.crop ?? undefined,
+          deviceId: args.deviceId === null ? "manual" : args.deviceId ?? undefined
+        });
+        if (!tray) {
+          throw new Error("Tray not found");
+        }
+        return tray;
+      },
       updatePlant: async (
         _parent,
         args: {
@@ -230,13 +338,42 @@ export const schema = createSchema({
           name?: string | null;
           cultivar?: string | null;
           description?: string | null;
-        }
+          plantIdentifier?: string | null;
+          slotLabel?: string | null;
+          row?: number | null;
+          column?: number | null;
+          healthScore?: number | null;
+          status?: string | null;
+          latestDiagnosis?: string | null;
+        },
+        context: GraphQLContext
       ) => {
-        const plant = await updatePlantById(args.plantId, {
+        const plant = await updatePlantById(context.userEmail, args.plantId, {
           ...(args.name != null ? { name: args.name } : {}),
           ...(args.cultivar != null ? { cultivar: args.cultivar } : {}),
           ...(args.description !== undefined
             ? { description: args.description }
+            : {}),
+          ...(args.plantIdentifier !== undefined
+            ? { plantIdentifier: args.plantIdentifier }
+            : {}),
+          ...(args.slotLabel !== undefined && args.slotLabel !== null
+            ? { slotLabel: args.slotLabel }
+            : {}),
+          ...(args.row !== undefined && args.row !== null
+            ? { row: args.row }
+            : {}),
+          ...(args.column !== undefined && args.column !== null
+            ? { column: args.column }
+            : {}),
+          ...(args.healthScore !== undefined && args.healthScore !== null
+            ? { healthScore: args.healthScore }
+            : {}),
+          ...(args.status !== undefined && args.status !== null
+            ? { status: args.status as PlantHealthStatus }
+            : {}),
+          ...(args.latestDiagnosis !== undefined && args.latestDiagnosis !== null
+            ? { latestDiagnosis: args.latestDiagnosis }
             : {})
         });
         if (!plant) {
@@ -244,8 +381,11 @@ export const schema = createSchema({
         }
         return plant;
       },
-      deletePlant: (_parent, args: { plantId: string }) =>
-        deletePlantById(args.plantId),
+      deletePlant: (
+        _parent,
+        args: { plantId: string },
+        context: GraphQLContext
+      ) => deletePlantById(context.userEmail, args.plantId),
       upsertSchedule: (
         _parent,
         args: {
@@ -255,8 +395,18 @@ export const schema = createSchema({
           name: string;
           intervalMinutes: number;
           active: boolean;
-        }
-      ) => upsertSchedule(args)
+        },
+        context: GraphQLContext
+      ) =>
+        upsertSchedule({
+          ownerEmail: context.userEmail,
+          id: args.id,
+          scopeType: args.scopeType,
+          scopeId: args.scopeId,
+          name: args.name,
+          intervalMinutes: args.intervalMinutes,
+          active: args.active
+        })
     }
   }
 });

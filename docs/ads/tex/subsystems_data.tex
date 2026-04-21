@@ -1,0 +1,231 @@
+The Data Layer provides durable storage for all AgriHome domain state and media. It is structured into subsystems that mirror the reference senior-design pattern: coordinated writes, integrity checks, query execution, the primary relational database, and dedicated image storage.
+
+\subsection{Write coordination subsystem}
+
+The \textbf{write coordination} subsystem sequences operations that must stay consistent across multiple rows or across database rows and file metadata (for example, creating a plant and linking an uploaded photo). It receives structured write intents from the Application Layer and orders them so partial failures can be detected and reported.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\scriptsize, box/.style={draw, rounded corners, align=center, minimum width=2.6cm, minimum height=0.75cm}, arr/.style={-{Stealth}, thick}]
+\node[box, fill=blue!10] (app) {Application\\Layer};
+\node[box, right=1.2cm of app, fill=gray!15] (wc) {Write\\coordination};
+\node[box, right=1.2cm of wc, fill=gray!12] (ic) {Integrity\\\& constraints};
+\draw[arr] (app) -- node[above] {write intent} (wc);
+\draw[arr] (wc) -- node[above] {validated batch} (ic);
+\end{tikzpicture}
+\caption{Write coordination subsystem: accepts write intents and forwards them toward integrity checks.}
+\label{fig:data-write}
+\end{figure}
+
+\subsubsection{Assumptions}
+\begin{itemize}
+  \item The Application Layer supplies writes in transactional units appropriate to each use case.
+  \item Concurrent writers may exist; isolation expectations are defined per operation.
+  \item Object storage availability may differ from database availability; coordination must surface errors clearly.
+\end{itemize}
+
+\subsubsection{Responsibilities}
+\begin{itemize}
+  \item Accept batched write intents from domain services.
+  \item Order dependent operations (metadata before binary commit or the reverse, per policy).
+  \item Expose success/failure to the Application Layer for user-visible error handling.
+\end{itemize}
+
+\subsubsection{Subsystem interfaces}
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|p{0.85cm}|p{3.5cm}|p{3.0cm}|p{3.5cm}|}
+\hline
+\textbf{ID} & \textbf{Description} & \textbf{Inputs} & \textbf{Outputs} \\
+\hline
+D-W1 & Application $\rightarrow$ Write coordination & Domain write DTOs & Ordered write plan \\
+\hline
+D-W2 & Write coordination $\rightarrow$ Integrity & Planned writes & Validation requests \\
+\hline
+\end{tabular}
+\caption{Write coordination subsystem interfaces}
+\end{table}
+
+\subsection{Integrity and constraint enforcement subsystem}
+
+This subsystem enforces \textbf{schema rules, referential integrity, and business invariants} before data reaches the query executor. It corresponds to database constraints plus application-level checks that are not expressible as single-column rules.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\scriptsize, box/.style={draw, rounded corners, align=center, minimum width=2.5cm, minimum height=0.75cm}, arr/.style={-{Stealth}, thick}]
+\node[box, fill=gray!12] (ic) {Integrity\\\& constraints};
+\node[box, right=1.3cm of ic, fill=gray!14] (qe) {Query executor};
+\draw[arr] (ic) -- node[above] {valid ops} (qe);
+\end{tikzpicture}
+\caption{Integrity subsystem: validates operations before execution.}
+\label{fig:data-integrity}
+\end{figure}
+
+\subsubsection{Assumptions}
+\begin{itemize}
+  \item Invalid data may arrive from bugs or malicious clients; all paths must be validated server-side.
+  \item Constraint definitions evolve with schema migrations.
+\end{itemize}
+
+\subsubsection{Responsibilities}
+\begin{itemize}
+  \item Reject writes that violate keys, foreign keys, or required fields.
+  \item Apply cross-field rules (for example, ownership of a tray by the authenticated account).
+  \item Return structured validation failures to the Application Layer.
+\end{itemize}
+
+\subsubsection{Subsystem interfaces}
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|p{0.85cm}|p{3.5cm}|p{3.0cm}|p{3.5cm}|}
+\hline
+\textbf{ID} & \textbf{Description} & \textbf{Inputs} & \textbf{Outputs} \\
+\hline
+D-I1 & Write coordination $\rightarrow$ Integrity & Planned writes & Pass/fail + reasons \\
+\hline
+D-I2 & Integrity $\rightarrow$ Query executor & Validated SQL ops & Executable statements \\
+\hline
+\end{tabular}
+\caption{Integrity and constraint enforcement subsystem interfaces}
+\end{table}
+
+\subsection{Query and transaction execution subsystem}
+
+The \textbf{query executor} runs SQL against PostgreSQL: transactional reads, inserts, updates, and deletes issued after validation. It returns rows, counts, or errors to the Application Layer.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\scriptsize, box/.style={draw, rounded corners, align=center, minimum width=2.4cm, minimum height=0.75cm}, arr/.style={-{Stealth}, thick}]
+\node[box, fill=gray!14] (qe) {Query\\executor};
+\node[box, right=1.0cm of qe, fill=gray!18] (pg) {PostgreSQL};
+\node[box, below=0.9cm of qe, fill=yellow!12] (fs) {Media store};
+\draw[arr] (qe) -- node[above] {SQL} (pg);
+\draw[arr] (qe) -- node[left, font=\scriptsize, sloped] {blob I/O} (fs);
+\end{tikzpicture}
+\caption{Query executor: issues SQL and coordinates binary I/O with storage.}
+\label{fig:data-query}
+\end{figure}
+
+\subsubsection{Assumptions}
+\begin{itemize}
+  \item Connection pooling is managed by the Application Layer infrastructure.
+  \item Long-running analytics queries are out of scope for interactive paths.
+\end{itemize}
+
+\subsubsection{Responsibilities}
+\begin{itemize}
+  \item Execute parameterized statements for safety.
+  \item Commit or roll back transactions per request scope.
+  \item Surface deadlocks and transient errors for retry policy in higher layers.
+\end{itemize}
+
+\subsubsection{Subsystem interfaces}
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|p{0.85cm}|p{3.5cm}|p{3.0cm}|p{3.5cm}|}
+\hline
+\textbf{ID} & \textbf{Description} & \textbf{Inputs} & \textbf{Outputs} \\
+\hline
+D-Q1 & Integrity $\rightarrow$ Query executor & Validated ops & Result sets / status \\
+\hline
+D-Q2 & Query executor $\rightarrow$ PostgreSQL & SQL + params & Rows / ack \\
+\hline
+D-Q3 & Query executor $\rightarrow$ Media store & Put/get requests & Handles / streams \\
+\hline
+\end{tabular}
+\caption{Query and transaction execution subsystem interfaces}
+\end{table}
+
+\subsection{PostgreSQL domain database subsystem}
+
+The \textbf{relational database} is the system of record for trays, plants, meshes, schedules, monitoring events, predictions, reports, and linkage to media. It satisfies SRS needs for structured historical data and dashboard queries.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\scriptsize, box/.style={draw, rounded corners, align=center, minimum width=2.8cm, minimum height=0.85cm}, arr/.style={-{Stealth}, thick}]
+\node[cylinder, shape border rotate=90, aspect=0.2, draw, fill=gray!18, minimum height=1.1cm] (db) {PostgreSQL};
+\node[box, left=1.5cm of db, fill=gray!14] (qe) {Query executor};
+\draw[arr] (qe) -- (db);
+\end{tikzpicture}
+\caption{PostgreSQL domain database subsystem.}
+\label{fig:data-pg}
+\end{figure}
+
+\subsubsection{Assumptions}
+\begin{itemize}
+  \item Schema is versioned; migrations are applied through controlled processes.
+  \item Backup and restore procedures meet institutional RPO/RTO.
+\end{itemize}
+
+\subsubsection{Responsibilities}
+\begin{itemize}
+  \item Persist authoritative entities and relationships.
+  \item Support indexed access paths for tray/plant/mesh navigation.
+  \item Retain audit-relevant history as required by product policy.
+\end{itemize}
+
+\subsubsection{Subsystem interfaces}
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|p{0.85cm}|p{3.5cm}|p{3.0cm}|p{3.5cm}|}
+\hline
+\textbf{ID} & \textbf{Description} & \textbf{Inputs} & \textbf{Outputs} \\
+\hline
+D-P1 & Query executor $\rightarrow$ PostgreSQL & SQL & Tabular results \\
+\hline
+D-P2 & PostgreSQL $\rightarrow$ Query executor & Internal state & Constraints / errors \\
+\hline
+\end{tabular}
+\caption{PostgreSQL domain database subsystem interfaces}
+\end{table}
+
+\subsection{Image and media storage subsystem}
+
+\textbf{Image and media storage} holds camera frames, user uploads, and other large binaries. The Application Layer stores objects and retains stable references in the relational database for use in URLs served back to the Presentation Layer.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\scriptsize, box/.style={draw, rounded corners, align=center, minimum width=2.6cm, minimum height=0.8cm}, arr/.style={-{Stealth}, thick}]
+\node[box, fill=yellow!14] (fs) {Object / file\\storage};
+\node[box, left=1.3cm of fs, fill=gray!14] (qe) {Query executor};
+\node[box, right=1.3cm of fs, fill=blue!8] (app) {Application\\Layer};
+\draw[arr] (qe) -- node[above] {read/write} (fs);
+\draw[arr, dashed] (app) -- node[above] {signed URL path} (fs);
+\end{tikzpicture}
+\caption{Image and media storage subsystem and relationship to application reads.}
+\label{fig:data-media}
+\end{figure}
+
+\subsubsection{Assumptions}
+\begin{itemize}
+  \item Storage roots are configurable per deployment environment.
+  \item Virus scanning or content policy, if required, occurs at integration boundaries.
+\end{itemize}
+
+\subsubsection{Responsibilities}
+\begin{itemize}
+  \item Store and retrieve binaries keyed by application-managed paths or IDs.
+  \item Enforce size and type limits cooperatively with validation in the Application Layer.
+\end{itemize}
+
+\subsubsection{Subsystem interfaces}
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|p{0.85cm}|p{3.5cm}|p{3.0cm}|p{3.5cm}|}
+\hline
+\textbf{ID} & \textbf{Description} & \textbf{Inputs} & \textbf{Outputs} \\
+\hline
+D-M1 & Query executor $\rightarrow$ Media store & Bytes + path & Ack / handle \\
+\hline
+D-M2 & Media store $\rightarrow$ Application & Stream requests & File bytes \\
+\hline
+D-M3 & Application $\rightarrow$ Presentation & Media URL & Rendered imagery \\
+\hline
+\end{tabular}
+\caption{Image and media storage subsystem interfaces}
+\end{table}

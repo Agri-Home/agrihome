@@ -1,6 +1,7 @@
 import { readFile, stat } from "fs/promises";
 import { NextResponse } from "next/server";
 
+import { requireApiUser } from "@/lib/auth/session";
 import {
   contentTypeForPath,
   resolveStorageFilePath
@@ -13,6 +14,11 @@ export async function GET(
   _request: Request,
   context: { params: Promise<{ path: string[] }> }
 ) {
+  const authResult = await requireApiUser();
+  if (authResult instanceof Response) {
+    return authResult;
+  }
+
   const { path: segments } = await context.params;
   const absolute = resolveStorageFilePath(segments ?? []);
 
