@@ -35,15 +35,15 @@ The standalone **Feedback** page and the **integrated add-plant paths** (photo-f
 
 ### 3.2 Photo add plant with optional training feedback (`/plants/new`)
 
-1. User selects a tray and may fill **optional** training fields: correct category, tags, comment **before** uploading the same leaf photo used for species and health analysis.
-2. The client sends one multipart request to `POST /api/plants/from-photo` including `trainingFeedbackCategory`, `trainingTags`, `trainingComment` when any are set.
+1. User selects a tray and may fill **optional** training fields: crop/plant name, condition, tags, comment **before** uploading the same leaf photo used for species and health analysis.
+2. The client sends one multipart request to `POST /api/plants/from-photo` including `trainingFeedbackCrop`, `trainingFeedbackCategory`, `trainingTags`, `trainingComment` when any are set. If crop is omitted, the server uses the detected species name for `feedback_crop` when saving feedback.
 3. The server runs the existing pipeline (species detection, plant creation, capture, health report) **then**, if the user provided any qualifying training text, **persists a second copy** of the image to the feedback storage path and inserts a `feedback_ingest` row with an auto-generated `**model_prediction_label`** summarizing species, confidence, and report diagnosis (shortened to 120 characters). Plant creation is **not** rolled back if feedback persistence fails; the client may show a warning.
 
 ### 3.3 Manual add plant with optional training photo (tray page)
 
 1. On a tray, the user completes **Add plant manually** (name, cultivar, layout, health, etc.).
-2. In **Optional — training photo**, they may attach a different image and category/tags/comment. If a file is present, the same “at least one of category, tags, or comment” rule applies.
-3. After `POST /api/plants/manual` succeeds, the client calls `POST /api/feedback/ingest` with the training image and `model_prediction` set to `name / cultivar` of the plant just created.
+2. In **Optional — training photo**, they may attach a different image and crop name, condition, tags, or comment. If a file is present, the same “at least one of crop + condition, condition, tags, or comment (3+ chars)” rule applies as on the Feedback page.
+3. After `POST /api/plants/manual` succeeds, the client calls `POST /api/feedback/ingest` with the training image, optional `feedbackCrop`, and `model_prediction` set to `name / cultivar` of the plant just created.
 4. Clear success or combined error messages are shown; rate limits apply separately to the feedback endpoint.
 
 ```mermaid
@@ -104,7 +104,8 @@ Defined in `db/migrations/005_feedback_ingest.sql` and mirrored in `db/schema.sq
 | `image_storage_provider`         | `local` (S3 was removed; legacy rows may still show other values in old DBs).                                                                                                                     |
 | `image_storage_key`              | Relative path under originals root, e.g. `feedback/2026/04/28/uuid.jpg`.                                                                                                                          |
 | `image_mime_type`, `image_bytes` | Audit and export sizing.                                                                                                                                                                          |
-| `feedback_category`              | User-selected or asserted label.                                                                                                                                                                  |
+| `feedback_category`              | User-selected or asserted condition (e.g. Early blight).                                                                                                                                          |
+| `feedback_crop`                  | Crop or plant name (e.g. Tomato); with category, used for `Crop___Condition` dataset folders.                                                                                                    |
 | `feedback_tags`                  | JSON array of strings.                                                                                                                                                                            |
 | `comment_text`                   | Free text.                                                                                                                                                                                        |
 | `model_prediction_label`         | What the model/UI suggested (reclassification target vs source).                                                                                                                                  |
@@ -118,7 +119,7 @@ Indexes support listing by user/time and **pending export** (rows with `exported
 ### 4.3 API: `POST /api/feedback/ingest`
 
 - **Content-Type:** `multipart/form-data`
-- **Fields:** `image` (file, required), `feedbackCategory`, `tags`, `comment`, `modelPrediction` (all optional for individual fields, but at least one of category, tags, or comment must satisfy `trainingFeedbackFieldsPresent`).
+- **Fields:** `image` (file, required), `feedbackCrop` (name), `feedbackCategory`, `tags`, `comment`, `modelPrediction` (optional individually; at least one of crop+category, category, tags, or comment must satisfy `trainingFeedbackFieldsPresent`).
 - **Auth:** Session cookie (Firebase) for interactive users, or `X-Agrihome-Feedback-Key` plus `userUid` / `userEmail` form fields when `FEEDBACK_INGEST_SERVICE_KEY` is set for trusted integrations.
 - **Limits:** `FEEDBACK_MAX_IMAGE_BYTES` (default 8MB), per-user and per-IP request windows (`FEEDBACK_INGEST_MAX_PER_USER_PER_MIN`, `FEEDBACK_INGEST_MAX_PER_IP_PER_MIN`).
 

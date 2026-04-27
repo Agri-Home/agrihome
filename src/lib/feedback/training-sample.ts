@@ -41,8 +41,13 @@ export function parseTrainingFeedbackTags(raw: string | null): string[] {
 export function trainingFeedbackFieldsPresent(
   category: string | null,
   comment: string | null,
-  tags: string[]
+  tags: string[],
+  crop: string | null = null
 ): boolean {
+  const c = crop?.trim() ?? "";
+  if (c.length > 0 && category && category.length > 0) {
+    return true;
+  }
   if (category && category.length > 0) {
     return true;
   }
@@ -71,6 +76,8 @@ export async function recordTrainingFeedbackSample(input: {
   mimeType: string;
   maxBytes?: number;
   feedbackCategory: string | null;
+  /** Crop / plant name (e.g. Tomato) for PlantVillage-style Crop___Condition folders. */
+  feedbackCrop: string | null;
   feedbackTags: string[];
   commentText: string | null;
   modelPredictionLabel: string | null;
@@ -81,16 +88,22 @@ export async function recordTrainingFeedbackSample(input: {
     buffer,
     mimeType,
     feedbackCategory,
+    feedbackCrop,
     feedbackTags,
     commentText,
     modelPredictionLabel
   } = input;
 
   if (
-    !trainingFeedbackFieldsPresent(feedbackCategory, commentText, feedbackTags)
+    !trainingFeedbackFieldsPresent(
+      feedbackCategory,
+      commentText,
+      feedbackTags,
+      feedbackCrop
+    )
   ) {
     throw new Error(
-      "Provide at least one of: feedbackCategory, tags, or comment (min 3 characters)."
+      "Provide at least one of: crop + category, category, tags, or comment (min 3 characters)."
     );
   }
 
@@ -106,6 +119,7 @@ export async function recordTrainingFeedbackSample(input: {
   const local = await saveFeedbackImageLocal(buffer, ext, { filenameBase: id });
 
   const classFolder = resolvePlantVillageClassFolderName(
+    feedbackCrop,
     feedbackCategory,
     feedbackTags
   );
@@ -130,6 +144,7 @@ export async function recordTrainingFeedbackSample(input: {
     feedbackTags,
     commentText,
     modelPredictionLabel,
-    plantvillageDatasetRelpath
+    plantvillageDatasetRelpath,
+    feedbackCrop
   });
 }

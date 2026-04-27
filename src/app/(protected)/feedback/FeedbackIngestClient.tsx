@@ -4,7 +4,10 @@ import { useCallback, useRef, useState } from "react";
 
 import { Button } from "@/components/atoms/Button";
 import { Card } from "@/components/atoms/Card";
-import { TRAINING_FEEDBACK_CATEGORIES } from "@/lib/constants/training-feedback-ui";
+import {
+  TRAINING_FEEDBACK_CATEGORIES,
+  TRAINING_FEEDBACK_CROP_EXAMPLES
+} from "@/lib/constants/training-feedback-ui";
 
 const MAX_BYTES = 8 * 1024 * 1024;
 const ACCEPT = "image/jpeg,image/png,image/webp";
@@ -19,6 +22,7 @@ export function FeedbackIngestClient() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [plantName, setPlantName] = useState("");
   const [category, setCategory] = useState("");
   const [tags, setTags] = useState("");
   const [comment, setComment] = useState("");
@@ -80,16 +84,22 @@ export function FeedbackIngestClient() {
       setMessage({ type: "err", text: "Choose an image to upload." });
       return;
     }
+    const crop = plantName.trim();
     const cat = category.trim();
     const tagParts = tags
       .split(/[,;]+/)
       .map((s) => s.trim())
       .filter(Boolean);
     const com = comment.trim();
-    if (!cat && tagParts.length === 0 && com.length < 3) {
+    const hasTrainingSignal =
+      (crop.length > 0 && cat.length > 0) ||
+      cat.length > 0 ||
+      tagParts.length > 0 ||
+      com.length >= 3;
+    if (!hasTrainingSignal) {
       setMessage({
         type: "err",
-        text: "Select a category, add at least one tag, or enter a comment (3+ characters)."
+        text: "Add crop + category, select a condition, add tags, or enter a comment (3+ characters)."
       });
       return;
     }
@@ -98,6 +108,7 @@ export function FeedbackIngestClient() {
     try {
       const fd = new FormData();
       fd.append("image", file);
+      if (crop) fd.append("feedbackCrop", crop);
       if (cat) fd.append("feedbackCategory", cat);
       if (tagParts.length) fd.append("tags", JSON.stringify(tagParts));
       if (com) fd.append("comment", com);
@@ -121,6 +132,7 @@ export function FeedbackIngestClient() {
         text: `Thanks — feedback saved${json.data?.id ? ` (${json.data.id})` : ""}.`
       });
       clearFile();
+      setPlantName("");
       setCategory("");
       setTags("");
       setComment("");
@@ -222,12 +234,51 @@ export function FeedbackIngestClient() {
         )}
       </Card>
 
-      <Card className="space-y-4 p-5">
+      <form
+        className="contents"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void submit();
+        }}
+      >
+        <Card className="space-y-4 p-5">
+        <div className="block text-sm">
+          <label
+            htmlFor="feedback-crop"
+            className="text-xs font-semibold uppercase tracking-wider text-ink/40"
+          >
+            Name (crop or plant)
+          </label>
+          <p className="mt-0.5 text-[11px] text-ink/35">
+            Together with the condition below, training images are stored as
+            Name___Condition (e.g. Tomato___Early_blight) when a dataset
+            directory is configured.
+          </p>
+          <input
+            id="feedback-crop"
+            name="feedbackCrop"
+            value={plantName}
+            onChange={(e) => setPlantName(e.target.value)}
+            disabled={busy}
+            list="feedback-crop-suggestions"
+            maxLength={120}
+            autoComplete="off"
+            placeholder="e.g. Tomato"
+            className="mt-2 w-full rounded-xl border border-ink/10 bg-white/80 px-3.5 py-2.5 text-sm focus:border-leaf focus:outline-none"
+          />
+          <datalist id="feedback-crop-suggestions">
+            {TRAINING_FEEDBACK_CROP_EXAMPLES.map((c) => (
+              <option key={c} value={c} />
+            ))}
+          </datalist>
+        </div>
+
         <label className="block text-sm">
           <span className="text-xs font-semibold uppercase tracking-wider text-ink/40">
-            Correct category (optional if tags/comment provided)
+            Condition (optional if tags or comment are provided)
           </span>
           <select
+            name="feedbackCategory"
             value={category}
             onChange={(e) => setCategory(e.target.value)}
             disabled={busy}
@@ -287,14 +338,15 @@ export function FeedbackIngestClient() {
         </label>
 
         <Button
-          type="button"
+          type="submit"
+          variant="primary"
           className="w-full"
           disabled={busy}
-          onClick={() => void submit()}
         >
           {busy ? "Uploading…" : "Submit feedback"}
         </Button>
-      </Card>
+        </Card>
+      </form>
     </div>
   );
 }

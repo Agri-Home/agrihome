@@ -10,6 +10,7 @@ export interface FeedbackIngestRow {
   imageMimeType: string;
   imageBytes: number;
   feedbackCategory: string | null;
+  feedbackCrop: string | null;
   feedbackTags: string[];
   commentText: string | null;
   modelPredictionLabel: string | null;
@@ -28,6 +29,7 @@ export async function insertFeedbackIngest(input: {
   imageMimeType: string;
   imageBytes: number;
   feedbackCategory: string | null;
+  feedbackCrop: string | null;
   feedbackTags: string[];
   commentText: string | null;
   modelPredictionLabel: string | null;
@@ -45,6 +47,7 @@ export async function insertFeedbackIngest(input: {
     image_mime_type: string;
     image_bytes: number;
     feedback_category: string | null;
+    feedback_crop: string | null;
     feedback_tags: string[] | unknown;
     comment_text: string | null;
     model_prediction_label: string | null;
@@ -53,12 +56,12 @@ export async function insertFeedbackIngest(input: {
   }>(
     `INSERT INTO feedback_ingest (
        id, user_uid, owner_email, image_url, image_storage_provider, image_storage_key,
-       image_mime_type, image_bytes, feedback_category, feedback_tags, comment_text,
+       image_mime_type, image_bytes, feedback_category, feedback_crop, feedback_tags, comment_text,
        model_prediction_label, plantvillage_dataset_relpath
      )
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::json,$11,$12,$13)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::json,$12,$13,$14)
      RETURNING id, user_uid, owner_email, image_url, image_storage_provider, image_storage_key,
-               image_mime_type, image_bytes, feedback_category, feedback_tags, comment_text,
+               image_mime_type, image_bytes, feedback_category, feedback_crop, feedback_tags, comment_text,
                model_prediction_label, plantvillage_dataset_relpath, created_at`,
     [
       input.id,
@@ -70,6 +73,7 @@ export async function insertFeedbackIngest(input: {
       input.imageMimeType,
       input.imageBytes,
       input.feedbackCategory,
+      input.feedbackCrop,
       JSON.stringify(input.feedbackTags),
       input.commentText,
       input.modelPredictionLabel,
@@ -98,6 +102,7 @@ export async function insertFeedbackIngest(input: {
     imageMimeType: r.image_mime_type,
     imageBytes: Number(r.image_bytes),
     feedbackCategory: r.feedback_category,
+    feedbackCrop: r.feedback_crop ?? null,
     feedbackTags: tags,
     commentText: r.comment_text,
     modelPredictionLabel: r.model_prediction_label,

@@ -312,6 +312,8 @@ export async function createPlantFromPhotoWithAutoDetection(input: {
   /** Optional corrections for the same photo (stored for ML training). */
   trainingFeedback?: {
     category: string | null;
+    /** Optional; defaults to detected species name when saving feedback. */
+    crop: string | null;
     tags: string[];
     comment: string | null;
   } | null;
@@ -361,7 +363,7 @@ export async function createPlantFromPhotoWithAutoDetection(input: {
   const tf = input.trainingFeedback;
   if (
     tf &&
-    trainingFeedbackFieldsPresent(tf.category, tf.comment, tf.tags)
+    trainingFeedbackFieldsPresent(tf.category, tf.comment, tf.tags, tf.crop)
   ) {
     const modelPredictionLabel = [
       `${detection.commonName} (${detection.cultivar})`,
@@ -378,6 +380,7 @@ export async function createPlantFromPhotoWithAutoDetection(input: {
         buffer: input.file,
         mimeType: input.mime,
         feedbackCategory: tf.category,
+        feedbackCrop: tf.crop?.trim() || detection.commonName,
         feedbackTags: tf.tags,
         commentText: tf.comment,
         modelPredictionLabel

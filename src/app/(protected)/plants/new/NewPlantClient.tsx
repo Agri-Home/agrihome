@@ -9,7 +9,10 @@ import { Card } from "@/components/atoms/Card";
 import { SectionTitle } from "@/components/app/Section";
 import { PlantImage } from "@/components/media/PlantImage";
 import { MANUAL_TRAY_ID } from "@/lib/constants/manual-tray";
-import { TRAINING_FEEDBACK_CATEGORIES } from "@/lib/constants/training-feedback-ui";
+import {
+  TRAINING_FEEDBACK_CATEGORIES,
+  TRAINING_FEEDBACK_CROP_EXAMPLES
+} from "@/lib/constants/training-feedback-ui";
 import type { PlantReport, PlantUnit, TraySystem } from "@/lib/types/domain";
 
 type Detection = {
@@ -23,10 +26,12 @@ type Detection = {
 
 export function NewPlantClient({
   trays,
-  initialTrayId
+  initialTrayId,
+  showTrainingFeedback
 }: {
   trays: TraySystem[];
   initialTrayId?: string;
+  showTrainingFeedback: boolean;
 }) {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -54,6 +59,7 @@ export function NewPlantClient({
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [trainingCrop, setTrainingCrop] = useState("");
   const [trainingCategory, setTrainingCategory] = useState("");
   const [trainingTags, setTrainingTags] = useState("");
   const [trainingComment, setTrainingComment] = useState("");
@@ -71,9 +77,11 @@ export function NewPlantClient({
     const fd = new FormData();
     fd.append("photo", file);
     fd.append("trayId", trayId);
+    const tcr = trainingCrop.trim();
     const tc = trainingCategory.trim();
     const tt = trainingTags.trim();
     const tcm = trainingComment.trim();
+    if (tcr) fd.append("trainingFeedbackCrop", tcr.slice(0, 120));
     if (tc) fd.append("trainingFeedbackCategory", tc);
     if (tt) fd.append("trainingTags", tt);
     if (tcm) fd.append("trainingComment", tcm);
@@ -164,16 +172,41 @@ export function NewPlantClient({
         </label>
       </Card>
 
+      {showTrainingFeedback ? (
       <Card className="animate-fade-in stagger-2 border-ink/5 bg-ink/[0.02] p-5">
         <p className="text-xs font-semibold uppercase tracking-wider text-ink/40">
           Optional — training feedback (same photo)
         </p>
         <p className="mt-1 text-[11px] text-ink/35">
-          If the species or health assessment might be wrong, add a category, tags, or a short note. Submitted with your plant photo automatically.
+          If the species or health assessment might be wrong, add crop, condition, tags, or a short note. Submitted with your plant photo automatically. With a dataset directory configured, images are stored as Name___Condition (e.g. Tomato___Early_blight).
         </p>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <div className="text-sm sm:col-span-2">
+            <label
+              htmlFor="new-plant-training-crop"
+              className="text-xs font-medium text-ink/50"
+            >
+              Name (crop or plant)
+            </label>
+            <input
+              id="new-plant-training-crop"
+              value={trainingCrop}
+              onChange={(e) => setTrainingCrop(e.target.value)}
+              disabled={busy}
+              list="new-plant-crop-suggestions"
+              maxLength={120}
+              autoComplete="off"
+              placeholder="e.g. Tomato (defaults to species if left empty on save)"
+              className="mt-1 w-full rounded-xl border border-ink/10 bg-white/80 px-3.5 py-2.5 text-sm focus:border-leaf focus:outline-none"
+            />
+            <datalist id="new-plant-crop-suggestions">
+              {TRAINING_FEEDBACK_CROP_EXAMPLES.map((c) => (
+                <option key={c} value={c} />
+              ))}
+            </datalist>
+          </div>
           <label className="block text-sm sm:col-span-2">
-            <span className="text-xs font-medium text-ink/50">Correct category</span>
+            <span className="text-xs font-medium text-ink/50">Condition</span>
             <select
               value={trainingCategory}
               onChange={(e) => setTrainingCategory(e.target.value)}
@@ -211,6 +244,7 @@ export function NewPlantClient({
           </label>
         </div>
       </Card>
+      ) : null}
 
       {/* Upload area */}
       <div className="animate-fade-in stagger-3">
