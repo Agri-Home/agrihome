@@ -14,7 +14,7 @@ Implemented so far:
 
 - A Next.js App Router application with TypeScript and Tailwind CSS
 - Public landing page plus protected app routes guarded by authentication
-- A mobile-first Vision Console UI: overview, tray drill-down, plant detail (stats, photo upload, edit/delete, charts, reports, log), mesh, schedules, and photo-first “add plant”
+- A mobile-first Vision Console UI: overview, tray drill-down, plant detail (stats, photo upload, edit/delete, charts, reports, log), mesh, schedules, photo-first “add plant”, and **image feedback / reclassification** (standalone `/feedback`, optional hooks on add-plant and manual tray entry)
 - Multi-tray monitoring backed by **PostgreSQL** (required for core reads/writes)
 - Firebase Authentication with email/password and Google sign-in, plus server-verified session cookies for protected routes and API handlers
 - Tray-specific live image, prediction, monitoring, and **tray CV** (plant count + boxes via `POST /api/trays/{trayId}/vision`)
@@ -22,7 +22,7 @@ Implemented so far:
 - Plant-level diagnosis reports covering disease and deficiency detection
 - Editable image-capture schedules for trays and meshes
 - Mesh creation to group trays/systems into monitoring topologies
-- REST API routes for camera, prediction, monitoring, trays, tray vision, plants (CRUD + photos), files, mesh, health, schedules, and GraphQL
+- REST API routes for camera, prediction, monitoring, trays, tray vision, plants (CRUD + photos), **feedback ingest** (`POST /api/feedback/ingest`), files, mesh, health, schedules, and GraphQL
 - GraphQL Yoga endpoint for reads and mutations (`createMeshNetwork`, `updatePlant`, `deletePlant`, `upsertSchedule`)
 - PostgreSQL pool and SQL schema (`src/lib/db/postgres.ts`, `db/schema.sql`); optional `db/migrations/*.sql` for existing databases
 - Qdrant-ready vector-search abstraction (optional)
@@ -68,6 +68,7 @@ REST API routes (representative):
 - Predictions: [src/app/api/predictions/latest/route.ts](../src/app/api/predictions/latest/route.ts)
 - Monitoring: [src/app/api/monitoring/log/route.ts](../src/app/api/monitoring/log/route.ts)
 - Topology: [src/app/api/trays/route.ts](../src/app/api/trays/route.ts), [src/app/api/trays/[trayId]/vision/route.ts](../src/app/api/trays/[trayId]/vision/route.ts), [src/app/api/mesh/route.ts](../src/app/api/mesh/route.ts)
+- Feedback (training / reclassification): [src/app/api/feedback/ingest/route.ts](../src/app/api/feedback/ingest/route.ts)
 - Plants & reports: [src/app/api/plants/route.ts](../src/app/api/plants/route.ts), [src/app/api/plants/manual/route.ts](../src/app/api/plants/manual/route.ts), [src/app/api/plants/from-photo/route.ts](../src/app/api/plants/from-photo/route.ts), [src/app/api/plants/[plantId]/route.ts](../src/app/api/plants/[plantId]/route.ts), [src/app/api/plants/[plantId]/photo/route.ts](../src/app/api/plants/[plantId]/photo/route.ts), [src/app/api/reports/route.ts](../src/app/api/reports/route.ts)
 - Stored files: [src/app/api/files/[...path]/route.ts](../src/app/api/files/[...path]/route.ts)
 - Schedules: [src/app/api/schedules/route.ts](../src/app/api/schedules/route.ts)
@@ -77,7 +78,8 @@ Service layer:
 
 - Camera, prediction, monitoring, topology, plant, schedule, vector — under [src/lib/services/](../src/lib/services/)
 - Manual / photo flows: [src/lib/services/plant-manual-service.ts](../src/lib/services/plant-manual-service.ts), [src/lib/services/plant-detection-service.ts](../src/lib/services/plant-detection-service.ts) (HTTP client for `CV_SPECIES_INFERENCE_URL`; throws if unconfigured)
-- File persistence: [src/lib/storage/](../src/lib/storage/) (originals on disk; URLs often under `/api/files/...`)
+- **Feedback and reclassification:** [docs/FEEDBACK_AND_RECLASSIFICATION.md](./FEEDBACK_AND_RECLASSIFICATION.md) — user flows, `feedback_ingest` table, [src/lib/feedback/training-sample.ts](../src/lib/feedback/training-sample.ts), [src/app/api/feedback/ingest/route.ts](../src/app/api/feedback/ingest/route.ts), export/retrain scripts under `scripts/ml/`
+- File persistence: [src/lib/storage/](../src/lib/storage/) (originals on disk; URLs often under `/api/files/...`, including `originals/feedback/...` for training images)
 
 ### Persistence and infrastructure
 

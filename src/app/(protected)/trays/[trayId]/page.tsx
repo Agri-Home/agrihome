@@ -10,6 +10,7 @@ import { StatusDot } from "@/components/atoms/StatusDot";
 import { BackLink } from "@/components/app/BackLink";
 import { SectionTitle } from "@/components/app/Section";
 import { requireSessionAccountUser } from "@/lib/auth/session";
+import { getParticipateMlFeedback } from "@/lib/services/user-preferences-service";
 import { ClientChartFrame } from "@/components/charts/ClientChartFrame";
 import { PlantImage } from "@/components/media/PlantImage";
 import { MonitoringAreaChart } from "@/components/charts/MonitoringAreaChart";
@@ -56,10 +57,13 @@ export default async function TrayDetailPage({
   const tray = await getTrayById(currentUser.email, trayId);
   if (!tray) notFound();
 
-  const [plants, events, capture] = await Promise.all([
+  const [plants, events, capture, showTrainingFeedback] = await Promise.all([
     listPlantsByTray(currentUser.email, trayId),
     getMonitoringLog({ ownerEmail: currentUser.email, limit: 15, trayId }),
-    getLatestCameraCapture(currentUser.email, trayId)
+    getLatestCameraCapture(currentUser.email, trayId),
+    currentUser.email
+      ? getParticipateMlFeedback(currentUser.email)
+      : Promise.resolve(true)
   ]);
 
   return (
@@ -85,7 +89,10 @@ export default async function TrayDetailPage({
       </div>
 
       <section className="animate-fade-in stagger-1">
-        <TrayManageClient tray={tray} />
+        <TrayManageClient
+          tray={tray}
+          showTrainingFeedback={showTrainingFeedback}
+        />
       </section>
 
       {/* Stats grid */}

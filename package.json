@@ -11,7 +11,10 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "db:seed": "node scripts/seed-postgres.cjs",
-    "db:schema": "node scripts/seed-postgres.cjs --schema-only"
+    "db:migrate": "node scripts/seed-postgres.cjs --migrations-only",
+    "db:schema": "node scripts/seed-postgres.cjs --schema-only",
+    "ml:export-feedback": "node scripts/ml/export-feedback-dataset.cjs",
+    "ml:retrain-gate": "node scripts/ml/retrain-gate.cjs"
   },
   "dependencies": {
     "@qdrant/js-client-rest": "^1.11.0",
