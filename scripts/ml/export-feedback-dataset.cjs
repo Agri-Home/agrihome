@@ -150,7 +150,7 @@ async function main() {
 
   const res = await pool.query(
     `SELECT id, image_url, image_storage_provider, image_storage_key,
-            feedback_category, feedback_tags, comment_text, model_prediction_label,
+            feedback_category, feedback_crop, feedback_tags, comment_text, model_prediction_label,
             owner_email, user_uid, created_at, plantvillage_dataset_relpath
      FROM feedback_ingest
      WHERE exported_at IS NULL
@@ -240,6 +240,7 @@ async function main() {
       id: r.id,
       image_rel_path: `images/${localName}`,
       plantvillage_dataset_relpath: r.plantvillage_dataset_relpath || null,
+      feedback_crop: r.feedback_crop ? String(r.feedback_crop) : null,
       user_uid: r.user_uid,
       owner_email: r.owner_email,
       created_at: new Date(r.created_at).toISOString(),

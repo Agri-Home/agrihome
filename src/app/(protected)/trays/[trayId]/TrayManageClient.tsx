@@ -5,12 +5,21 @@ import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/atoms/Button";
 import { Card } from "@/components/atoms/Card";
-import { TRAINING_FEEDBACK_CATEGORIES } from "@/lib/constants/training-feedback-ui";
+import {
+  TRAINING_FEEDBACK_CATEGORIES,
+  TRAINING_FEEDBACK_CROP_EXAMPLES
+} from "@/lib/constants/training-feedback-ui";
 import type { PlantHealthStatus, PlantUnit, TraySystem } from "@/lib/types/domain";
 
 const TRAIN_MAX_BYTES = 8 * 1024 * 1024;
 
-export function TrayManageClient({ tray }: { tray: TraySystem }) {
+export function TrayManageClient({
+  tray,
+  showTrainingFeedback
+}: {
+  tray: TraySystem;
+  showTrainingFeedback: boolean;
+}) {
   const router = useRouter();
   const trainingPhotoRef = useRef<HTMLInputElement>(null);
   const [tName, setTName] = useState(tray.name);
@@ -33,6 +42,7 @@ export function TrayManageClient({ tray }: { tray: TraySystem }) {
   const [plantBusy, setPlantBusy] = useState(false);
   const [plantErr, setPlantErr] = useState<string | null>(null);
   const [plantOk, setPlantOk] = useState<string | null>(null);
+  const [mTrainCrop, setMTrainCrop] = useState("");
   const [mTrainCategory, setMTrainCategory] = useState("");
   const [mTrainTags, setMTrainTags] = useState("");
   const [mTrainComment, setMTrainComment] = useState("");
@@ -118,14 +128,19 @@ export function TrayManageClient({ tray }: { tray: TraySystem }) {
       const nameSaved = pName.trim();
       const cultivarSaved = pCultivar.trim();
       const trainFile = trainingPhotoRef.current?.files?.[0];
+      const tCrop = mTrainCrop.trim();
       const tCat = mTrainCategory.trim();
       const tTags = mTrainTags.trim();
       const tCom = mTrainComment.trim();
-      const hasTrainText = Boolean(tCat) || Boolean(tTags) || tCom.length >= 3;
+      const hasTrainText =
+        (tCrop.length > 0 && tCat.length > 0) ||
+        tCat.length > 0 ||
+        tTags.length > 0 ||
+        tCom.length >= 3;
 
       if (trainFile && !hasTrainText) {
         throw new Error(
-          "Training photo: add a category, tags, or a comment (3+ characters)."
+          "Training photo: add crop + condition, a condition, tags, or a comment (3+ characters)."
         );
       }
       if (trainFile && hasTrainText) {
@@ -141,6 +156,7 @@ export function TrayManageClient({ tray }: { tray: TraySystem }) {
         }
         const fd = new FormData();
         fd.append("image", trainFile);
+        if (tCrop) fd.append("feedbackCrop", tCrop.slice(0, 120));
         if (tCat) fd.append("feedbackCategory", tCat.slice(0, 120));
         if (tTags) fd.append("tags", tTags);
         if (tCom) fd.append("comment", tCom.slice(0, 4000));
@@ -174,6 +190,7 @@ export function TrayManageClient({ tray }: { tray: TraySystem }) {
       setPStatus("healthy");
       setPDiag("");
       setPDesc("");
+      setMTrainCrop("");
       setMTrainCategory("");
       setMTrainTags("");
       setMTrainComment("");
@@ -379,12 +396,13 @@ export function TrayManageClient({ tray }: { tray: TraySystem }) {
             />
           </label>
 
+          {showTrainingFeedback ? (
           <div className="sm:col-span-2 mt-2 rounded-xl border border-ink/10 bg-ink/[0.02] p-3">
             <p className="text-xs font-semibold uppercase tracking-wider text-ink/40">
               Optional — training photo
             </p>
             <p className="mt-0.5 text-[11px] text-ink/35">
-              Attach a leaf/tray image and feedback to store for model improvement (same flow as Feedback page).
+              Attach a leaf/tray image and feedback to store for model improvement (same fields as the Feedback page).
             </p>
             <input
               ref={trainingPhotoRef}
@@ -394,7 +412,25 @@ export function TrayManageClient({ tray }: { tray: TraySystem }) {
               className="mt-2 block w-full text-xs text-ink/60 file:mr-3 file:rounded-lg file:border-0 file:bg-lime/30 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-ink"
             />
             <label className="mt-3 block text-sm">
-              <span className="text-xs font-medium text-ink/50">Training category</span>
+              <span className="text-xs font-medium text-ink/50">Name (crop or plant)</span>
+              <input
+                value={mTrainCrop}
+                onChange={(e) => setMTrainCrop(e.target.value)}
+                disabled={plantBusy}
+                list="tray-train-crop-suggestions"
+                maxLength={120}
+                autoComplete="off"
+                placeholder="e.g. Tomato"
+                className="mt-1 w-full rounded-xl border border-ink/10 bg-white/80 px-3.5 py-2.5 text-sm focus:border-leaf focus:outline-none"
+              />
+            </label>
+            <datalist id="tray-train-crop-suggestions">
+              {TRAINING_FEEDBACK_CROP_EXAMPLES.map((c) => (
+                <option key={c} value={c} />
+              ))}
+            </datalist>
+            <label className="mt-2 block text-sm">
+              <span className="text-xs font-medium text-ink/50">Condition</span>
               <select
                 value={mTrainCategory}
                 onChange={(e) => setMTrainCategory(e.target.value)}
@@ -431,6 +467,7 @@ export function TrayManageClient({ tray }: { tray: TraySystem }) {
               />
             </label>
           </div>
+          ) : null}
         </div>
         <Button
           type="button"

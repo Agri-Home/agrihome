@@ -7,6 +7,7 @@ import {
   recordTrainingFeedbackSample,
   trainingFeedbackFieldsPresent
 } from "@/lib/feedback/training-sample";
+import { getParticipateMlFeedback } from "@/lib/services/user-preferences-service";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -124,6 +125,17 @@ async function handleIngestForm(
   ownerEmail: string,
   ip: string
 ) {
+  const canFeedback = await getParticipateMlFeedback(ownerEmail);
+  if (!canFeedback) {
+    return NextResponse.json(
+      {
+        error:
+          "Model training feedback is off. Turn it on in Settings → Preferences to submit images for training."
+      },
+      { status: 403 }
+    );
+  }
+
   const file = form.get("image");
   if (!file || !(file instanceof File)) {
     return NextResponse.json(
@@ -146,6 +158,9 @@ async function handleIngestForm(
     ? feedbackCategoryRaw.slice(0, 120)
     : null;
 
+  const feedbackCropRaw = String(form.get("feedbackCrop") ?? "").trim();
+  const feedbackCrop = feedbackCropRaw ? feedbackCropRaw.slice(0, 120) : null;
+
   const commentRaw = String(form.get("comment") ?? "").trim();
   const commentText = commentRaw ? commentRaw.slice(0, 4000) : null;
 
@@ -160,11 +175,11 @@ async function handleIngestForm(
     ? modelPredictionRaw.slice(0, 120)
     : null;
 
-  if (!trainingFeedbackFieldsPresent(feedbackCategory, commentText, tags)) {
+  if (!trainingFeedbackFieldsPresent(feedbackCategory, commentText, tags, feedbackCrop)) {
     return NextResponse.json(
       {
         error:
-          "Provide at least one of: feedbackCategory, tags, or comment (min 3 characters)."
+          "Provide at least one of: crop + category, category, tags, or comment (min 3 characters)."
       },
       { status: 400 }
     );
@@ -185,6 +200,7 @@ async function handleIngestForm(
       mimeType: file.type || "application/octet-stream",
       maxBytes: MAX_IMAGE_BYTES,
       feedbackCategory,
+      feedbackCrop,
       feedbackTags: tags,
       commentText,
       modelPredictionLabel
@@ -196,6 +212,7 @@ async function handleIngestForm(
         imageUrl: row.imageUrl,
         createdAt: row.createdAt,
         feedbackCategory: row.feedbackCategory,
+        feedbackCrop: row.feedbackCrop,
         feedbackTags: row.feedbackTags,
         commentText: row.commentText,
         storageProvider: row.imageStorageProvider,

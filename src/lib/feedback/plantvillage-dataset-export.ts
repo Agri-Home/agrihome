@@ -54,15 +54,35 @@ function loadFolderMapFromEnv(): Record<string, string> {
   return MAP_CACHE.map;
 }
 
+/** One leaf label segment (e.g. Tomato, Early_blight) — no triple-underscore joiner. */
+function folderSegment(s: string): string {
+  const t = s.normalize("NFKC").trim();
+  if (!t) return "";
+  return t
+    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_|_$/g, "")
+    .slice(0, 60);
+}
+
 /**
- * One path segment only: [A-Za-z0-9_]+, triple-underscore like Crop___Condition allowed.
+ * Class folder name: either one segment, or `Crop___Condition` with literal triple
+ * underscore (must not collapse `___` to `_`, which would break PlantVillage names).
  */
 function sanitizeClassFolderName(name: string): string {
-  const s = name
-    .replace(/[^a-zA-Z0-9_]/g, "_")
-    .replace(/_+/g, "_")
-    .replace(/^_|_$/g, "");
-  const out = s.slice(0, 120);
+  const t = name.trim();
+  if (t.includes("___")) {
+    const parts = t.split("___");
+    if (parts.length === 2) {
+      const a = folderSegment(parts[0]!);
+      const b = folderSegment(parts[1]!);
+      if (a && b) {
+        return `${a}___${b}`.slice(0, 120);
+      }
+    }
+  }
+  const one = folderSegment(t);
+  const out = one.slice(0, 120);
   return out || "Agrihome___unlabeled";
 }
 
@@ -78,14 +98,26 @@ function slugToken(s: string): string {
 
 /**
  * Resolves the ImageFolder class directory name for this sample.
- * Priority: map[exact category] → map[first tag] → Agrihome___<slug(category)> → Agrihome___<slug(first tag)> → Agrihome___unlabeled
+ * When both crop (name) and category are set, uses PlantVillage-style
+ * `Crop___Condition` (e.g. Tomato___Early_blight). Env map can override
+ * full class names. Priority: map[category] → map[tag] → build from crop+category
+ * → single category/tag fallbacks.
  */
 export function resolvePlantVillageClassFolderName(
+  feedbackCrop: string | null,
   feedbackCategory: string | null,
   feedbackTags: string[]
 ): string {
   const map = loadFolderMapFromEnv();
   const cat = feedbackCategory?.trim() ?? "";
+  const crop = feedbackCrop?.trim() ?? "";
+  if (crop && cat) {
+    const a = folderSegment(crop);
+    const b = folderSegment(cat);
+    if (a && b) {
+      return `${a}___${b}`.slice(0, 120);
+    }
+  }
   if (cat && map[cat]) {
     return sanitizeClassFolderName(map[cat]!);
   }
@@ -98,6 +130,11 @@ export function resolvePlantVillageClassFolderName(
   }
   if (t0) {
     return sanitizeClassFolderName(`Agrihome___${slugToken(t0) || "unlabeled"}`);
+  }
+  if (crop) {
+    return sanitizeClassFolderName(
+      `Agrihome___${slugToken(crop) || "unlabeled"}`
+    );
   }
   return "Agrihome___unlabeled";
 }

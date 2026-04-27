@@ -6,6 +6,7 @@ import {
 } from "@/lib/feedback/training-sample";
 import { requireApiAccountUser } from "@/lib/auth/session";
 import { createPlantFromPhotoWithAutoDetection } from "@/lib/services/plant-manual-service";
+import { getParticipateMlFeedback } from "@/lib/services/user-preferences-service";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -40,10 +41,21 @@ export async function POST(request: Request) {
     form.get("trainingTags") != null ? String(form.get("trainingTags")) : null
   );
 
+  const trainingFeedbackCrop = String(
+    form.get("trainingFeedbackCrop") ?? ""
+  ).trim();
+  const participateMl = await getParticipateMlFeedback(authResult.email);
   const trainingFeedback =
-    trainingFeedbackFieldsPresent(trainingCategory, trainingComment, trainingTags)
+    participateMl &&
+    trainingFeedbackFieldsPresent(
+      trainingCategory,
+      trainingComment,
+      trainingTags,
+      trainingFeedbackCrop || null
+    )
       ? {
           category: trainingCategory,
+          crop: trainingFeedbackCrop || null,
           tags: trainingTags,
           comment: trainingComment
         }

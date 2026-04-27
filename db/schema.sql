@@ -161,6 +161,7 @@ CREATE TABLE IF NOT EXISTS feedback_ingest (
   image_mime_type VARCHAR(64) NOT NULL,
   image_bytes INT NOT NULL,
   feedback_category VARCHAR(120) NULL,
+  feedback_crop VARCHAR(120) NULL,
   feedback_tags JSON NOT NULL DEFAULT '[]'::json,
   comment_text TEXT NULL,
   model_prediction_label VARCHAR(120) NULL,
@@ -176,3 +177,9 @@ CREATE INDEX IF NOT EXISTS idx_feedback_ingest_owner_created
 CREATE INDEX IF NOT EXISTS idx_feedback_ingest_pending_export
   ON feedback_ingest(created_at)
   WHERE exported_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS user_preferences (
+  owner_email VARCHAR(320) PRIMARY KEY,
+  participate_ml_feedback BOOLEAN NOT NULL DEFAULT TRUE,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
