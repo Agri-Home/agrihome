@@ -9,6 +9,10 @@ import { Card } from "@/components/atoms/Card";
 import { SectionTitle } from "@/components/app/Section";
 import { PlantImage } from "@/components/media/PlantImage";
 import { MANUAL_TRAY_ID } from "@/lib/constants/manual-tray";
+import {
+  TRAINING_FEEDBACK_CATEGORIES,
+  TRAINING_FEEDBACK_CROP_EXAMPLES
+} from "@/lib/constants/training-feedback-ui";
 import type { PlantReport, PlantUnit, TraySystem } from "@/lib/types/domain";
 
 type Detection = {
@@ -22,10 +26,12 @@ type Detection = {
 
 export function NewPlantClient({
   trays,
-  initialTrayId
+  initialTrayId,
+  showTrainingFeedback
 }: {
   trays: TraySystem[];
   initialTrayId?: string;
+  showTrainingFeedback: boolean;
 }) {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -53,9 +59,15 @@ export function NewPlantClient({
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [trainingCrop, setTrainingCrop] = useState("");
+  const [trainingCategory, setTrainingCategory] = useState("");
+  const [trainingTags, setTrainingTags] = useState("");
+  const [trainingComment, setTrainingComment] = useState("");
+  const [trainingNote, setTrainingNote] = useState<string | null>(null);
 
   async function submitPhoto(file: File) {
     setErr(null);
+    setTrainingNote(null);
     setBusy(true);
     setPlant(null);
     setDetection(null);
@@ -65,6 +77,14 @@ export function NewPlantClient({
     const fd = new FormData();
     fd.append("photo", file);
     fd.append("trayId", trayId);
+    const tcr = trainingCrop.trim();
+    const tc = trainingCategory.trim();
+    const tt = trainingTags.trim();
+    const tcm = trainingComment.trim();
+    if (tcr) fd.append("trainingFeedbackCrop", tcr.slice(0, 120));
+    if (tc) fd.append("trainingFeedbackCategory", tc);
+    if (tt) fd.append("trainingTags", tt);
+    if (tcm) fd.append("trainingComment", tcm);
 
     try {
       const res = await fetch("/api/plants/from-photo", {
@@ -77,6 +97,8 @@ export function NewPlantClient({
           detection: Detection;
           report: PlantReport;
           imageUrl: string;
+          trainingFeedback: { id: string } | null;
+          trainingFeedbackWarning: string | null;
         };
         error?: string;
       };
@@ -86,6 +108,13 @@ export function NewPlantClient({
       setDetection(json.data.detection);
       setReport(json.data.report);
       setPhotoUrl(json.data.imageUrl);
+      if (json.data.trainingFeedbackWarning) {
+        setTrainingNote(
+          `Plant saved, but training feedback was not stored: ${json.data.trainingFeedbackWarning}`
+        );
+      } else if (json.data.trainingFeedback?.id) {
+        setTrainingNote("Training feedback saved with this photo.");
+      }
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Error");
     } finally {
@@ -100,13 +129,26 @@ export function NewPlantClient({
           Add a Plant
         </h1>
         <p className="mt-1 text-sm text-ink/50">
-          Take or upload a clear photo. The model identifies the species, creates the plant, and scores health in one step.
+          Take or upload a clear photo. The model identifies the species, creates the plant, and scores health in one step. Optionally note corrections below to improve future models.
         </p>
       </div>
 
       {err && (
         <div className="animate-fade-in rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-rose-100" role="alert">
           {err}
+        </div>
+      )}
+
+      {trainingNote && !err && (
+        <div
+          className={`animate-fade-in rounded-xl px-4 py-3 text-sm ring-1 ${
+            trainingNote.startsWith("Plant saved, but")
+              ? "bg-amber-50 text-amber-900 ring-amber-100"
+              : "bg-emerald-50 text-emerald-800 ring-emerald-100"
+          }`}
+          role="status"
+        >
+          {trainingNote}
         </div>
       )}
 
@@ -130,8 +172,82 @@ export function NewPlantClient({
         </label>
       </Card>
 
+      {showTrainingFeedback ? (
+      <Card className="animate-fade-in stagger-2 border-ink/5 bg-ink/[0.02] p-5">
+        <p className="text-xs font-semibold uppercase tracking-wider text-ink/40">
+          Optional — training feedback (same photo)
+        </p>
+        <p className="mt-1 text-[11px] text-ink/35">
+          If the species or health assessment might be wrong, add crop, condition, tags, or a short note. Submitted with your plant photo automatically. With a dataset directory configured, images are stored as Name___Condition (e.g. Tomato___Early_blight).
+        </p>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <div className="text-sm sm:col-span-2">
+            <label
+              htmlFor="new-plant-training-crop"
+              className="text-xs font-medium text-ink/50"
+            >
+              Name (crop or plant)
+            </label>
+            <input
+              id="new-plant-training-crop"
+              value={trainingCrop}
+              onChange={(e) => setTrainingCrop(e.target.value)}
+              disabled={busy}
+              list="new-plant-crop-suggestions"
+              maxLength={120}
+              autoComplete="off"
+              placeholder="e.g. Tomato (defaults to species if left empty on save)"
+              className="mt-1 w-full rounded-xl border border-ink/10 bg-white/80 px-3.5 py-2.5 text-sm focus:border-leaf focus:outline-none"
+            />
+            <datalist id="new-plant-crop-suggestions">
+              {TRAINING_FEEDBACK_CROP_EXAMPLES.map((c) => (
+                <option key={c} value={c} />
+              ))}
+            </datalist>
+          </div>
+          <label className="block text-sm sm:col-span-2">
+            <span className="text-xs font-medium text-ink/50">Condition</span>
+            <select
+              value={trainingCategory}
+              onChange={(e) => setTrainingCategory(e.target.value)}
+              disabled={busy}
+              className="mt-1 w-full rounded-xl border border-ink/10 bg-white/80 px-3.5 py-2.5 text-sm focus:border-leaf focus:outline-none"
+            >
+              {TRAINING_FEEDBACK_CATEGORIES.map((c) => (
+                <option key={c || "empty"} value={c}>
+                  {c || "— None —"}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="block text-sm sm:col-span-2">
+            <span className="text-xs font-medium text-ink/50">Tags</span>
+            <input
+              value={trainingTags}
+              onChange={(e) => setTrainingTags(e.target.value)}
+              disabled={busy}
+              placeholder="Comma-separated"
+              className="mt-1 w-full rounded-xl border border-ink/10 bg-white/80 px-3.5 py-2.5 text-sm focus:border-leaf focus:outline-none"
+            />
+          </label>
+          <label className="block text-sm sm:col-span-2">
+            <span className="text-xs font-medium text-ink/50">Comment</span>
+            <textarea
+              value={trainingComment}
+              onChange={(e) => setTrainingComment(e.target.value)}
+              disabled={busy}
+              rows={2}
+              maxLength={4000}
+              placeholder="What should the model learn from this image?"
+              className="mt-1 w-full rounded-xl border border-ink/10 bg-white/80 px-3.5 py-2.5 text-sm focus:border-leaf focus:outline-none"
+            />
+          </label>
+        </div>
+      </Card>
+      ) : null}
+
       {/* Upload area */}
-      <div className="animate-fade-in stagger-2">
+      <div className="animate-fade-in stagger-3">
         {!detection ? (
           <Card className="p-0">
             <button
@@ -277,6 +393,7 @@ export function NewPlantClient({
                   setPlant(null);
                   setReport(null);
                   setPhotoUrl(null);
+                  setTrainingNote(null);
                 }}
                 className="w-full text-center text-sm font-medium text-ink/40 transition-colors hover:text-ink/60"
               >

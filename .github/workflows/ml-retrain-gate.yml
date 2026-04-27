@@ -1,0 +1,34 @@
+# Scheduled check: when enough user feedback is queued, notify ML and optionally hit a training webhook.
+# Configure repository secrets: RETRAIN_WEBHOOK_URL, SLACK_WEBHOOK_URL (optional), POSTGRES_* or a single DATABASE_URL if you adapt the script.
+
+name: ML retrain gate
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - run: npm ci
+
+      - name: Check feedback volume
+        env:
+          POSTGRES_HOST: ${{ secrets.POSTGRES_HOST }}
+          POSTGRES_PORT: ${{ secrets.POSTGRES_PORT }}
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DATABASE: ${{ secrets.POSTGRES_DATABASE }}
+          RETRAIN_FEEDBACK_THRESHOLD: "1000"
+          RETRAIN_WEBHOOK_URL: ${{ secrets.RETRAIN_WEBHOOK_URL }}
+          SLACK_WEBHOOK_URL: ${{ secrets.ML_SLACK_WEBHOOK_URL }}
+        run: node scripts/ml/retrain-gate.cjs

@@ -22,7 +22,8 @@ Full-stack **Next.js** monitoring UI for tray- and plant-level crop health: came
 - **Authentication** (`/login`) — Firebase email/password and Google sign-in; authenticated app pages use an HTTP-only Firebase session cookie.
 - **Trays** — List, tray detail (image, monitoring chart, plants with thumbnails, events). **Tray CV**: upload a top-down photo for **plant count + instance boxes** (`POST /api/trays/{trayId}/vision`); optional **`CV_TRAY_INFERENCE_URL`** ([docs/CV_PIPELINE.md](docs/CV_PIPELINE.md)).
 - **Plants** — Detail: stats, latest finding, photo upload, edit (name / species / description), delete, health trend chart, report history, monitoring log (plant-scoped with tray fallback).
-- **Add plant** (`/plants/new`) — Tray picker + leaf photo; species/disease classification via **`CV_SPECIES_INFERENCE_URL`** (e.g. **`cv-backend`** on [PlantVillage `raw/color`](https://github.com/spMohanty/PlantVillage-Dataset/tree/master/raw/color)) is **required** for `POST /api/plants/from-photo` to succeed—there is no local simulator. See [docs/CV_PIPELINE.md](docs/CV_PIPELINE.md).
+- **Add plant** (`/plants/new`) — Tray picker + leaf photo; species/disease classification via **`CV_SPECIES_INFERENCE_URL`** (e.g. **`cv-backend`** on [PlantVillage `raw/color`](https://github.com/spMohanty/PlantVillage-Dataset/tree/master/raw/color)) is **required** for `POST /api/plants/from-photo` to succeed—there is no local simulator. See [docs/CV_PIPELINE.md](docs/CV_PIPELINE.md). Optional **training feedback** (same photo) is documented in [docs/FEEDBACK_AND_RECLASSIFICATION.md](docs/FEEDBACK_AND_RECLASSIFICATION.md).
+- **Feedback** (`/feedback`) — Upload images with corrective labels and comments for model improvement; integrated with add-plant flows. See [docs/FEEDBACK_AND_RECLASSIFICATION.md](docs/FEEDBACK_AND_RECLASSIFICATION.md).
 - **Mesh** — Group trays; mesh detail with merged activity and plants.
 - **Schedule** — Capture intervals for trays or meshes.
 - **Standalone build** — `output: "standalone"`; `postbuild` copies static assets into `.next/standalone` for container runs.
@@ -56,6 +57,7 @@ See `.env.example` for full variable list and storage layout.
 | [docs/NEXT_STEPS.md](docs/NEXT_STEPS.md) | Short roadmap for the next sprint, near-term hardening, and platform follow-ons |
 | [docs/UI_LAYOUT_AND_DESIGN.md](docs/UI_LAYOUT_AND_DESIGN.md) | App shell, navigation, visual tokens, component usage |
 | [docs/CV_PIPELINE.md](docs/CV_PIPELINE.md) | PlantVillage training + `cv-backend`, species/disease HTTP contract, tray CV |
+| [docs/FEEDBACK_AND_RECLASSIFICATION.md](docs/FEEDBACK_AND_RECLASSIFICATION.md) | Image feedback, reclassification labels, add-plant integration, ML export, retrain gate |
 | [cv-backend/README.md](cv-backend/README.md) | PyTorch train/serve commands, Docker |
 | [docs/PLANT_TRAINER_AND_CLASSIFIER.md](docs/PLANT_TRAINER_AND_CLASSIFIER.md) | GPU Compose services for train vs classify |
 | [docs/diagrams/README.md](docs/diagrams/README.md) | **Mermaid** diagrams: architecture, integrations, UML-style domain/services, use cases |

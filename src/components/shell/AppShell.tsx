@@ -71,7 +71,28 @@ function IconSchedule({ active }: { active: boolean }) {
   );
 }
 
-const NAV: NavItem[] = [
+function IconFeedback({ active }: { active: boolean }) {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.2 : 1.8} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15a4 4 0 01-4 4H8l-5 3V7a4 4 0 014-4h10a4 4 0 014 4z" fill={active ? "currentColor" : "none"} />
+      <path d="M8 10h8M8 14h5" stroke={active ? "var(--canvas)" : "currentColor"} />
+    </svg>
+  );
+}
+
+function IconSettings({ active }: { active: boolean }) {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.2 : 1.8} strokeLinecap="round" strokeLinejoin="round">
+      <path
+        d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"
+        fill={active ? "currentColor" : "none"}
+      />
+      <circle cx="12" cy="12" r="3" stroke={active ? "var(--canvas)" : "currentColor"} />
+    </svg>
+  );
+}
+
+const PRIMARY_NAV: NavItem[] = [
   {
     href: "/dashboard",
     label: "Dashboard",
@@ -99,6 +120,12 @@ const NAV: NavItem[] = [
     icon: (active) => <IconMesh active={active} />
   },
   {
+    href: "/feedback",
+    label: "Feedback",
+    match: (p) => p.startsWith("/feedback"),
+    icon: (active) => <IconFeedback active={active} />
+  },
+  {
     href: "/schedule",
     label: "Schedule",
     match: (p) => p.startsWith("/schedule"),
@@ -106,16 +133,34 @@ const NAV: NavItem[] = [
   }
 ];
 
+const SETTINGS_NAV: NavItem = {
+  href: "/settings",
+  label: "Settings",
+  match: (p) => p.startsWith("/settings"),
+  icon: (active) => <IconSettings active={active} />
+};
+
+function buildAppNavItems(participateMlFeedback: boolean): NavItem[] {
+  const main = participateMlFeedback
+    ? PRIMARY_NAV
+    : PRIMARY_NAV.filter((item) => item.href !== "/feedback");
+  return [...main, SETTINGS_NAV];
+}
+
 export function AppShell({
   children,
   currentUser,
-  firebaseConfig
+  firebaseConfig,
+  participateMlFeedback
 }: {
   children: React.ReactNode;
   currentUser: AuthenticatedUser;
   firebaseConfig: FirebaseClientConfig;
+  /** When false, Feedback nav and training UI are hidden; default true. */
+  participateMlFeedback: boolean;
 }) {
   const pathname = usePathname();
+  const navItems = buildAppNavItems(participateMlFeedback);
   const identityLabel = currentUser.name ?? currentUser.email ?? "Operator";
   const identityInitial = identityLabel.charAt(0).toUpperCase();
 
@@ -142,7 +187,7 @@ export function AppShell({
             <p className="text-sm font-bold tracking-tight text-white">AgriHome</p>
           </div>
           <nav className="mt-8 flex flex-col gap-1">
-            {NAV.map((item) => {
+            {navItems.map((item) => {
               const active = item.match(pathname);
               return (
                 <Link
@@ -188,7 +233,7 @@ export function AppShell({
       {/* Mobile bottom navigation */}
       <nav className="safe-bottom fixed bottom-0 left-0 right-0 z-30 border-t border-leaf/10 bg-white/92 backdrop-blur-2xl lg:hidden" style={{ boxShadow: "0 -8px 40px rgba(15, 31, 23, 0.07)" }}>
         <div className="mx-auto flex max-w-lg items-end justify-around px-1 pb-1 pt-1.5">
-          {NAV.map((item) => {
+          {navItems.map((item) => {
             const active = item.match(pathname);
 
             if (item.isFab) {

@@ -1,14 +1,27 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/atoms/Button";
 import { Card } from "@/components/atoms/Card";
+import {
+  TRAINING_FEEDBACK_CATEGORIES,
+  TRAINING_FEEDBACK_CROP_EXAMPLES
+} from "@/lib/constants/training-feedback-ui";
 import type { PlantHealthStatus, PlantUnit, TraySystem } from "@/lib/types/domain";
 
-export function TrayManageClient({ tray }: { tray: TraySystem }) {
+const TRAIN_MAX_BYTES = 8 * 1024 * 1024;
+
+export function TrayManageClient({
+  tray,
+  showTrainingFeedback
+}: {
+  tray: TraySystem;
+  showTrainingFeedback: boolean;
+}) {
   const router = useRouter();
+  const trainingPhotoRef = useRef<HTMLInputElement>(null);
   const [tName, setTName] = useState(tray.name);
   const [tZone, setTZone] = useState(tray.zone);
   const [tCrop, setTCrop] = useState(tray.crop);
@@ -29,6 +42,10 @@ export function TrayManageClient({ tray }: { tray: TraySystem }) {
   const [plantBusy, setPlantBusy] = useState(false);
   const [plantErr, setPlantErr] = useState<string | null>(null);
   const [plantOk, setPlantOk] = useState<string | null>(null);
+  const [mTrainCrop, setMTrainCrop] = useState("");
+  const [mTrainCategory, setMTrainCategory] = useState("");
+  const [mTrainTags, setMTrainTags] = useState("");
+  const [mTrainComment, setMTrainComment] = useState("");
 
   useEffect(() => {
     setTName(tray.name);
@@ -108,7 +125,61 @@ export function TrayManageClient({ tray }: { tray: TraySystem }) {
       const json = (await res.json()) as { data?: PlantUnit; error?: string };
       if (!res.ok) throw new Error(json.error ?? "Could not add plant");
 
-      setPlantOk("Plant added.");
+      const nameSaved = pName.trim();
+      const cultivarSaved = pCultivar.trim();
+      const trainFile = trainingPhotoRef.current?.files?.[0];
+      const tCrop = mTrainCrop.trim();
+      const tCat = mTrainCategory.trim();
+      const tTags = mTrainTags.trim();
+      const tCom = mTrainComment.trim();
+      const hasTrainText =
+        (tCrop.length > 0 && tCat.length > 0) ||
+        tCat.length > 0 ||
+        tTags.length > 0 ||
+        tCom.length >= 3;
+
+      if (trainFile && !hasTrainText) {
+        throw new Error(
+          "Training photo: add crop + condition, a condition, tags, or a comment (3+ characters)."
+        );
+      }
+      if (trainFile && hasTrainText) {
+        const okMime =
+          trainFile.type === "image/jpeg" ||
+          trainFile.type === "image/png" ||
+          trainFile.type === "image/webp";
+        if (!okMime) {
+          throw new Error("Training photo must be JPEG, PNG, or WebP.");
+        }
+        if (trainFile.size > TRAIN_MAX_BYTES) {
+          throw new Error("Training photo is too large (max 8MB).");
+        }
+        const fd = new FormData();
+        fd.append("image", trainFile);
+        if (tCrop) fd.append("feedbackCrop", tCrop.slice(0, 120));
+        if (tCat) fd.append("feedbackCategory", tCat.slice(0, 120));
+        if (tTags) fd.append("tags", tTags);
+        if (tCom) fd.append("comment", tCom.slice(0, 4000));
+        fd.append(
+          "modelPrediction",
+          `${nameSaved} / ${cultivarSaved}`.slice(0, 120)
+        );
+        const tr = await fetch("/api/feedback/ingest", {
+          method: "POST",
+          body: fd,
+          credentials: "include"
+        });
+        const tj = (await tr.json()) as { error?: string };
+        if (!tr.ok) {
+          throw new Error(tj.error ?? "Plant saved but training upload failed.");
+        }
+      }
+
+      setPlantOk(
+        trainFile && hasTrainText
+          ? "Plant added and training feedback saved."
+          : "Plant added."
+      );
       setPName("");
       setPCultivar("");
       setPRow("");
@@ -119,6 +190,11 @@ export function TrayManageClient({ tray }: { tray: TraySystem }) {
       setPStatus("healthy");
       setPDiag("");
       setPDesc("");
+      setMTrainCrop("");
+      setMTrainCategory("");
+      setMTrainTags("");
+      setMTrainComment("");
+      if (trainingPhotoRef.current) trainingPhotoRef.current.value = "";
       router.refresh();
     } catch (e) {
       setPlantErr(e instanceof Error ? e.message : "Error");
@@ -319,6 +395,79 @@ export function TrayManageClient({ tray }: { tray: TraySystem }) {
               disabled={plantBusy}
             />
           </label>
+
+          {showTrainingFeedback ? (
+          <div className="sm:col-span-2 mt-2 rounded-xl border border-ink/10 bg-ink/[0.02] p-3">
+            <p className="text-xs font-semibold uppercase tracking-wider text-ink/40">
+              Optional — training photo
+            </p>
+            <p className="mt-0.5 text-[11px] text-ink/35">
+              Attach a leaf/tray image and feedback to store for model improvement (same fields as the Feedback page).
+            </p>
+            <input
+              ref={trainingPhotoRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              disabled={plantBusy}
+              className="mt-2 block w-full text-xs text-ink/60 file:mr-3 file:rounded-lg file:border-0 file:bg-lime/30 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-ink"
+            />
+            <label className="mt-3 block text-sm">
+              <span className="text-xs font-medium text-ink/50">Name (crop or plant)</span>
+              <input
+                value={mTrainCrop}
+                onChange={(e) => setMTrainCrop(e.target.value)}
+                disabled={plantBusy}
+                list="tray-train-crop-suggestions"
+                maxLength={120}
+                autoComplete="off"
+                placeholder="e.g. Tomato"
+                className="mt-1 w-full rounded-xl border border-ink/10 bg-white/80 px-3.5 py-2.5 text-sm focus:border-leaf focus:outline-none"
+              />
+            </label>
+            <datalist id="tray-train-crop-suggestions">
+              {TRAINING_FEEDBACK_CROP_EXAMPLES.map((c) => (
+                <option key={c} value={c} />
+              ))}
+            </datalist>
+            <label className="mt-2 block text-sm">
+              <span className="text-xs font-medium text-ink/50">Condition</span>
+              <select
+                value={mTrainCategory}
+                onChange={(e) => setMTrainCategory(e.target.value)}
+                disabled={plantBusy}
+                className="mt-1 w-full rounded-xl border border-ink/10 bg-white/80 px-3.5 py-2.5 text-sm focus:border-leaf focus:outline-none"
+              >
+                {TRAINING_FEEDBACK_CATEGORIES.map((c) => (
+                  <option key={c || "empty"} value={c}>
+                    {c || "— None —"}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="mt-2 block text-sm">
+              <span className="text-xs font-medium text-ink/50">Training tags</span>
+              <input
+                value={mTrainTags}
+                onChange={(e) => setMTrainTags(e.target.value)}
+                disabled={plantBusy}
+                placeholder="Comma-separated"
+                className="mt-1 w-full rounded-xl border border-ink/10 bg-white/80 px-3.5 py-2.5 text-sm focus:border-leaf focus:outline-none"
+              />
+            </label>
+            <label className="mt-2 block text-sm">
+              <span className="text-xs font-medium text-ink/50">Training comment</span>
+              <textarea
+                value={mTrainComment}
+                onChange={(e) => setMTrainComment(e.target.value)}
+                disabled={plantBusy}
+                rows={2}
+                maxLength={4000}
+                placeholder="Optional — required with photo (or use category/tags)"
+                className="mt-1 w-full rounded-xl border border-ink/10 bg-white/80 px-3.5 py-2.5 text-sm focus:border-leaf focus:outline-none"
+              />
+            </label>
+          </div>
+          ) : null}
         </div>
         <Button
           type="button"

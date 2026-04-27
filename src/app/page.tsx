@@ -3,7 +3,6 @@ export const dynamic = "force-dynamic";
 import { redirect } from "next/navigation";
 
 import { LoginForm } from "@/components/auth/LoginForm";
-import { OperationsPreview } from "@/components/marketing/OperationsPreview";
 import { getSessionUser } from "@/lib/auth/session";
 import { env, hasFirebaseAdminConfig } from "@/lib/config/env";
 
@@ -15,18 +14,22 @@ export default async function LandingPage() {
   }
 
   return (
-    <main className="pb-12 pt-8 sm:pb-16 sm:pt-10">
-      <div className="mx-auto grid w-full max-w-6xl gap-8 px-4 sm:gap-10 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:items-start lg:gap-10 lg:px-8">
-        <section className="min-w-0">
-          <OperationsPreview compact />
-        </section>
-        <section className="flex justify-center lg:justify-end">
-          <LoginForm
-            firebaseConfig={env.firebase.client}
-            isServerConfigured={hasFirebaseAdminConfig}
-            variant="playful"
-          />
-        </section>
+    <main className="pb-12 pt-10 sm:pb-20 sm:pt-14">
+      <div className="mx-auto flex w-full max-w-md flex-col gap-8 px-4 sm:px-6">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold tracking-tight text-ink sm:text-3xl">
+            {env.appName}
+          </h1>
+          <p className="mt-3 text-sm leading-relaxed text-ink/55">
+            Track trays and plants, capture photos, and review health insights in one
+            place. Sign in to manage your grow or create an account to get started.
+          </p>
+        </div>
+        <LoginForm
+          firebaseConfig={env.firebase.client}
+          isServerConfigured={hasFirebaseAdminConfig}
+          variant="playful"
+        />
       </div>
     </main>
   );
