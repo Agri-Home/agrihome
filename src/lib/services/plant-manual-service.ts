@@ -7,6 +7,10 @@ import {
   detectPlantSpeciesFromImage,
   type PlantSpeciesDetection
 } from "@/lib/services/plant-detection-service";
+import {
+  recordTrainingFeedbackSample,
+  trainingFeedbackFieldsPresent
+} from "@/lib/feedback/training-sample";
 import { getPlantById } from "@/lib/services/plant-service";
 import { getTrayById, syncTrayStatsFromPlants } from "@/lib/services/topology-service";
 import { savePlantLeafOriginal } from "@/lib/storage/save-original";
@@ -297,6 +301,7 @@ export async function analyzePlantPhotoFromUpload(
  */
 export async function createPlantFromPhotoWithAutoDetection(input: {
   ownerEmail: string;
+  userUid: string;
   file: Buffer;
   mime: string;
   trayId?: string;
@@ -304,6 +309,12 @@ export async function createPlantFromPhotoWithAutoDetection(input: {
   displayName?: string;
   /** Optional override of auto-detected cultivar / species string */
   cultivarOverride?: string;
+  /** Optional corrections for the same photo (stored for ML training). */
+  trainingFeedback?: {
+    category: string | null;
+    tags: string[];
+    comment: string | null;
+  } | null;
 }): Promise<{
   plant: PlantUnit;
   detection: PlantSpeciesDetection;
@@ -311,6 +322,8 @@ export async function createPlantFromPhotoWithAutoDetection(input: {
   imageUrl: string;
   report: PlantReport;
   prediction: PredictionResult;
+  trainingFeedback: { id: string } | null;
+  trainingFeedbackWarning: string | null;
 }> {
   if (input.file.length > MAX_UPLOAD_BYTES) {
     throw new Error("Image too large (max 6MB)");
@@ -342,10 +355,46 @@ export async function createPlantFromPhotoWithAutoDetection(input: {
 
   const updated = await getPlantById(input.ownerEmail, plant.id);
 
+  let trainingFeedback: { id: string } | null = null;
+  let trainingFeedbackWarning: string | null = null;
+
+  const tf = input.trainingFeedback;
+  if (
+    tf &&
+    trainingFeedbackFieldsPresent(tf.category, tf.comment, tf.tags)
+  ) {
+    const modelPredictionLabel = [
+      `${detection.commonName} (${detection.cultivar})`,
+      `${(detection.identificationConfidence * 100).toFixed(0)}%`,
+      analysis.report.diagnosis
+    ]
+      .join(" · ")
+      .slice(0, 120);
+
+    try {
+      const row = await recordTrainingFeedbackSample({
+        userUid: input.userUid,
+        ownerEmail: input.ownerEmail,
+        buffer: input.file,
+        mimeType: input.mime,
+        feedbackCategory: tf.category,
+        feedbackTags: tf.tags,
+        commentText: tf.comment,
+        modelPredictionLabel
+      });
+      trainingFeedback = { id: row.id };
+    } catch (e) {
+      trainingFeedbackWarning =
+        e instanceof Error ? e.message : "Could not save training feedback";
+    }
+  }
+
   return {
     plant: updated ?? plant,
     detection,
-    ...analysis
+    ...analysis,
+    trainingFeedback,
+    trainingFeedbackWarning
   };
 }
 

@@ -3,8 +3,9 @@
  * Loads repo-root `.env` then `.env.local` when vars are not already set (like Next.js).
  * Usage: yarn db:seed   or   POSTGRES_HOST=... node scripts/seed-postgres.cjs
  * Flags:
- *   --schema-only  apply db/schema.sql only
- *   --seed-only    apply db/seed.sql only (tables must already exist)
+ *   --schema-only      apply db/schema.sql only
+ *   --seed-only        apply db/seed.sql only (tables must already exist)
+ *   --migrations-only  apply db/migrations/*.sql only (existing DB upgrades)
  */
 const fs = require("fs");
 const path = require("path");
@@ -70,7 +71,8 @@ const pool = new Pool({
   port: Number(process.env.POSTGRES_PORT || 5432),
   user,
   password: process.env.POSTGRES_PASSWORD || "",
-  database
+  database,
+  connectionTimeoutMillis: Number(process.env.POSTGRES_CONNECT_TIMEOUT_MS || 8000)
 });
 
 const schemaPath = path.join(rootDir, "db", "schema.sql");
@@ -78,6 +80,7 @@ const migrationsDir = path.join(rootDir, "db", "migrations");
 const seedPath = path.join(rootDir, "db", "seed.sql");
 const schemaOnly = process.argv.includes("--schema-only");
 const seedOnly = process.argv.includes("--seed-only");
+const migrationsOnly = process.argv.includes("--migrations-only");
 
 function getMigrationPaths() {
   if (!fs.existsSync(migrationsDir)) {
@@ -92,9 +95,26 @@ function getMigrationPaths() {
 }
 
 async function main() {
-  if (schemaOnly && seedOnly) {
-    console.error("Use only one of --schema-only or --seed-only.");
+  const modeCount = [schemaOnly, seedOnly, migrationsOnly].filter(Boolean).length;
+  if (modeCount > 1) {
+    console.error(
+      "Use only one of --schema-only, --seed-only, or --migrations-only."
+    );
     process.exit(1);
+  }
+
+  if (migrationsOnly) {
+    const paths = getMigrationPaths();
+    if (paths.length === 0) {
+      console.log("No migration files in db/migrations.");
+    }
+    for (const migrationPath of paths) {
+      const migrationSql = fs.readFileSync(migrationPath, "utf8");
+      await pool.query(migrationSql);
+      console.log("Migration applied:", migrationPath);
+    }
+    await pool.end();
+    return;
   }
 
   if (!seedOnly) {
