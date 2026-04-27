@@ -71,6 +71,15 @@ function IconSchedule({ active }: { active: boolean }) {
   );
 }
 
+function IconFeedback({ active }: { active: boolean }) {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.2 : 1.8} strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15a4 4 0 01-4 4H8l-5 3V7a4 4 0 014-4h10a4 4 0 014 4z" fill={active ? "currentColor" : "none"} />
+      <path d="M8 10h8M8 14h5" stroke={active ? "var(--canvas)" : "currentColor"} />
+    </svg>
+  );
+}
+
 const NAV: NavItem[] = [
   {
     href: "/dashboard",
@@ -97,6 +106,12 @@ const NAV: NavItem[] = [
     label: "Mesh",
     match: (p) => p.startsWith("/mesh"),
     icon: (active) => <IconMesh active={active} />
+  },
+  {
+    href: "/feedback",
+    label: "Feedback",
+    match: (p) => p.startsWith("/feedback"),
+    icon: (active) => <IconFeedback active={active} />
   },
   {
     href: "/schedule",

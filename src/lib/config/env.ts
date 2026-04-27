@@ -53,6 +53,11 @@ export const env = {
     database:
       process.env.POSTGRES_DATABASE ?? process.env.MARIADB_DATABASE ?? ""
   },
+  /** Optional ImageFolder copy of feedback (same layout as PlantVillage raw/color). */
+  feedback: {
+    plantVillageDatasetDir:
+      process.env.PLANTVILLAGE_FEEDBACK_DATASET_DIR?.trim() ?? ""
+  },
   qdrant: {
     url: process.env.QDRANT_URL ?? "",
     apiKey: process.env.QDRANT_API_KEY ?? "",
