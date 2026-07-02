@@ -110,7 +110,7 @@ export interface PredictionResult {
   confidence: number;
   severity: Severity;
   recommendation: string;
-  vectorSource: "qdrant" | "classifier" | "mock";
+  vectorSource: "qdrant" | "classifier" | "mock" | "pending";
   createdAt: string;
   similarMatches: SimilarImageMatch[];
 }

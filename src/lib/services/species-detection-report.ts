@@ -36,6 +36,45 @@ export function buildPredictionAndReportFromSpeciesDetection(
   capture: CameraCapture,
   detection: PlantSpeciesDetection
 ): { prediction: PredictionResult; report: PlantReport } {
+  if (detection.classificationUncertain) {
+    const confidence = detection.identificationConfidence;
+    const prediction: PredictionResult = {
+      id: randomUUID(),
+      captureId: capture.id,
+      trayId: capture.trayId,
+      label: "Low confidence leaf match",
+      confidence,
+      severity: "low",
+      recommendation:
+        "The photo did not match the plant classes confidently. Try a closer, shaded leaf against a plain background, or narrow the frame to one leaf.",
+      vectorSource: "classifier",
+      createdAt: capture.capturedAt,
+      similarMatches: []
+    };
+    const report: PlantReport = {
+      id: randomUUID(),
+      trayId: plant.trayId,
+      plantId: plant.id,
+      captureId: capture.id,
+      diagnosis:
+        "Classifier uncertain — image may not be a labeled crop leaf in this model.",
+      confidence,
+      severity: "low",
+      diseases: [],
+      deficiencies: [],
+      anomalies:
+        detection.rawLabel != null
+          ? [`Best-guess class (not adopted): ${detection.rawLabel}`]
+          : [],
+      summary: `Highest class probability ${(confidence * 100).toFixed(0)}% below the server's confidence gate. Prefer a clearer leaf photo.`,
+      recommendedAction:
+        "Retake when possible; optionally edit the plant name and add a tray note.",
+      status: "ready",
+      createdAt: capture.capturedAt
+    };
+    return { prediction, report };
+  }
+
   const cond = detection.plantCondition ?? detection.cultivar;
   const severity = severityFromCondition(detection);
   const confidence = detection.identificationConfidence;
@@ -93,6 +132,48 @@ export function buildPredictionAndReportFromSpeciesDetection(
     summary: `Classifier confidence ${(confidence * 100).toFixed(0)}% (${detection.rawLabel ?? label}). Not a substitute for lab or expert diagnosis.`,
     recommendedAction: recommendation,
     status: severity === "high" ? "pending_review" : "ready",
+    createdAt: capture.capturedAt
+  };
+
+  return { prediction, report };
+}
+
+export function buildPendingAnalysisPredictionAndReport(
+  plant: PlantUnit,
+  capture: CameraCapture,
+  reason?: string
+): { prediction: PredictionResult; report: PlantReport } {
+  const detail = reason?.trim() || "Species classifier unavailable";
+  const prediction: PredictionResult = {
+    id: randomUUID(),
+    captureId: capture.id,
+    trayId: capture.trayId,
+    label: "Analysis pending",
+    confidence: 0,
+    severity: "low",
+    recommendation:
+      "Re-run leaf analysis from the plant page when the classifier is available.",
+    vectorSource: "pending",
+    createdAt: capture.capturedAt,
+    similarMatches: []
+  };
+
+  const report: PlantReport = {
+    id: randomUUID(),
+    trayId: plant.trayId,
+    plantId: plant.id,
+    captureId: capture.id,
+    diagnosis: "Analysis pending",
+    confidence: 0,
+    severity: "low",
+    diseases: [],
+    deficiencies: [],
+    anomalies: [detail],
+    summary:
+      "The photo was saved, but species classification could not run. Analysis can be retried later.",
+    recommendedAction:
+      "Open the plant and upload the photo again, or wait until the classifier service recovers.",
+    status: "pending_review",
     createdAt: capture.capturedAt
   };
 
