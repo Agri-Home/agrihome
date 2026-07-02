@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
 
+import {
+  apiErrorResponse,
+  API_ERROR_CODES,
+  mapErrorToApiResponse
+} from "@/lib/api/api-error";
 import { checkRateLimit } from "@/lib/api/rate-limit-memory";
 import { requireApiAccountUser } from "@/lib/auth/session";
 import {
@@ -37,12 +42,11 @@ export async function POST(request: Request) {
   const ip = clientIp(request);
   const ipLimit = checkRateLimit(`fb-ip:${ip}`, RATE_IP_PER_MIN, WINDOW_MS);
   if (!ipLimit.ok) {
-    return NextResponse.json(
-      { error: "Too many uploads from this network. Try again shortly." },
-      {
-        status: 429,
-        headers: { "Retry-After": String(ipLimit.retryAfterSec) }
-      }
+    return apiErrorResponse(
+      API_ERROR_CODES.RATE_LIMITED,
+      "Too many uploads from this network. Try again shortly.",
+      429,
+      { headers: { "Retry-After": String(ipLimit.retryAfterSec) } }
     );
   }
 
@@ -57,14 +61,19 @@ export async function POST(request: Request) {
     try {
       formEarly = await request.formData();
     } catch {
-      return NextResponse.json({ error: "Invalid multipart body" }, { status: 400 });
+      return apiErrorResponse(
+        API_ERROR_CODES.BAD_REQUEST,
+        "Invalid multipart body",
+        400
+      );
     }
     const uid = String(formEarly.get("userUid") ?? "").trim();
     const email = String(formEarly.get("userEmail") ?? "").trim();
     if (!uid || !email) {
-      return NextResponse.json(
-        { error: "Service uploads require userUid and userEmail form fields." },
-        { status: 400 }
+      return apiErrorResponse(
+        API_ERROR_CODES.BAD_REQUEST,
+        "Service uploads require userUid and userEmail form fields.",
+        400
       );
     }
     userUid = uid;
@@ -75,12 +84,11 @@ export async function POST(request: Request) {
       WINDOW_MS
     );
     if (!svcLimit.ok) {
-      return NextResponse.json(
-        { error: "Rate limit exceeded for service uploads." },
-        {
-          status: 429,
-          headers: { "Retry-After": String(svcLimit.retryAfterSec) }
-        }
+      return apiErrorResponse(
+        API_ERROR_CODES.RATE_LIMITED,
+        "Rate limit exceeded for service uploads.",
+        429,
+        { headers: { "Retry-After": String(svcLimit.retryAfterSec) } }
       );
     }
     return handleIngestForm(formEarly, userUid, ownerEmail, ip);
@@ -97,12 +105,11 @@ export async function POST(request: Request) {
     WINDOW_MS
   );
   if (!userLimit.ok) {
-    return NextResponse.json(
-      { error: "Upload rate limit exceeded. Try again in a minute." },
-      {
-        status: 429,
-        headers: { "Retry-After": String(userLimit.retryAfterSec) }
-      }
+    return apiErrorResponse(
+      API_ERROR_CODES.RATE_LIMITED,
+      "Upload rate limit exceeded. Try again in a minute.",
+      429,
+      { headers: { "Retry-After": String(userLimit.retryAfterSec) } }
     );
   }
 
@@ -110,7 +117,11 @@ export async function POST(request: Request) {
   try {
     form = await request.formData();
   } catch {
-    return NextResponse.json({ error: "Invalid multipart body" }, { status: 400 });
+    return apiErrorResponse(
+      API_ERROR_CODES.BAD_REQUEST,
+      "Invalid multipart body",
+      400
+    );
   }
 
   userUid = authResult.uid;
@@ -127,29 +138,27 @@ async function handleIngestForm(
 ) {
   const canFeedback = await getParticipateMlFeedback(ownerEmail);
   if (!canFeedback) {
-    return NextResponse.json(
-      {
-        error:
-          "Model training feedback is off. Turn it on in Settings → Preferences to submit images for training."
-      },
-      { status: 403 }
+    return apiErrorResponse(
+      API_ERROR_CODES.FORBIDDEN,
+      "Model training feedback is off. Turn it on in Settings → Preferences to submit images for training.",
+      403
     );
   }
 
   const file = form.get("image");
   if (!file || !(file instanceof File)) {
-    return NextResponse.json(
-      { error: "Missing image file (field name: image)" },
-      { status: 400 }
+    return apiErrorResponse(
+      API_ERROR_CODES.BAD_REQUEST,
+      "Missing image file (field name: image)",
+      400
     );
   }
 
   if (file.size > MAX_IMAGE_BYTES) {
-    return NextResponse.json(
-      {
-        error: `Image too large (max ${Math.round(MAX_IMAGE_BYTES / (1024 * 1024))}MB)`
-      },
-      { status: 413 }
+    return apiErrorResponse(
+      API_ERROR_CODES.PAYLOAD_TOO_LARGE,
+      `Image too large (max ${Math.round(MAX_IMAGE_BYTES / (1024 * 1024))}MB)`,
+      413
     );
   }
 
@@ -176,12 +185,10 @@ async function handleIngestForm(
     : null;
 
   if (!trainingFeedbackFieldsPresent(feedbackCategory, commentText, tags, feedbackCrop)) {
-    return NextResponse.json(
-      {
-        error:
-          "Provide at least one of: crop + category, category, tags, or comment (min 3 characters)."
-      },
-      { status: 400 }
+    return apiErrorResponse(
+      API_ERROR_CODES.BAD_REQUEST,
+      "Provide at least one of: crop + category, category, tags, or comment (min 3 characters).",
+      400
     );
   }
 
@@ -189,7 +196,11 @@ async function handleIngestForm(
   try {
     buffer = Buffer.from(await file.arrayBuffer());
   } catch {
-    return NextResponse.json({ error: "Could not read upload" }, { status: 400 });
+    return apiErrorResponse(
+      API_ERROR_CODES.BAD_REQUEST,
+      "Could not read upload",
+      400
+    );
   }
 
   try {
@@ -221,14 +232,7 @@ async function handleIngestForm(
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Upload failed";
-    const status = msg.includes("Unsupported image")
-      ? 415
-      : msg.includes("Provide at least one")
-        ? 400
-        : msg.includes("too large")
-          ? 413
-          : 500;
     console.error("[feedback/ingest]", ip, msg);
-    return NextResponse.json({ error: msg }, { status });
+    return mapErrorToApiResponse(e, "Upload failed");
   }
 }
