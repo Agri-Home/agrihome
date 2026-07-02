@@ -11,6 +11,8 @@ export interface PlantSpeciesDetection {
   cultivar: string;
   /** Model confidence for the predicted class. */
   identificationConfidence: number;
+  /** True when the classifier did not meet confidence/margin thresholds (e.g. unrelated image). */
+  classificationUncertain?: boolean;
   /** Disease or health condition (PlantVillage folder suffix, humanized). */
   plantCondition?: string;
   /** Original classifier label (e.g. Tomato___Early_blight). */
@@ -31,6 +33,8 @@ type RemoteSpeciesPayload = {
   disease?: unknown;
   condition?: unknown;
   isHealthy?: unknown;
+  classificationUncertain?: unknown;
+  rejected?: unknown;
 };
 
 function humanizeUnderscores(s: string): string {
@@ -69,6 +73,8 @@ function parsePlantVillageStyleLabel(label: string): {
 }
 
 function parseRemoteSpecies(body: RemoteSpeciesPayload): PlantSpeciesDetection | null {
+  const uncertainFlag =
+    body.classificationUncertain === true || body.rejected === true;
   const confRaw = body.identificationConfidence ?? body.confidence;
   const identificationConfidence = Number(confRaw);
   if (!Number.isFinite(identificationConfidence)) {
@@ -109,7 +115,8 @@ function parseRemoteSpecies(body: RemoteSpeciesPayload): PlantSpeciesDetection |
       identificationConfidence: conf,
       plantCondition: plantCondition ?? cultivarExplicit,
       rawLabel: labelStr || undefined,
-      isHealthy
+      isHealthy,
+      classificationUncertain: uncertainFlag ? true : undefined
     };
   }
 
@@ -124,7 +131,8 @@ function parseRemoteSpecies(body: RemoteSpeciesPayload): PlantSpeciesDetection |
       identificationConfidence: conf,
       plantCondition: plantCondition ?? parsed.plantCondition,
       rawLabel: parsed.rawLabel,
-      isHealthy
+      isHealthy,
+      classificationUncertain: uncertainFlag ? true : undefined
     };
   }
 
@@ -137,7 +145,8 @@ function parseRemoteSpecies(body: RemoteSpeciesPayload): PlantSpeciesDetection |
       plantCondition: plantCondition ?? parsed.plantCondition,
       rawLabel: parsed.rawLabel,
       isHealthy:
-        typeof body.isHealthy === "boolean" ? body.isHealthy : parsed.isHealthy
+        typeof body.isHealthy === "boolean" ? body.isHealthy : parsed.isHealthy,
+      classificationUncertain: uncertainFlag ? true : undefined
     };
   }
 
@@ -172,7 +181,7 @@ export async function detectPlantSpeciesFromImage(
       body: JSON.stringify({
         imageBase64: imageBytes.toString("base64")
       }),
-      signal: AbortSignal.timeout(60_000)
+      signal: AbortSignal.timeout(env.cv.requestTimeoutMs)
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

@@ -18,7 +18,7 @@ export const getPostgresPool = () => {
       user: env.postgres.user,
       password: env.postgres.password,
       database: env.postgres.database,
-      max: 5
+      max: Math.max(1, env.postgres.poolMax)
     });
   }
 

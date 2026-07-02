@@ -51,7 +51,8 @@ export const env = {
     user: process.env.POSTGRES_USER ?? process.env.MARIADB_USER ?? "",
     password: process.env.POSTGRES_PASSWORD ?? process.env.MARIADB_PASSWORD ?? "",
     database:
-      process.env.POSTGRES_DATABASE ?? process.env.MARIADB_DATABASE ?? ""
+      process.env.POSTGRES_DATABASE ?? process.env.MARIADB_DATABASE ?? "",
+    poolMax: parseNumber(process.env.POSTGRES_POOL_MAX, 5)
   },
   /** Optional ImageFolder copy of feedback (same layout as PlantVillage raw/color). */
   feedback: {
@@ -61,7 +62,8 @@ export const env = {
   qdrant: {
     url: process.env.QDRANT_URL ?? "",
     apiKey: process.env.QDRANT_API_KEY ?? "",
-    collection: process.env.QDRANT_COLLECTION ?? "agrihome-image-embeddings"
+    collection: process.env.QDRANT_COLLECTION ?? "agrihome-image-embeddings",
+    timeoutMs: parseNumber(process.env.QDRANT_TIMEOUT_MS, 0)
   },
   /** Optional HTTP endpoints for CV (see docs/CV_PIPELINE.md). */
   cv: {
@@ -69,7 +71,8 @@ export const env = {
     trayInferenceApiKey: process.env.CV_TRAY_INFERENCE_API_KEY ?? "",
     /** Close-up / leaf photo → species labels (train on e.g. Kaggle plant-identification). */
     speciesInferenceUrl: process.env.CV_SPECIES_INFERENCE_URL ?? "",
-    speciesInferenceApiKey: process.env.CV_SPECIES_INFERENCE_API_KEY ?? ""
+    speciesInferenceApiKey: process.env.CV_SPECIES_INFERENCE_API_KEY ?? "",
+    requestTimeoutMs: parseNumber(process.env.CV_REQUEST_TIMEOUT_MS, 60_000)
   },
   firebase: {
     ...firebaseClientConfig,
