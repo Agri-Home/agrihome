@@ -1,8 +1,14 @@
 import { MANUAL_TRAY_ID } from "@/lib/constants/manual-tray";
+import { isCvUnavailableError } from "@/lib/api/api-error";
+import { env } from "@/lib/config/env";
 import { buildManualTrayId } from "@/lib/auth/account";
 import { requirePostgresPool } from "@/lib/db/postgres";
-import { buildPredictionAndReportFromSpeciesDetection } from "@/lib/services/species-detection-report";
+import {
+  buildPendingAnalysisPredictionAndReport,
+  buildPredictionAndReportFromSpeciesDetection
+} from "@/lib/services/species-detection-report";
 import { ingestCameraCapture } from "@/lib/services/camera-service";
+import { recordMonitoringEvent } from "@/lib/services/monitoring-service";
 import {
   detectPlantSpeciesFromImage,
   type PlantSpeciesDetection
@@ -326,13 +332,39 @@ export async function createPlantFromPhotoWithAutoDetection(input: {
   prediction: PredictionResult;
   trainingFeedback: { id: string } | null;
   trainingFeedbackWarning: string | null;
+  analysisDeferred: boolean;
 }> {
   if (input.file.length > MAX_UPLOAD_BYTES) {
     throw new Error("Image too large (max 6MB)");
   }
 
-  const detection = await detectPlantSpeciesFromImage(input.file);
-  const name = input.displayName?.trim() || detection.commonName;
+  let detection: PlantSpeciesDetection;
+  let analysisDeferred = false;
+  let deferredReason: string | undefined;
+
+  try {
+    detection = await detectPlantSpeciesFromImage(input.file);
+  } catch (error) {
+    if (!env.cv.allowDeferred || !isCvUnavailableError(error)) {
+      throw error;
+    }
+
+    analysisDeferred = true;
+    deferredReason =
+      error instanceof Error ? error.message : "Species classifier unavailable";
+    detection = {
+      commonName: input.displayName?.trim() || "Unidentified plant",
+      cultivar: input.cultivarOverride?.trim() || "Pending analysis",
+      identificationConfidence: 0,
+      classificationUncertain: true
+    };
+  }
+
+  const name =
+    input.displayName?.trim() ||
+    (detection.classificationUncertain
+      ? "Unidentified plant"
+      : detection.commonName);
   const cultivar =
     input.cultivarOverride?.trim() || detection.cultivar;
 
@@ -340,20 +372,43 @@ export async function createPlantFromPhotoWithAutoDetection(input: {
     ownerEmail: input.ownerEmail,
     name,
     cultivar,
-    trayId: input.trayId
+    trayId: input.trayId,
+    latestDiagnosis: analysisDeferred ? "Analysis pending" : undefined
   });
 
   const cond = detection.plantCondition ?? detection.cultivar;
-  const notes = `Species ID: ${detection.commonName} · ${cond} · ${(detection.identificationConfidence * 100).toFixed(0)}% confidence`;
+  const notes = analysisDeferred
+    ? "Photo saved; species analysis deferred until classifier is available"
+    : `Species ID: ${detection.commonName} · ${cond} · ${(detection.identificationConfidence * 100).toFixed(0)}% confidence`;
 
-  const analysis = await persistPlantPhotoAndAnalyze(
-    input.ownerEmail,
-    plant,
-    input.file,
-    input.mime,
-    notes,
-    detection
-  );
+  const analysis = analysisDeferred
+    ? await persistPlantPhotoWithDeferredAnalysis(
+        input.ownerEmail,
+        plant,
+        input.file,
+        input.mime,
+        notes,
+        deferredReason ?? "Species classifier unavailable"
+      )
+    : await persistPlantPhotoAndAnalyze(
+        input.ownerEmail,
+        plant,
+        input.file,
+        input.mime,
+        notes,
+        detection
+      );
+
+  if (analysisDeferred) {
+    await recordMonitoringEvent({
+      plantId: plant.id,
+      trayId: plant.trayId,
+      captureId: analysis.captureId,
+      level: "warning",
+      title: "Leaf analysis deferred",
+      message: `Classifier unavailable while creating plant from photo. ${deferredReason}`
+    });
+  }
 
   const updated = await getPlantById(input.ownerEmail, plant.id);
 
@@ -365,13 +420,15 @@ export async function createPlantFromPhotoWithAutoDetection(input: {
     tf &&
     trainingFeedbackFieldsPresent(tf.category, tf.comment, tf.tags, tf.crop)
   ) {
-    const modelPredictionLabel = [
-      `${detection.commonName} (${detection.cultivar})`,
-      `${(detection.identificationConfidence * 100).toFixed(0)}%`,
-      analysis.report.diagnosis
-    ]
-      .join(" · ")
-      .slice(0, 120);
+    const modelPredictionLabel = analysisDeferred
+      ? "Analysis pending"
+      : [
+          `${detection.commonName} (${detection.cultivar})`,
+          `${(detection.identificationConfidence * 100).toFixed(0)}%`,
+          analysis.report.diagnosis
+        ]
+          .join(" · ")
+          .slice(0, 120);
 
     try {
       const row = await recordTrainingFeedbackSample({
@@ -397,42 +454,86 @@ export async function createPlantFromPhotoWithAutoDetection(input: {
     detection,
     ...analysis,
     trainingFeedback,
-    trainingFeedbackWarning
+    trainingFeedbackWarning,
+    analysisDeferred
   };
 }
 
-async function finalizePhotoPostgres(
-  pool: import("pg").Pool,
+async function persistPlantPhotoWithDeferredAnalysis(
   ownerEmail: string,
   plant: PlantUnit,
-  capture: CameraCapture,
-  imagePublicPath: string,
-  speciesDetection: PlantSpeciesDetection
+  file: Buffer,
+  mime: string,
+  captureNotes: string,
+  reason: string
 ): Promise<{
   captureId: string;
   imageUrl: string;
   report: PlantReport;
   prediction: PredictionResult;
 }> {
-  const { prediction, report } = buildPredictionAndReportFromSpeciesDetection(
+  if (file.length > MAX_UPLOAD_BYTES) {
+    throw new Error("Image too large (max 6MB)");
+  }
+
+  const ext = assertImageMime(mime);
+  const { imageUrl } = await savePlantLeafOriginal(file, ext);
+
+  const tray = await getTrayById(ownerEmail, plant.trayId);
+  const trayName = tray?.name ?? plant.trayId;
+
+  const capture = await ingestCameraCapture({
+    id: `capture-${plant.id}-${Date.now()}`,
+    trayId: plant.trayId,
+    trayName,
+    deviceId: "user-photo",
+    imageUrl,
+    source: "hardware",
+    notes: captureNotes
+  });
+
+  const pool = requirePostgresPool();
+  const { prediction, report } = buildPendingAnalysisPredictionAndReport(
     plant,
     capture,
-    speciesDetection
+    reason
   );
 
-  const newHealth =
-    prediction.severity === "high"
-      ? Math.max(plant.healthScore - 8, 44)
-      : prediction.severity === "medium"
-        ? Math.max(plant.healthScore - 4, 60)
-        : Math.min(plant.healthScore + 2, 98);
-  const newStatus =
-    prediction.severity === "high"
-      ? "alert"
-      : prediction.severity === "medium"
-        ? "watch"
-        : "healthy";
+  return commitPhotoAnalysisPostgres(
+    pool,
+    ownerEmail,
+    plant,
+    capture,
+    imageUrl,
+    prediction,
+    report,
+    {
+      healthScore: plant.healthScore,
+      status: "watch",
+      latestDiagnosis: "Analysis pending"
+    }
+  );
+}
 
+async function commitPhotoAnalysisPostgres(
+  pool: import("pg").Pool,
+  ownerEmail: string,
+  plant: PlantUnit,
+  capture: CameraCapture,
+  imagePublicPath: string,
+  prediction: PredictionResult,
+  report: PlantReport,
+  plantUpdate: {
+    healthScore: number;
+    status: PlantHealthStatus;
+    latestDiagnosis: string;
+  }
+): Promise<{
+  captureId: string;
+  imageUrl: string;
+  report: PlantReport;
+  prediction: PredictionResult;
+}> {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -477,7 +578,13 @@ async function finalizePhotoPostgres(
        SET last_image_url = $1, last_image_at = NOW(), health_score = $2,
            status = $3, latest_diagnosis = $4, last_report_at = NOW()
        WHERE id = $5`,
-      [imagePublicPath, newHealth, newStatus, report.diagnosis, plant.id]
+      [
+        imagePublicPath,
+        plantUpdate.healthScore,
+        plantUpdate.status,
+        plantUpdate.latestDiagnosis,
+        plant.id
+      ]
     );
     await client.query("COMMIT");
   } catch (e) {
@@ -495,4 +602,52 @@ async function finalizePhotoPostgres(
     report,
     prediction
   };
+}
+
+async function finalizePhotoPostgres(
+  pool: import("pg").Pool,
+  ownerEmail: string,
+  plant: PlantUnit,
+  capture: CameraCapture,
+  imagePublicPath: string,
+  speciesDetection: PlantSpeciesDetection
+): Promise<{
+  captureId: string;
+  imageUrl: string;
+  report: PlantReport;
+  prediction: PredictionResult;
+}> {
+  const { prediction, report } = buildPredictionAndReportFromSpeciesDetection(
+    plant,
+    capture,
+    speciesDetection
+  );
+
+  const newHealth =
+    prediction.severity === "high"
+      ? Math.max(plant.healthScore - 8, 44)
+      : prediction.severity === "medium"
+        ? Math.max(plant.healthScore - 4, 60)
+        : Math.min(plant.healthScore + 2, 98);
+  const newStatus =
+    prediction.severity === "high"
+      ? "alert"
+      : prediction.severity === "medium"
+        ? "watch"
+        : "healthy";
+
+  return commitPhotoAnalysisPostgres(
+    pool,
+    ownerEmail,
+    plant,
+    capture,
+    imagePublicPath,
+    prediction,
+    report,
+    {
+      healthScore: newHealth,
+      status: newStatus,
+      latestDiagnosis: report.diagnosis
+    }
+  );
 }

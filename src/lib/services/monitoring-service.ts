@@ -1,5 +1,5 @@
-import { queryRows } from "@/lib/db/postgres";
-import type { MonitoringEvent } from "@/lib/types/domain";
+import { queryRows, requirePostgresPool } from "@/lib/db/postgres";
+import type { MonitoringEvent, MonitoringLevel } from "@/lib/types/domain";
 
 interface MonitoringRow {
   id: string;
@@ -70,4 +70,44 @@ export const getMonitoringLog = async ({
     message: row.message,
     createdAt: new Date(row.created_at).toISOString()
   }));
+};
+
+export const recordMonitoringEvent = async (input: {
+  id?: string;
+  captureId?: string;
+  trayId?: string;
+  plantId?: string;
+  level: MonitoringLevel;
+  title: string;
+  message: string;
+}): Promise<MonitoringEvent> => {
+  const pool = requirePostgresPool();
+  const id =
+    input.id ?? `evt-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+
+  await pool.query(
+    `INSERT INTO monitoring_events
+      (id, capture_id, tray_id, plant_id, level, title, message)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+    [
+      id,
+      input.captureId ?? null,
+      input.trayId ?? null,
+      input.plantId ?? null,
+      input.level,
+      input.title.slice(0, 160),
+      input.message
+    ]
+  );
+
+  return {
+    id,
+    captureId: input.captureId,
+    trayId: input.trayId,
+    plantId: input.plantId,
+    level: input.level,
+    title: input.title.slice(0, 160),
+    message: input.message,
+    createdAt: new Date().toISOString()
+  };
 };

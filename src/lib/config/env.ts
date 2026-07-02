@@ -9,6 +9,15 @@ const parseNumber = (value: string | undefined, fallback: number) => {
 const normalizeMultilineSecret = (value: string | undefined) =>
   (value ?? "").replace(/\\n/g, "\n");
 
+const parseBoolean = (value: string | undefined, fallback: boolean) => {
+  if (value === undefined || value.trim() === "") {
+    return fallback;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes";
+};
+
 const firebaseClientConfig: FirebaseClientConfig = {
   apiKey:
     process.env.NEXT_PUBLIC_FIREBASE_API_KEY ?? process.env.FIREBASE_API_KEY ?? "",
@@ -72,7 +81,8 @@ export const env = {
     /** Close-up / leaf photo → species labels (train on e.g. Kaggle plant-identification). */
     speciesInferenceUrl: process.env.CV_SPECIES_INFERENCE_URL ?? "",
     speciesInferenceApiKey: process.env.CV_SPECIES_INFERENCE_API_KEY ?? "",
-    requestTimeoutMs: parseNumber(process.env.CV_REQUEST_TIMEOUT_MS, 60_000)
+    requestTimeoutMs: parseNumber(process.env.CV_REQUEST_TIMEOUT_MS, 60_000),
+    allowDeferred: parseBoolean(process.env.CV_ALLOW_DEFERRED, false)
   },
   firebase: {
     ...firebaseClientConfig,
