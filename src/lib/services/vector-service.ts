@@ -28,7 +28,8 @@ const getQdrantClient = () => {
   if (!globalThis.__agrihomeQdrantClient__) {
     globalThis.__agrihomeQdrantClient__ = new QdrantClient({
       url: env.qdrant.url,
-      apiKey: env.qdrant.apiKey || undefined
+      apiKey: env.qdrant.apiKey || undefined,
+      ...(env.qdrant.timeoutMs > 0 ? { timeout: env.qdrant.timeoutMs } : {})
     });
   }
 
