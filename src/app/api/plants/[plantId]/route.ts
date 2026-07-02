@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 
 import {
+  apiErrorResponse,
+  API_ERROR_CODES,
+  mapErrorToApiResponse
+} from "@/lib/api/api-error";
+import {
   optInt,
   optNullableString,
   optPlantStatus,
@@ -29,10 +34,14 @@ export async function PATCH(
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    return apiErrorResponse(API_ERROR_CODES.BAD_REQUEST, "Invalid JSON", 400);
   }
   if (!body || typeof body !== "object") {
-    return NextResponse.json({ error: "Expected JSON object" }, { status: 400 });
+    return apiErrorResponse(
+      API_ERROR_CODES.BAD_REQUEST,
+      "Expected JSON object",
+      400
+    );
   }
   const o = body as Record<string, unknown>;
   const name = typeof o.name === "string" ? o.name : undefined;
@@ -64,12 +73,10 @@ export async function PATCH(
     latestDiagnosis !== undefined;
 
   if (!hasAny) {
-    return NextResponse.json(
-      {
-        error:
-          "Provide at least one field to update (name, cultivar, description, plantIdentifier, slotLabel, row, column, healthScore, status, latestDiagnosis)"
-      },
-      { status: 400 }
+    return apiErrorResponse(
+      API_ERROR_CODES.BAD_REQUEST,
+      "Provide at least one field to update (name, cultivar, description, plantIdentifier, slotLabel, row, column, healthScore, status, latestDiagnosis)",
+      400
     );
   }
 
@@ -87,12 +94,11 @@ export async function PATCH(
       ...(latestDiagnosis !== undefined ? { latestDiagnosis } : {})
     });
     if (!plant) {
-      return NextResponse.json({ error: "Plant not found" }, { status: 404 });
+      return apiErrorResponse(API_ERROR_CODES.NOT_FOUND, "Plant not found", 404);
     }
     return NextResponse.json({ data: plant });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "Update failed";
-    return NextResponse.json({ error: msg }, { status: 400 });
+    return mapErrorToApiResponse(e, "Update failed");
   }
 }
 
@@ -109,11 +115,10 @@ export async function DELETE(
   try {
     const ok = await deletePlantById(authResult.email, plantId);
     if (!ok) {
-      return NextResponse.json({ error: "Plant not found" }, { status: 404 });
+      return apiErrorResponse(API_ERROR_CODES.NOT_FOUND, "Plant not found", 404);
     }
     return NextResponse.json({ ok: true });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "Delete failed";
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return mapErrorToApiResponse(e, "Delete failed");
   }
 }

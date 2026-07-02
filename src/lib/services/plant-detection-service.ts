@@ -1,4 +1,5 @@
 import { env, hasSpeciesInferenceConfig } from "@/lib/config/env";
+import { CvUnavailableError } from "@/lib/api/api-error";
 
 /**
  * Species / disease from a leaf image via `CV_SPECIES_INFERENCE_URL` (e.g. cv-backend
@@ -160,7 +161,7 @@ export async function detectPlantSpeciesFromImage(
   imageBytes: Buffer
 ): Promise<PlantSpeciesDetection> {
   if (!hasSpeciesInferenceConfig) {
-    throw new Error(
+    throw new CvUnavailableError(
       "CV_SPECIES_INFERENCE_URL is required for species classification (see docs/CV_PIPELINE.md)."
     );
   }
@@ -185,12 +186,12 @@ export async function detectPlantSpeciesFromImage(
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    throw new Error(`Species classifier request failed: ${msg}`);
+    throw new CvUnavailableError(`Species classifier request failed: ${msg}`);
   }
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(
+    throw new CvUnavailableError(
       `Species classifier HTTP ${res.status}: ${text.slice(0, 280)}`
     );
   }
@@ -198,7 +199,7 @@ export async function detectPlantSpeciesFromImage(
   const body = (await res.json()) as RemoteSpeciesPayload;
   const parsed = parseRemoteSpecies(body);
   if (!parsed) {
-    throw new Error(
+    throw new CvUnavailableError(
       "Species classifier returned a response that could not be parsed."
     );
   }

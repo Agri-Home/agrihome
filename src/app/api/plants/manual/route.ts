@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 
 import {
+  apiErrorResponse,
+  API_ERROR_CODES,
+  mapErrorToApiResponse
+} from "@/lib/api/api-error";
+import {
   optInt,
   optNullableString,
   optPlantStatus,
@@ -22,10 +27,14 @@ export async function POST(request: Request) {
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    return apiErrorResponse(API_ERROR_CODES.BAD_REQUEST, "Invalid JSON", 400);
   }
   if (!body || typeof body !== "object") {
-    return NextResponse.json({ error: "Expected JSON object" }, { status: 400 });
+    return apiErrorResponse(
+      API_ERROR_CODES.BAD_REQUEST,
+      "Expected JSON object",
+      400
+    );
   }
   const o = body as Record<string, unknown>;
 
@@ -46,14 +55,6 @@ export async function POST(request: Request) {
     });
     return NextResponse.json({ data: plant });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "Failed to create plant";
-    const status =
-      msg.includes("required") ||
-      msg.includes("not found") ||
-      msg.includes("Invalid") ||
-      msg.includes("Provide both")
-        ? 400
-        : 500;
-    return NextResponse.json({ error: msg }, { status });
+    return mapErrorToApiResponse(e, "Failed to create plant");
   }
 }

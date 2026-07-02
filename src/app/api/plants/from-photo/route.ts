@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { apiErrorResponse, API_ERROR_CODES, mapErrorToApiResponse } from "@/lib/api/api-error";
 import {
   parseTrainingFeedbackTags,
   trainingFeedbackFieldsPresent
@@ -20,9 +21,10 @@ export async function POST(request: Request) {
   const form = await request.formData();
   const file = form.get("photo");
   if (!file || !(file instanceof File)) {
-    return NextResponse.json(
-      { error: "Missing photo (multipart field: photo)" },
-      { status: 400 }
+    return apiErrorResponse(
+      API_ERROR_CODES.BAD_REQUEST,
+      "Missing photo (multipart field: photo)",
+      400
     );
   }
 
@@ -75,11 +77,6 @@ export async function POST(request: Request) {
     });
     return NextResponse.json({ data });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "Failed to process photo";
-    const status =
-      msg.includes("not found") || msg.includes("Use JPEG") || msg.includes("too large")
-        ? 400
-        : 500;
-    return NextResponse.json({ error: msg }, { status });
+    return mapErrorToApiResponse(e, "Failed to process photo");
   }
 }
