@@ -41,6 +41,13 @@ interface PlantReportRow {
   created_at: Date | string;
 }
 
+interface PlantDashboardSummaryRow {
+  plant_count: number | string;
+  average_health_score: number | string;
+  alert_count: number | string;
+  watch_count: number | string;
+}
+
 interface PageCursor {
   createdAt: string;
   id: string;
@@ -192,6 +199,33 @@ export const listPlantsPage = async ({
             id: lastRow.id
           })
         : null
+  };
+};
+
+export const getPlantDashboardSummary = async (
+  ownerEmail: string
+): Promise<{
+  plantCount: number;
+  averageHealthScore: number;
+  alertCount: number;
+  watchCount: number;
+}> => {
+  const rows = await queryRows<PlantDashboardSummaryRow>(
+    `SELECT COUNT(*)::int AS plant_count,
+            COALESCE(ROUND(AVG(health_score)), 0)::int AS average_health_score,
+            COUNT(*) FILTER (WHERE status = 'alert')::int AS alert_count,
+            COUNT(*) FILTER (WHERE status = 'watch')::int AS watch_count
+     FROM plants
+     WHERE owner_email = $1`,
+    [ownerEmail]
+  );
+  const row = rows[0];
+
+  return {
+    plantCount: Number(row?.plant_count ?? 0),
+    averageHealthScore: Number(row?.average_health_score ?? 0),
+    alertCount: Number(row?.alert_count ?? 0),
+    watchCount: Number(row?.watch_count ?? 0)
   };
 };
 
