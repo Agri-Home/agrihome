@@ -51,6 +51,8 @@ export const env = {
   apiBaseUrl:
     process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000",
   autoRefreshMs: parseNumber(process.env.NEXT_PUBLIC_AUTO_REFRESH_MS, 15000),
+  /** Honor CF-Connecting-IP / X-Forwarded-For when behind Cloudflare Tunnel. */
+  trustProxy: parseBoolean(process.env.TRUST_PROXY, false),
   postgres: {
     host: process.env.POSTGRES_HOST ?? process.env.MARIADB_HOST ?? "",
     port: parseNumber(

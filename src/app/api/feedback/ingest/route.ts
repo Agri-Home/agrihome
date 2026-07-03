@@ -1,10 +1,11 @@
-import { NextResponse } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 
 import {
   apiErrorResponse,
   API_ERROR_CODES,
   mapErrorToApiResponse
 } from "@/lib/api/api-error";
+import { resolveClientIp } from "@/lib/api/client-ip";
 import { checkRateLimit } from "@/lib/api/rate-limit-memory";
 import { requireApiAccountUser } from "@/lib/auth/session";
 import {
@@ -30,16 +31,8 @@ const RATE_IP_PER_MIN = Number(
 );
 const WINDOW_MS = 60_000;
 
-function clientIp(request: Request): string {
-  const xf = request.headers.get("x-forwarded-for");
-  if (xf) {
-    return xf.split(",")[0]?.trim() || "unknown";
-  }
-  return request.headers.get("x-real-ip")?.trim() || "unknown";
-}
-
-export async function POST(request: Request) {
-  const ip = clientIp(request);
+export async function POST(request: NextRequest) {
+  const ip = resolveClientIp(request);
   const ipLimit = checkRateLimit(`fb-ip:${ip}`, RATE_IP_PER_MIN, WINDOW_MS);
   if (!ipLimit.ok) {
     return apiErrorResponse(
