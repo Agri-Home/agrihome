@@ -1,17 +1,15 @@
-# Full stack: AgriHome app + Postgres + Qdrant + Watchtower + PlantVillage classifier + trainer.
+# AgriHome core stack: app + Postgres + Qdrant + Watchtower.
 #
-# If the image was built without your NEXT_PUBLIC_* Firebase keys, rebuild the app image with
-# those build args, or confirm your image reads public env at runtime (some Next deployments do).
-#
-# Usage:
-#   export FIREBASE_API_KEY=...  # etc., or create a .env next to this file
+# Usage (Dockge or CLI):
+#   cp .env.example .env   # set secrets and Docker service hostnames (see below)
 #   docker compose -f docker-compose.agrihome-stack.yml up -d
 #
-# Classifier URL inside the compose network: http://plant-classifier:8765/v1/classify
-# From the Docker host (browser): https://agrihome.tech (Cloudflare Tunnel) or http://localhost:3000 (local)
+# Required .env overrides for in-compose networking:
+#   POSTGRES_HOST=postgres
+#   QDRANT_URL=http://qdrant:6333
+#   CV_SPECIES_INFERENCE_URL=http://plant-classifier:8765/v1/classify  # agrihome-ai stack
 #
-# PlantVillage feedback mirror is written under STORAGE (e.g. /data/agrihome/plantvillage-feedback).
-# For training, use the same class folder names as cv-backend/train.py (ImageFolder / raw/color layout).
+# `agrihome` waits for Postgres to pass `pg_isready` before starting.
 
 services:
   agrihome:
@@ -19,58 +17,14 @@ services:
     container_name: agrihome
     restart: unless-stopped
     depends_on:
-      - postgres
-      - qdrant
-      - plant-classifier
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
     ports:
       - "3000:3000"
-    environment:
-      APP_NAME: AgriHome Vision Console
-      NEXT_PUBLIC_APP_NAME: AgriHome Vision Console
-      NEXT_PUBLIC_API_BASE_URL: https://agrihome.tech
-      NEXT_PUBLIC_AUTO_REFRESH_MS: "15000"
-      TRUST_PROXY: "true"
-      NEXT_PUBLIC_USE_MOCK_DATA: "false"
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: "5432"
-      POSTGRES_USER: agrihome
-      POSTGRES_PASSWORD: password
-      POSTGRES_DATABASE: agrihome
-      QDRANT_URL: http://qdrant:6333
-      QDRANT_API_KEY: ""
-      QDRANT_COLLECTION: agrihome-image-embeddings
-      CV_SPECIES_INFERENCE_URL: http://plant-classifier:8765/v1/classify
-      STORAGE_ROOT: /data/agrihome
-      STORAGE_ORIGINALS_DIR: /data/agrihome/originals
-      STORAGE_PROCESSED_DIR: /data/agrihome/processed
-      STORAGE_TEMP_DIR: /data/agrihome/temp
-      # --- Feedback / ML (see .env.example) ---
-      FEEDBACK_MAX_IMAGE_BYTES: "8388608"
-      FEEDBACK_INGEST_MAX_PER_USER_PER_MIN: "20"
-      FEEDBACK_INGEST_MAX_PER_IP_PER_MIN: "60"
-      # Set for server-to-server uploads (optional):
-      FEEDBACK_INGEST_SERVICE_KEY: ${FEEDBACK_INGEST_SERVICE_KEY:-}
-      # Writable path inside the container; created on use. Add subfolder to your volume mount.
-      PLANTVILLAGE_FEEDBACK_DATASET_DIR: /data/agrihome/plantvillage-feedback
-      # JSON map: exact UI label string -> ImageFolder class folder (PlantVillage-style).
-      PLANTVILLAGE_FEEDBACK_FOLDER_MAP: '{"Early blight":"Tomato___Early_blight","Late blight":"Tomato___Late_blight","Powdery mildew":"Tomato___Powdery_mildew","Healthy":"Tomato___healthy"}'
-      # Firebase (client + admin — set in shell or .env file next to this compose)
-      NEXT_PUBLIC_FIREBASE_API_KEY: ${FIREBASE_API_KEY:-}
-      NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${FIREBASE_AUTH_DOMAIN:-agri-home.firebaseapp.com}
-      NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-agri-home}
-      NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: ${FIREBASE_STORAGE_BUCKET:-agri-home.firebasestorage.app}
-      NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${FIREBASE_MESSAGING_SENDER_ID:-}
-      NEXT_PUBLIC_FIREBASE_APP_ID: ${FIREBASE_APP_ID:-}
-      NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID: ${FIREBASE_MEASUREMENT_ID:-}
-      FIREBASE_API_KEY: ${FIREBASE_API_KEY:-}
-      FIREBASE_AUTH_DOMAIN: ${FIREBASE_AUTH_DOMAIN:-agri-home.firebaseapp.com}
-      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-agri-home}
-      FIREBASE_STORAGE_BUCKET: ${FIREBASE_STORAGE_BUCKET:-agri-home.firebasestorage.app}
-      FIREBASE_MESSAGING_SENDER_ID: ${FIREBASE_MESSAGING_SENDER_ID:-}
-      FIREBASE_APP_ID: ${FIREBASE_APP_ID:-}
-      FIREBASE_MEASUREMENT_ID: ${FIREBASE_MEASUREMENT_ID:-}
-      FIREBASE_CLIENT_EMAIL: ${FIREBASE_CLIENT_EMAIL:-}
-      FIREBASE_PRIVATE_KEY: ${FIREBASE_PRIVATE_KEY:-}
+    env_file:
+      - .env
     labels:
       - com.centurylinklabs.watchtower.enable=true
     volumes:
@@ -83,13 +37,23 @@ services:
     container_name: agrihome-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: agrihome
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: agrihome
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DATABASE}
     volumes:
       - /mnt/mainpool/apps/agrihome/postgres:/var/lib/postgresql/data
     ports:
       - "5432:5432"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\"",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
     labels:
       - com.centurylinklabs.watchtower.enable=false
     networks:
@@ -122,62 +86,6 @@ services:
       - --rolling-restart
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-    networks:
-      - agrihome_net
-
-  plant-trainer:
-    image: agrihome-plant-cv:cuda
-    container_name: plant-trainer
-    restart: unless-stopped
-    shm_size: "2gb"
-    working_dir: /workspace
-    command: ["sleep", "infinity"]
-    environment:
-      NVIDIA_VISIBLE_DEVICES: "0"
-      NVIDIA_DRIVER_CAPABILITIES: compute,utility
-    volumes:
-      - /mnt/mainpool/apps/agrihome-train:/workspace
-      - /mnt/mainpool/datasets/plantvillage:/data/plantvillage:ro
-      - /mnt/mainpool/datasets/plantdoc:/data/plantdoc:ro
-      - /mnt/mainpool/datasets/plant-leaf:/data/plant-leaf:ro
-    gpus:
-      - driver: nvidia
-        count: 1
-        capabilities: [gpu]
-    networks:
-      - agrihome_net
-
-  plant-classifier:
-    image: agrihome-plant-cv:cuda
-    container_name: plant-classifier
-    restart: unless-stopped
-    environment:
-      NVIDIA_VISIBLE_DEVICES: "0"
-      NVIDIA_DRIVER_CAPABILITIES: compute,utility
-      USE_CLAHE: "0"
-      # Avoid forcing a label when softmax is weak / top-2 are close (see cv-backend/serve.py)
-      CLASSIFY_MIN_CONFIDENCE: "0.45"
-      CLASSIFY_MIN_MARGIN: "0.10"
-    command:
-      - python
-      - /app/serve.py
-      - --checkpoint
-      - /workspace/artifacts/best.pt
-      - --classes
-      - /workspace/artifacts/classes.json
-      - --host
-      - 0.0.0.0
-      - --port
-      - "8765"
-    working_dir: /app
-    volumes:
-      - /mnt/mainpool/apps/agrihome-train:/workspace:ro
-    ports:
-      - "8754:8765"
-    gpus:
-      - driver: nvidia
-        count: 1
-        capabilities: [gpu]
     networks:
       - agrihome_net
 
