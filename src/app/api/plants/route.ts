@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 
-import { apiErrorResponse, API_ERROR_CODES, mapErrorToApiResponse } from "@/lib/api/api-error";
+import { mapErrorToApiResponse } from "@/lib/api/api-error";
 import { requireApiAccountUser } from "@/lib/auth/session";
-import { listPlantsByTray } from "@/lib/services/plant-service";
+import { listPlantsPage } from "@/lib/services/plant-service";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -16,11 +16,18 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const trayId = searchParams.get("trayId") ?? undefined;
-    const data = await listPlantsByTray(authResult.email, trayId);
+    const limit = Number(searchParams.get("limit") ?? undefined);
+    const page = await listPlantsPage({
+      ownerEmail: authResult.email,
+      trayId,
+      cursor: searchParams.get("cursor") ?? undefined,
+      limit: Number.isFinite(limit) ? limit : undefined
+    });
 
     return NextResponse.json({
-      data,
-      count: data.length,
+      data: page.data,
+      count: page.data.length,
+      nextCursor: page.nextCursor,
       refreshedAt: new Date().toISOString()
     });
   } catch (e) {

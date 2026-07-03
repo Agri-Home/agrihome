@@ -21,6 +21,7 @@ interface PlantRow {
   latest_diagnosis: string;
   last_image_url?: string | null;
   last_image_at?: Date | string | null;
+  created_at?: Date | string;
 }
 
 interface PlantReportRow {
@@ -40,8 +41,53 @@ interface PlantReportRow {
   created_at: Date | string;
 }
 
+interface PageCursor {
+  createdAt: string;
+  id: string;
+}
+
+export interface PaginatedResult<TItem> {
+  data: TItem[];
+  nextCursor: string | null;
+}
+
+const DEFAULT_PLANT_PAGE_LIMIT = 50;
+const DEFAULT_REPORT_PAGE_LIMIT = 12;
+const MAX_PAGE_LIMIT = 100;
 const parseStringArray = (value: string[] | string) =>
   Array.isArray(value) ? value : JSON.parse(value);
+
+const normalizePageLimit = (limit: number | undefined, fallback: number) => {
+  if (!Number.isFinite(limit) || !limit || limit <= 0) {
+    return fallback;
+  }
+
+  return Math.min(Math.floor(limit), MAX_PAGE_LIMIT);
+};
+
+const encodeCursor = (cursor: PageCursor) =>
+  Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url");
+
+const decodeCursor = (cursor: string | undefined): PageCursor | null => {
+  if (!cursor) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
+    if (
+      typeof parsed.createdAt !== "string" ||
+      Number.isNaN(Date.parse(parsed.createdAt)) ||
+      typeof parsed.id !== "string" ||
+      parsed.id.length === 0
+    ) {
+      throw new Error("Invalid cursor payload");
+    }
+    return parsed;
+  } catch {
+    throw new Error("Invalid pagination cursor");
+  }
+};
 
 const mapPlantRow = (row: PlantRow): PlantUnit => ({
   id: row.id,
@@ -87,6 +133,66 @@ export const listPlantsByTray = async (
   );
 
   return rows.map(mapPlantRow);
+};
+
+export const listPlantsPage = async ({
+  ownerEmail,
+  trayId,
+  cursor,
+  limit
+}: {
+  ownerEmail: string;
+  trayId?: string;
+  cursor?: string;
+  limit?: number;
+}): Promise<PaginatedResult<PlantUnit>> => {
+  const decodedCursor = decodeCursor(cursor);
+  const pageLimit = normalizePageLimit(limit, DEFAULT_PLANT_PAGE_LIMIT);
+  const values: Array<string | number> = [ownerEmail];
+  const clauses = [`owner_email = $1`];
+
+  if (trayId) {
+    values.push(trayId);
+    clauses.push(`tray_id = $${values.length}`);
+  }
+
+  if (decodedCursor) {
+    values.push(decodedCursor.createdAt, decodedCursor.id);
+    const createdAtParam = `$${values.length - 1}`;
+    const idParam = `$${values.length}`;
+    clauses.push(
+      `(created_at < ${createdAtParam} OR (created_at = ${createdAtParam} AND id < ${idParam}))`
+    );
+  }
+
+  values.push(pageLimit + 1);
+  const limitParam = `$${values.length}`;
+
+  const rows = await queryRows<PlantRow>(
+    `SELECT id, tray_id, mesh_ids, name, cultivar, description, plant_identifier, slot_label, row_index,
+            column_index, health_score, status, last_report_at, latest_diagnosis,
+            last_image_url, last_image_at, created_at
+     FROM plants
+     WHERE ${clauses.join(" AND ")}
+     ORDER BY created_at DESC, id DESC
+     LIMIT ${limitParam}`,
+    values
+  );
+
+  const hasNextPage = rows.length > pageLimit;
+  const visibleRows = rows.slice(0, pageLimit);
+  const lastRow = visibleRows[visibleRows.length - 1];
+
+  return {
+    data: visibleRows.map(mapPlantRow),
+    nextCursor:
+      hasNextPage && lastRow?.created_at
+        ? encodeCursor({
+            createdAt: new Date(lastRow.created_at).toISOString(),
+            id: lastRow.id
+          })
+        : null
+  };
 };
 
 export const getPlantById = async (
@@ -279,17 +385,21 @@ export async function deletePlantById(
   }
 }
 
-export const listPlantReports = async ({
+export const listPlantReportsPage = async ({
   ownerEmail,
   trayId,
   plantId,
-  limit = 12
+  cursor,
+  limit
 }: {
   ownerEmail: string;
   trayId?: string;
   plantId?: string;
+  cursor?: string;
   limit?: number;
-}): Promise<PlantReport[]> => {
+}): Promise<PaginatedResult<PlantReport>> => {
+  const decodedCursor = decodeCursor(cursor);
+  const pageLimit = normalizePageLimit(limit, DEFAULT_REPORT_PAGE_LIMIT);
   const clauses: string[] = [`p.owner_email = $1`];
   const params: Array<string | number> = [ownerEmail];
 
@@ -303,7 +413,16 @@ export const listPlantReports = async ({
     clauses.push(`pr.plant_id = $${params.length}`);
   }
 
-  params.push(limit);
+  if (decodedCursor) {
+    params.push(decodedCursor.createdAt, decodedCursor.id);
+    const createdAtParam = `$${params.length - 1}`;
+    const idParam = `$${params.length}`;
+    clauses.push(
+      `(pr.created_at < ${createdAtParam} OR (pr.created_at = ${createdAtParam} AND pr.id < ${idParam}))`
+    );
+  }
+
+  params.push(pageLimit + 1);
   const limitParam = `$${params.length}`;
 
   const rows = await queryRows<PlantReportRow>(
@@ -317,25 +436,49 @@ export const listPlantReports = async ({
      FROM plant_reports pr
      INNER JOIN plants p ON p.id = pr.plant_id
      WHERE ${clauses.join(" AND ")}
-     ORDER BY pr.created_at DESC
+     ORDER BY pr.created_at DESC, pr.id DESC
      LIMIT ${limitParam}`,
     params
   );
 
-  return rows.map((row) => ({
-    id: row.id,
-    trayId: row.tray_id,
-    plantId: row.plant_id,
-    captureId: row.capture_id ?? undefined,
-    diagnosis: row.diagnosis,
-    confidence: Number(row.confidence),
-    severity: row.severity,
-    diseases: parseStringArray(row.diseases),
-    deficiencies: parseStringArray(row.deficiencies),
-    anomalies: parseStringArray(row.anomalies),
-    summary: row.summary,
-    recommendedAction: row.recommended_action,
-    status: row.status,
-    createdAt: new Date(row.created_at).toISOString()
-  }));
+  const hasNextPage = rows.length > pageLimit;
+  const visibleRows = rows.slice(0, pageLimit);
+  const lastRow = visibleRows[visibleRows.length - 1];
+
+  return {
+    data: visibleRows.map((row) => ({
+      id: row.id,
+      trayId: row.tray_id,
+      plantId: row.plant_id,
+      captureId: row.capture_id ?? undefined,
+      diagnosis: row.diagnosis,
+      confidence: Number(row.confidence),
+      severity: row.severity,
+      diseases: parseStringArray(row.diseases),
+      deficiencies: parseStringArray(row.deficiencies),
+      anomalies: parseStringArray(row.anomalies),
+      summary: row.summary,
+      recommendedAction: row.recommended_action,
+      status: row.status,
+      createdAt: new Date(row.created_at).toISOString()
+    })),
+    nextCursor:
+      hasNextPage && lastRow
+        ? encodeCursor({
+            createdAt: new Date(lastRow.created_at).toISOString(),
+            id: lastRow.id
+          })
+        : null
+  };
+};
+
+export const listPlantReports = async (input: {
+  ownerEmail: string;
+  trayId?: string;
+  plantId?: string;
+  limit?: number;
+}): Promise<PlantReport[]> => {
+  const page = await listPlantReportsPage(input);
+
+  return page.data;
 };
