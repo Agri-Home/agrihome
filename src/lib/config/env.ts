@@ -61,7 +61,11 @@ export const env = {
     password: process.env.POSTGRES_PASSWORD ?? process.env.MARIADB_PASSWORD ?? "",
     database:
       process.env.POSTGRES_DATABASE ?? process.env.MARIADB_DATABASE ?? "",
-    poolMax: parseNumber(process.env.POSTGRES_POOL_MAX, 5)
+    poolMax: parseNumber(process.env.POSTGRES_POOL_MAX, 5),
+    statementTimeoutMs: Math.max(
+      0,
+      parseNumber(process.env.POSTGRES_STATEMENT_TIMEOUT_MS, 0)
+    )
   },
   /** Optional ImageFolder copy of feedback (same layout as PlantVillage raw/color). */
   feedback: {

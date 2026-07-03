@@ -13,6 +13,7 @@
     "db:seed": "node scripts/seed-postgres.cjs",
     "db:migrate": "node scripts/seed-postgres.cjs --migrations-only",
     "db:schema": "node scripts/seed-postgres.cjs --schema-only",
+    "db:check-statement-timeout": "node scripts/check-statement-timeout.cjs",
     "ml:export-feedback": "node scripts/ml/export-feedback-dataset.cjs",
     "ml:retrain-gate": "node scripts/ml/retrain-gate.cjs"
   },

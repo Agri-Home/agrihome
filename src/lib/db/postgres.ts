@@ -1,4 +1,4 @@
-import { Pool } from "pg";
+import { Pool, type PoolConfig } from "pg";
 
 import { env, hasPostgresConfig } from "@/lib/config/env";
 
@@ -12,14 +12,21 @@ export const getPostgresPool = () => {
   }
 
   if (!globalThis.__agrihomePostgresPool__) {
-    globalThis.__agrihomePostgresPool__ = new Pool({
+    const statementTimeoutMs = Math.floor(env.postgres.statementTimeoutMs);
+    const poolConfig: PoolConfig = {
       host: env.postgres.host,
       port: env.postgres.port,
       user: env.postgres.user,
       password: env.postgres.password,
       database: env.postgres.database,
       max: Math.max(1, env.postgres.poolMax)
-    });
+    };
+
+    if (statementTimeoutMs > 0) {
+      poolConfig.options = `-c statement_timeout=${statementTimeoutMs}`;
+    }
+
+    globalThis.__agrihomePostgresPool__ = new Pool(poolConfig);
   }
 
   return globalThis.__agrihomePostgresPool__;
