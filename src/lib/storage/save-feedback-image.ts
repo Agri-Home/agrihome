@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
-import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 
+import { getStorageProvider } from "@/lib/storage/get-storage-provider";
 import { getOriginalsRoot } from "@/lib/storage/roots";
 
 export type FeedbackImageExt = "jpg" | "png" | "webp";
@@ -21,7 +21,6 @@ export async function saveFeedbackImageLocal(
   storageKey: string;
   mimeType: string;
 }> {
-  const root = getOriginalsRoot();
   const now = new Date();
   const y = String(now.getUTCFullYear());
   const m = String(now.getUTCMonth() + 1).padStart(2, "0");
@@ -29,10 +28,7 @@ export async function saveFeedbackImageLocal(
   const base = options?.filenameBase?.trim() || randomUUID();
   const safeBase = base.replace(/[^a-zA-Z0-9._-]/g, "_");
   const filename = `${safeBase}.${ext}`;
-  const dir = path.join(root, "feedback", y, m, d);
-  await mkdir(dir, { recursive: true });
-  const absolutePath = path.join(dir, filename);
-  await writeFile(absolutePath, buffer);
+  const storageKey = `feedback/${y}/${m}/${d}/${filename}`;
 
   const mimeType =
     ext === "png"
@@ -41,12 +37,12 @@ export async function saveFeedbackImageLocal(
         ? "image/webp"
         : "image/jpeg";
 
-  const storageKey = `feedback/${y}/${m}/${d}/${filename}`;
-  const imageUrl = `/api/files/originals/feedback/${y}/${m}/${d}/${filename}`;
+  const provider = getStorageProvider();
+  const stored = await provider.put("originals", storageKey, buffer, mimeType);
 
   return {
-    imageUrl,
-    absolutePath,
+    imageUrl: stored.url,
+    absolutePath: path.join(getOriginalsRoot(), storageKey),
     storageKey,
     mimeType
   };
