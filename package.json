@@ -14,7 +14,8 @@
     "db:migrate": "node scripts/seed-postgres.cjs --migrations-only",
     "db:schema": "node scripts/seed-postgres.cjs --schema-only",
     "ml:export-feedback": "node scripts/ml/export-feedback-dataset.cjs",
-    "ml:retrain-gate": "node scripts/ml/retrain-gate.cjs"
+    "ml:retrain-gate": "node scripts/ml/retrain-gate.cjs",
+    "ops:storage-usage": "node scripts/ops/storage-usage.cjs"
   },
   "dependencies": {
     "@qdrant/js-client-rest": "^1.11.0",
