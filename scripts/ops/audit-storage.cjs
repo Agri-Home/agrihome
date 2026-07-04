@@ -4,6 +4,9 @@
  *
  * Usage:
  *   node scripts/ops/audit-storage.cjs
+ *   node scripts/ops/audit-storage.cjs --delete --older-than-days=90
+ *
+ * Deletion requires BOTH --delete and --older-than-days=N. Read-only by default.
  *
  * Env: POSTGRES_*, STORAGE_ROOT / STORAGE_ORIGINALS_DIR
  */
@@ -50,6 +53,26 @@ function originalsRoot() {
   const sr = process.env.STORAGE_ROOT?.trim();
   if (sr) return path.resolve(sr, "originals");
   return path.join(rootDir, "storage", "originals");
+}
+
+function parseArgs(argv) {
+  const flags = {
+    delete: false,
+    olderThanDays: null
+  };
+
+  for (const arg of argv) {
+    if (arg === "--delete") {
+      flags.delete = true;
+      continue;
+    }
+    const match = arg.match(/^--older-than-days=(\d+)$/);
+    if (match) {
+      flags.olderThanDays = Number(match[1]);
+    }
+  }
+
+  return flags;
 }
 
 function urlToStorageKey(imageUrl) {
@@ -128,8 +151,25 @@ async function loadReferencedKeys(pool) {
   return referenced;
 }
 
+function validateDeleteFlags(flags) {
+  if (flags.delete && flags.olderThanDays === null) {
+    console.error("error: --delete requires --older-than-days=N");
+    process.exit(1);
+  }
+  if (!flags.delete && flags.olderThanDays !== null) {
+    console.error("error: --older-than-days=N requires --delete (dry-run is the default)");
+    process.exit(1);
+  }
+  if (flags.delete && flags.olderThanDays < 1) {
+    console.error("error: --older-than-days must be >= 1");
+    process.exit(1);
+  }
+}
+
 async function main() {
   loadDotenv();
+  const flags = parseArgs(process.argv.slice(2));
+  validateDeleteFlags(flags);
 
   const root = originalsRoot();
   const pool = new Pool({
@@ -157,7 +197,7 @@ async function main() {
   const largestOrphans = orphans.slice(0, 10);
 
   console.log("AgriHome storage audit (originals)");
-  console.log("mode: dry-run");
+  console.log(`mode: ${flags.delete ? "delete" : "dry-run"}`);
   console.log(`scanned_root: [configured originals volume]`);
   console.log("");
   console.log(`total_files: ${files.length}`);
@@ -176,8 +216,35 @@ async function main() {
     }
   }
 
+  if (!flags.delete) {
+    console.log("");
+    console.log("dry-run only — no files deleted.");
+    console.log("To reclaim disk after review: node scripts/ops/audit-storage.cjs --delete --older-than-days=90");
+    return;
+  }
+
+  const cutoff = Date.now() - flags.olderThanDays * 24 * 60 * 60 * 1000;
+  const deletable = orphans.filter((f) => f.mtimeMs < cutoff);
+  let deleted = 0;
+  let deletedBytes = 0;
+  const skippedYoung = orphans.length - deletable.length;
+
+  for (const item of deletable) {
+    try {
+      fs.unlinkSync(item.full);
+      deleted += 1;
+      deletedBytes += item.size;
+    } catch (err) {
+      console.error(`warn: could not delete ${item.rel}: ${err.message}`);
+    }
+  }
+
   console.log("");
-  console.log("dry-run only — no files deleted.");
+  console.log("delete_summary:");
+  console.log(`  older_than_days: ${flags.olderThanDays}`);
+  console.log(`  deleted_files: ${deleted}`);
+  console.log(`  deleted_bytes: ${deletedBytes} (${formatBytes(deletedBytes)})`);
+  console.log(`  skipped_young_orphans: ${skippedYoung}`);
 }
 
 main().catch((err) => {
