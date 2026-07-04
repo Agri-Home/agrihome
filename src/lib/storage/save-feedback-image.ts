@@ -3,6 +3,7 @@ import path from "path";
 
 import { getStorageProvider } from "@/lib/storage/get-storage-provider";
 import { getOriginalsRoot } from "@/lib/storage/roots";
+import { processedThumbnailKey, writeListThumbnail } from "@/lib/storage/thumbnail";
 
 export type FeedbackImageExt = "jpg" | "png" | "webp";
 
@@ -20,6 +21,7 @@ export async function saveFeedbackImageLocal(
   absolutePath: string;
   storageKey: string;
   mimeType: string;
+  thumbnailUrl: string | null;
 }> {
   const now = new Date();
   const y = String(now.getUTCFullYear());
@@ -39,11 +41,13 @@ export async function saveFeedbackImageLocal(
 
   const provider = getStorageProvider();
   const stored = await provider.put("originals", storageKey, buffer, mimeType);
+  const thumbnailUrl = await writeListThumbnail(buffer, processedThumbnailKey(storageKey));
 
   return {
     imageUrl: stored.url,
     absolutePath: path.join(getOriginalsRoot(), storageKey),
     storageKey,
-    mimeType
+    mimeType,
+    thumbnailUrl
   };
 }

@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import Image from "next/image";
 
+import { toProcessedImageUrl } from "@/lib/storage/thumbnail";
 import { cn } from "@/lib/utils";
 
 type PlantImageProps = {
@@ -11,6 +13,8 @@ type PlantImageProps = {
   className?: string;
   sizes?: string;
   priority?: boolean;
+  /** Use processed list thumbnail when available; falls back to the original on error. */
+  preferThumbnail?: boolean;
 };
 
 /**
@@ -24,21 +28,43 @@ export function PlantImage({
   fill,
   className,
   sizes,
-  priority
+  priority,
+  preferThumbnail = false
 }: PlantImageProps) {
+  const initialSrc =
+    preferThumbnail && src.startsWith("/api/files/originals/")
+      ? toProcessedImageUrl(src) ?? src
+      : src;
+  const [displaySrc, setDisplaySrc] = useState(initialSrc);
+  const usingThumbnail =
+    preferThumbnail && displaySrc !== src && displaySrc.startsWith("/api/files/processed/");
+
   if (src.startsWith("/uploads/") || src.startsWith("/api/files/")) {
+    const handleError = () => {
+      if (usingThumbnail) {
+        setDisplaySrc(src);
+      }
+    };
+
     if (fill) {
       return (
         <img
-          src={src}
+          src={displaySrc}
           alt={alt}
           className={cn("absolute inset-0 h-full w-full object-cover", className)}
           decoding="async"
+          onError={handleError}
         />
       );
     }
     return (
-      <img src={src} alt={alt} className={className} decoding="async" />
+      <img
+        src={displaySrc}
+        alt={alt}
+        className={className}
+        decoding="async"
+        onError={handleError}
+      />
     );
   }
 

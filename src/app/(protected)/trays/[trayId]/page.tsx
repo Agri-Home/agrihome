@@ -194,6 +194,7 @@ export default async function TrayDetailPage({
                         fill
                         className="object-cover"
                         sizes="56px"
+                        preferThumbnail
                       />
                     ) : (
                       <span className="flex h-full items-center justify-center">

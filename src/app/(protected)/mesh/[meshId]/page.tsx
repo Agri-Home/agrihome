@@ -141,7 +141,7 @@ export default async function MeshDetailPage({
                 <Card interactive className="flex items-center gap-3 p-3.5">
                   <div className="relative h-12 w-12 shrink-0 overflow-hidden rounded-2xl bg-mist ring-1 ring-ink/5">
                     {plant.lastImageUrl ? (
-                      <PlantImage src={plant.lastImageUrl} alt="" fill className="object-cover" sizes="48px" />
+                      <PlantImage src={plant.lastImageUrl} alt="" fill className="object-cover" sizes="48px" preferThumbnail />
                     ) : (
                       <span className="flex h-full items-center justify-center">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="text-ink/20"><path d="M7 20h10M10 20c5.5-2.5.8-6.4 3-10M9.5 9.4c1.1.8 1.8 2.2 2.3 3.7-2 .4-3.5.4-4.8-.3-1.2-.6-2.3-1.9-3-4.2 2.8-.5 4.4 0 5.5.8z" /><path d="M14.1 6a7 7 0 00-1.1 4c1.9-.1 3.3-.6 4.3-1.4 1-1 1.6-2.3 1.7-4.6-2.7.1-4 1-4.9 2z" /></svg>

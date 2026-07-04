@@ -3,6 +3,7 @@ import path from "path";
 
 import { getStorageProvider } from "@/lib/storage/get-storage-provider";
 import { getOriginalsRoot } from "@/lib/storage/roots";
+import { processedThumbnailKey, writeListThumbnail } from "@/lib/storage/thumbnail";
 
 export type LeafImageExt = "jpg" | "png" | "webp";
 
@@ -18,6 +19,7 @@ export async function savePlantLeafOriginal(
   absolutePath: string;
   bytes: number;
   mimeType: string;
+  thumbnailUrl: string | null;
 }> {
   const now = new Date();
   const y = String(now.getUTCFullYear());
@@ -36,11 +38,13 @@ export async function savePlantLeafOriginal(
 
   const provider = getStorageProvider();
   const stored = await provider.put("originals", storageKey, buffer, mimeType);
+  const thumbnailUrl = await writeListThumbnail(buffer, processedThumbnailKey(storageKey));
 
   return {
     imageUrl: stored.url,
     absolutePath: path.join(getOriginalsRoot(), storageKey),
     bytes: stored.bytes,
-    mimeType
+    mimeType,
+    thumbnailUrl
   };
 }
