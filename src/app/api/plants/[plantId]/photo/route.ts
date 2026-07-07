@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { apiErrorResponse, API_ERROR_CODES, mapErrorToApiResponse } from "@/lib/api/api-error";
 import { requireApiAccountUser } from "@/lib/auth/session";
 import { analyzePlantPhotoFromUpload } from "@/lib/services/plant-manual-service";
 
@@ -19,9 +20,10 @@ export async function POST(
   const form = await request.formData();
   const file = form.get("photo");
   if (!file || !(file instanceof File)) {
-    return NextResponse.json(
-      { error: "Missing photo field (multipart image file)" },
-      { status: 400 }
+    return apiErrorResponse(
+      API_ERROR_CODES.BAD_REQUEST,
+      "Missing photo field (multipart image file)",
+      400
     );
   }
 
@@ -35,13 +37,6 @@ export async function POST(
     );
     return NextResponse.json({ data });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "Analysis failed";
-    const status =
-      msg === "Plant not found"
-        ? 404
-        : msg.includes("too large") || msg.includes("Use JPEG")
-          ? 400
-          : 500;
-    return NextResponse.json({ error: msg }, { status });
+    return mapErrorToApiResponse(e, "Analysis failed");
   }
 }

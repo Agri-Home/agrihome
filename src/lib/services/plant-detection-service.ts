@@ -1,4 +1,5 @@
 import { env, hasSpeciesInferenceConfig } from "@/lib/config/env";
+import { CvUnavailableError } from "@/lib/api/api-error";
 
 /**
  * Species / disease from a leaf image via `CV_SPECIES_INFERENCE_URL` (e.g. cv-backend
@@ -11,6 +12,8 @@ export interface PlantSpeciesDetection {
   cultivar: string;
   /** Model confidence for the predicted class. */
   identificationConfidence: number;
+  /** True when the classifier did not meet confidence/margin thresholds (e.g. unrelated image). */
+  classificationUncertain?: boolean;
   /** Disease or health condition (PlantVillage folder suffix, humanized). */
   plantCondition?: string;
   /** Original classifier label (e.g. Tomato___Early_blight). */
@@ -31,6 +34,8 @@ type RemoteSpeciesPayload = {
   disease?: unknown;
   condition?: unknown;
   isHealthy?: unknown;
+  classificationUncertain?: unknown;
+  rejected?: unknown;
 };
 
 function humanizeUnderscores(s: string): string {
@@ -69,6 +74,8 @@ function parsePlantVillageStyleLabel(label: string): {
 }
 
 function parseRemoteSpecies(body: RemoteSpeciesPayload): PlantSpeciesDetection | null {
+  const uncertainFlag =
+    body.classificationUncertain === true || body.rejected === true;
   const confRaw = body.identificationConfidence ?? body.confidence;
   const identificationConfidence = Number(confRaw);
   if (!Number.isFinite(identificationConfidence)) {
@@ -109,7 +116,8 @@ function parseRemoteSpecies(body: RemoteSpeciesPayload): PlantSpeciesDetection |
       identificationConfidence: conf,
       plantCondition: plantCondition ?? cultivarExplicit,
       rawLabel: labelStr || undefined,
-      isHealthy
+      isHealthy,
+      classificationUncertain: uncertainFlag ? true : undefined
     };
   }
 
@@ -124,7 +132,8 @@ function parseRemoteSpecies(body: RemoteSpeciesPayload): PlantSpeciesDetection |
       identificationConfidence: conf,
       plantCondition: plantCondition ?? parsed.plantCondition,
       rawLabel: parsed.rawLabel,
-      isHealthy
+      isHealthy,
+      classificationUncertain: uncertainFlag ? true : undefined
     };
   }
 
@@ -137,7 +146,8 @@ function parseRemoteSpecies(body: RemoteSpeciesPayload): PlantSpeciesDetection |
       plantCondition: plantCondition ?? parsed.plantCondition,
       rawLabel: parsed.rawLabel,
       isHealthy:
-        typeof body.isHealthy === "boolean" ? body.isHealthy : parsed.isHealthy
+        typeof body.isHealthy === "boolean" ? body.isHealthy : parsed.isHealthy,
+      classificationUncertain: uncertainFlag ? true : undefined
     };
   }
 
@@ -151,7 +161,7 @@ export async function detectPlantSpeciesFromImage(
   imageBytes: Buffer
 ): Promise<PlantSpeciesDetection> {
   if (!hasSpeciesInferenceConfig) {
-    throw new Error(
+    throw new CvUnavailableError(
       "CV_SPECIES_INFERENCE_URL is required for species classification (see docs/CV_PIPELINE.md)."
     );
   }
@@ -172,16 +182,16 @@ export async function detectPlantSpeciesFromImage(
       body: JSON.stringify({
         imageBase64: imageBytes.toString("base64")
       }),
-      signal: AbortSignal.timeout(60_000)
+      signal: AbortSignal.timeout(env.cv.requestTimeoutMs)
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    throw new Error(`Species classifier request failed: ${msg}`);
+    throw new CvUnavailableError(`Species classifier request failed: ${msg}`);
   }
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(
+    throw new CvUnavailableError(
       `Species classifier HTTP ${res.status}: ${text.slice(0, 280)}`
     );
   }
@@ -189,7 +199,7 @@ export async function detectPlantSpeciesFromImage(
   const body = (await res.json()) as RemoteSpeciesPayload;
   const parsed = parseRemoteSpecies(body);
   if (!parsed) {
-    throw new Error(
+    throw new CvUnavailableError(
       "Species classifier returned a response that could not be parsed."
     );
   }

@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
 
+import {
+  apiErrorResponse,
+  API_ERROR_CODES,
+  mapErrorToApiResponse
+} from "@/lib/api/api-error";
 import { requireApiAccountUser } from "@/lib/auth/session";
 import { createTraySystem, listTraySystems } from "@/lib/services/topology-service";
 
@@ -12,13 +17,17 @@ export async function GET() {
     return authResult;
   }
 
-  const data = await listTraySystems(authResult.email);
+  try {
+    const data = await listTraySystems(authResult.email);
 
-  return NextResponse.json({
-    data,
-    count: data.length,
-    refreshedAt: new Date().toISOString()
-  });
+    return NextResponse.json({
+      data,
+      count: data.length,
+      refreshedAt: new Date().toISOString()
+    });
+  } catch (e) {
+    return mapErrorToApiResponse(e, "Failed to list trays");
+  }
 }
 
 export async function POST(request: Request) {
@@ -31,10 +40,14 @@ export async function POST(request: Request) {
   try {
     body = await request.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    return apiErrorResponse(API_ERROR_CODES.BAD_REQUEST, "Invalid JSON", 400);
   }
   if (!body || typeof body !== "object") {
-    return NextResponse.json({ error: "Expected JSON object" }, { status: 400 });
+    return apiErrorResponse(
+      API_ERROR_CODES.BAD_REQUEST,
+      "Expected JSON object",
+      400
+    );
   }
   const o = body as Record<string, unknown>;
   const name = typeof o.name === "string" ? o.name : "";
@@ -57,8 +70,6 @@ export async function POST(request: Request) {
     });
     return NextResponse.json({ data: tray });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "Failed to create tray";
-    const status = msg.includes("required") ? 400 : 500;
-    return NextResponse.json({ error: msg }, { status });
+    return mapErrorToApiResponse(e, "Failed to create tray");
   }
 }
