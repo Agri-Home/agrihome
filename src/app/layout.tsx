@@ -1,15 +1,8 @@
 import type { Metadata, Viewport } from "next";
-import { DM_Sans } from "next/font/google";
 
 import { PwaProvider } from "@/components/providers/PwaProvider";
 import { SnackbarProvider } from "@/components/providers/SnackbarProvider";
 import "./globals.css";
-
-const dmSans = DM_Sans({
-  subsets: ["latin"],
-  variable: "--font-app",
-  weight: ["400", "500", "600", "700"]
-});
 
 export const metadata: Metadata = {
   title: "AgriHome",
@@ -37,11 +30,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`${dmSans.variable} font-sans antialiased`}>
+      <body className="font-sans antialiased">
         <PwaProvider>
-          <SnackbarProvider>
-            {children}
-          </SnackbarProvider>
+          <SnackbarProvider>{children}</SnackbarProvider>
         </PwaProvider>
       </body>
     </html>

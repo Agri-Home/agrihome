@@ -1,91 +1,84 @@
-# Build context for plant-classifier / plant-trainer MUST exist on the host and contain
-# Dockerfile.cuda, train.py, serve.py, requirements-docker-cuda.txt.
-#
-# Option A — full git clone on the server:
-#   cd /mnt/mainpool/apps && git clone <your-repo> agrihome && cd agrihome
-#   (default context ./cv-backend works)
-#
-# Option B — compose lives elsewhere: set in a .env next to this file:
-#   AGRIHOME_CV_BACKEND=/absolute/path/to/cv-backend
-#
-# If context is wrong, build fails and Compose tries to "pull" agrihome-plant-cv:cuda → access denied.
-#
-# First-time host dirs for app file storage (agrihome service bind mount):
-#   mkdir -p /mnt/mainpool/apps/agrihome/uploads/{originals,processed,temp,models,backups}
+# AgriHome development/testing deployment for TrueNAS + Dockge.
+# Copy .env.example to .env and replace placeholder values before starting.
 
 services:
   agrihome:
-    image: ghcr.io/bhusallaxman22/agrihome:latest
+    image: ${AGRIHOME_IMAGE:-ghcr.io/bhusallaxman22/agrihome:latest}
     container_name: agrihome
     restart: unless-stopped
     depends_on:
-      - postgres
-      - qdrant
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
     ports:
       - "3000:3000"
+    env_file:
+      - .env
     environment:
-      APP_NAME: AgriHome Vision Console
-      NEXT_PUBLIC_APP_NAME: AgriHome Vision Console
-      NEXT_PUBLIC_API_BASE_URL: http://localhost:3000
-      NEXT_PUBLIC_AUTO_REFRESH_MS: 15000
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
-      POSTGRES_USER: agrihome
-      POSTGRES_PASSWORD: password
-      POSTGRES_DATABASE: agrihome
       QDRANT_URL: http://qdrant:6333
-      QDRANT_API_KEY: ""
-      QDRANT_COLLECTION: agrihome-image-embeddings
-      CV_SPECIES_INFERENCE_URL: http://plant-classifier:8765/v1/classify
-      # Bind mount below; host should have originals/processed/temp (see comment).
+      CV_SPECIES_INFERENCE_URL: http://plant-classifier:${CLASSIFIER_PORT:-8765}/v1/classify
       STORAGE_ROOT: /data/agrihome
       STORAGE_ORIGINALS_DIR: /data/agrihome/originals
       STORAGE_PROCESSED_DIR: /data/agrihome/processed
       STORAGE_TEMP_DIR: /data/agrihome/temp
     volumes:
-      # Host layout: .../uploads/{originals,processed,temp,models,backups}
       - /mnt/mainpool/apps/agrihome/uploads:/data/agrihome
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:3000/api/health?ready=1').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
     labels:
       - com.centurylinklabs.watchtower.enable=true
     networks:
       - agrihome_net
 
   postgres:
-    image: postgres:16
+    image: postgres:${POSTGRES_IMAGE_TAG:-16.14}
     container_name: agrihome-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: agrihome
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: agrihome
+      POSTGRES_USER: ${POSTGRES_USER:-agrihome}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DATABASE:-agrihome}
     volumes:
       - /mnt/mainpool/apps/agrihome/postgres:/var/lib/postgresql/data
       - ./db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
       - ./db/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-agrihome} -d ${POSTGRES_DATABASE:-agrihome}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
     labels:
       - com.centurylinklabs.watchtower.enable=false
     networks:
       - agrihome_net
 
   qdrant:
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:${QDRANT_IMAGE_TAG:-v1.18.2}
     container_name: agrihome-qdrant
     restart: unless-stopped
     volumes:
       - /mnt/mainpool/apps/agrihome/qdrant/storage:/qdrant/storage
       - /mnt/mainpool/apps/agrihome/qdrant/snapshots:/qdrant/snapshots
     ports:
-      - "6333:6333"
-      - "6334:6334"
+      - "127.0.0.1:6333:6333"
+      - "127.0.0.1:6334:6334"
     labels:
       - com.centurylinklabs.watchtower.enable=false
     networks:
       - agrihome_net
 
   watchtower:
-    image: containrrr/watchtower:latest
+    image: containrrr/watchtower:${WATCHTOWER_IMAGE_TAG:-1.7.1}
     container_name: agrihome-watchtower
     restart: unless-stopped
     command:
@@ -109,14 +102,11 @@ services:
     working_dir: /workspace
     command: sleep infinity
     environment:
-      NVIDIA_VISIBLE_DEVICES: "0"
-      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-0}
+      NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
     volumes:
       - /mnt/mainpool/apps/agrihome-train:/workspace
       - /mnt/mainpool/datasets/plantvillage:/data/plantvillage:ro
-      # Optional multi-dataset training (see cv-backend/README.md):
-      # - /mnt/mainpool/datasets/plantdoc:/data/plantdoc:ro
-      # - /mnt/mainpool/datasets/plant-leaf:/data/plant-leaf:ro
     gpus:
       - driver: nvidia
         count: 1
@@ -132,25 +122,31 @@ services:
     container_name: plant-classifier
     restart: unless-stopped
     environment:
-      NVIDIA_VISIBLE_DEVICES: "0"
-      NVIDIA_DRIVER_CAPABILITIES: compute,utility
-      USE_CLAHE: "0"
+      NVIDIA_VISIBLE_DEVICES: ${NVIDIA_VISIBLE_DEVICES:-0}
+      NVIDIA_DRIVER_CAPABILITIES: ${NVIDIA_DRIVER_CAPABILITIES:-compute,utility}
+      USE_CLAHE: ${USE_CLAHE:-0}
     command:
       - python
       - /app/serve.py
       - --checkpoint
-      - /workspace/artifacts/best.pt
+      - ${MODEL_PATH:-/workspace/artifacts/best.pt}
       - --classes
-      - /workspace/artifacts/classes.json
+      - ${CLASSES_PATH:-/workspace/artifacts/classes.json}
       - --host
       - 0.0.0.0
       - --port
-      - "8765"
+      - ${CLASSIFIER_PORT:-8765}
     working_dir: /app
     volumes:
       - /mnt/mainpool/apps/agrihome-train:/workspace:ro
     ports:
-      - "8765:8765"
+      - "127.0.0.1:${CLASSIFIER_HOST_PORT:-8765}:${CLASSIFIER_PORT:-8765}"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:${CLASSIFIER_PORT:-8765}/health', timeout=5)\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
     gpus:
       - driver: nvidia
         count: 1

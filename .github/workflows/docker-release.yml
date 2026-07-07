@@ -5,6 +5,10 @@ on:
     branches:
       - main
       - master
+  pull_request:
+    branches:
+      - main
+      - master
   workflow_dispatch:
 
 permissions:
@@ -16,8 +20,8 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  validate:
-    name: Validate Build
+  quality-gate:
+    name: CI Quality Gate
     runs-on: ubuntu-latest
 
     steps:
@@ -36,13 +40,23 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Lint
+        run: npm run lint
+
+      - name: Run tests if present
+        run: npm run test --if-present
+
       - name: Build application
         run: npm run build
+
+      - name: Build Docker image for validation
+        run: docker build -t agrihome-ci-check .
 
   release-image:
     name: Build And Publish Image
     runs-on: ubuntu-latest
-    needs: validate
+    needs: quality-gate
+    if: github.event_name != 'pull_request'
 
     steps:
       - name: Check out repository
