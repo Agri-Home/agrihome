@@ -19,6 +19,7 @@ interface TrayRow {
   health_score: number;
   status: TraySystem["status"];
   device_id: string;
+  edge_device_id: string | null;
   last_capture_at: Date | string;
 }
 
@@ -74,6 +75,7 @@ const mapTrayRow = (row: TrayRow): TraySystem => ({
   healthScore: Number(row.health_score),
   status: row.status,
   deviceId: row.device_id,
+  edgeDeviceId: row.edge_device_id ?? null,
   lastCaptureAt: new Date(row.last_capture_at).toISOString()
 });
 
@@ -92,7 +94,7 @@ export const listTraySystems = async (ownerEmail: string): Promise<TraySystem[]>
     `SELECT id, name, zone, crop, plant_count,
             vision_plant_count, vision_plant_count_at, vision_plant_count_confidence,
             vision_detections_json,
-            health_score, status, device_id, last_capture_at
+            health_score, status, device_id, edge_device_id, last_capture_at
      FROM tray_systems
      WHERE owner_email = $1
      ORDER BY name ASC`,
@@ -110,7 +112,7 @@ export const getTrayById = async (
     `SELECT id, name, zone, crop, plant_count,
             vision_plant_count, vision_plant_count_at, vision_plant_count_confidence,
             vision_detections_json,
-            health_score, status, device_id, last_capture_at
+            health_score, status, device_id, edge_device_id, last_capture_at
      FROM tray_systems
      WHERE owner_email = $1 AND id = $2
      LIMIT 1`,
