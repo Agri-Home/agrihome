@@ -22,6 +22,7 @@ import { formatDateTime, formatRelativeTimestamp } from "@/lib/utils";
 
 import { TrayManageClient } from "./TrayManageClient";
 import { TrayVisionAnalyzeClient } from "./TrayVisionAnalyzeClient";
+import { TrayEdgeDevicePanel } from "./TrayEdgeDevicePanel";
 
 function trayTone(status: string) {
   if (status === "alert") return "critical" as const;
@@ -92,6 +93,18 @@ export default async function TrayDetailPage({
         <TrayManageClient
           tray={tray}
           showTrainingFeedback={showTrainingFeedback}
+        />
+      </section>
+
+      <section className="animate-fade-in stagger-1">
+        <TrayEdgeDevicePanel
+          trayId={tray.id}
+          edgeDeviceId={tray.edgeDeviceId}
+          plants={plants.map((p) => ({
+            id: p.id,
+            name: p.name,
+            slotLabel: p.slotLabel
+          }))}
         />
       </section>
 
