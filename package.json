@@ -13,7 +13,7 @@
     "db:seed": "node scripts/seed-postgres.cjs",
     "db:migrate": "node scripts/seed-postgres.cjs --migrations-only",
     "db:schema": "node scripts/seed-postgres.cjs --schema-only",
-    "ml:export-feedback": "node scripts/ml/export-feedback-dataset.cjs",
+    "capture:schedule-runner": "node scripts/capture-schedule-runner.cjs",
     "ml:retrain-gate": "node scripts/ml/retrain-gate.cjs"
   },
   "dependencies": {

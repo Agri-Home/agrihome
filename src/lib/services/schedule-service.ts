@@ -67,6 +67,7 @@ export const upsertSchedule = async (payload: {
   name: string;
   intervalMinutes: number;
   active: boolean;
+  destination?: CaptureSchedule["destination"];
 }): Promise<CaptureSchedule> => {
   const pool = requirePostgresPool();
   const scopeTable =
@@ -82,6 +83,11 @@ export const upsertSchedule = async (payload: {
     throw new Error("Scope not found");
   }
 
+  const destination =
+    payload.destination === "raspberry-pi-edge"
+      ? "raspberry-pi-edge"
+      : "computer-vision-backend";
+
   const schedule: CaptureSchedule = {
     id: payload.id ?? `schedule-${Date.now()}`,
     scopeType: payload.scopeType,
@@ -93,7 +99,7 @@ export const upsertSchedule = async (payload: {
       Date.now() + payload.intervalMinutes * 60 * 1000
     ).toISOString(),
     lastRunAt: undefined,
-    destination: "computer-vision-backend"
+    destination
   };
 
   if (payload.id) {

@@ -82,7 +82,7 @@ export interface CaptureSchedule {
   active: boolean;
   nextRunAt: string;
   lastRunAt?: string;
-  destination: "computer-vision-backend";
+  destination: "computer-vision-backend" | "raspberry-pi-edge";
 }
 
 export interface CameraCapture {

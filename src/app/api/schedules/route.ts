@@ -43,6 +43,7 @@ export async function POST(request: Request) {
     name?: string;
     intervalMinutes?: number;
     active?: boolean;
+    destination?: CaptureSchedule["destination"];
   };
 
   if (
@@ -66,7 +67,8 @@ export async function POST(request: Request) {
       scopeId: payload.scopeId,
       name: payload.name,
       intervalMinutes: payload.intervalMinutes,
-      active: payload.active ?? true
+      active: payload.active ?? true,
+      destination: payload.destination
     });
 
     return NextResponse.json({ data, message: "Schedule created" }, { status: 201 });
@@ -90,6 +92,7 @@ export async function PATCH(request: Request) {
     name?: string;
     intervalMinutes?: number;
     active?: boolean;
+    destination?: CaptureSchedule["destination"];
   };
 
   if (
@@ -115,7 +118,8 @@ export async function PATCH(request: Request) {
       scopeId: payload.scopeId,
       name: payload.name,
       intervalMinutes: payload.intervalMinutes,
-      active: payload.active ?? true
+      active: payload.active ?? true,
+      destination: payload.destination
     });
 
     return NextResponse.json({ data, message: "Schedule updated" });
