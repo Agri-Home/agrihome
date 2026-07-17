@@ -1,8 +1,7 @@
-import Image from "next/image";
-
 import { Badge } from "@/components/atoms/Badge";
 import { Button } from "@/components/atoms/Button";
 import { Card } from "@/components/atoms/Card";
+import { PlantImage } from "@/components/media/PlantImage";
 import { PanelHeader } from "@/components/molecules/PanelHeader";
 import type { CameraCapture } from "@/lib/types/domain";
 import { formatDateTime, formatRelativeTimestamp } from "@/lib/utils";
@@ -45,7 +44,7 @@ export function LiveCameraPanel({
       <div className="mt-6 overflow-hidden rounded-[1.75rem] bg-ink/95">
         {hasImage ? (
           <div className="relative aspect-[16/10]">
-            <Image
+            <PlantImage
               src={capture?.imageUrl as string}
               alt="Latest greenhouse capture"
               fill

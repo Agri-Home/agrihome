@@ -1,6 +1,5 @@
 export const dynamic = "force-dynamic";
 
-import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -145,7 +144,7 @@ export default async function TrayDetailPage({
           <SectionTitle>Latest Capture</SectionTitle>
           <Card className="overflow-hidden p-0">
             <div className="relative aspect-[16/10] w-full bg-mist">
-              <Image
+              <PlantImage
                 src={capture.imageUrl}
                 alt="Latest tray capture"
                 fill
