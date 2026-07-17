@@ -99,6 +99,11 @@ CREATE TABLE IF NOT EXISTS camera_captures (
   source VARCHAR(32) NOT NULL DEFAULT 'hardware',
   status VARCHAR(32) NOT NULL DEFAULT 'available',
   notes TEXT NULL,
+  plant_id VARCHAR(64) NULL,
+  hinge_deg DECIMAL(8, 2) NULL,
+  motor_mm DECIMAL(8, 2) NULL,
+  pose_order INT NULL,
+  command_id VARCHAR(64) NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_capture_tray
     FOREIGN KEY (tray_id) REFERENCES tray_systems(id)

@@ -95,6 +95,11 @@ export interface CameraCapture {
   source: "hardware" | "simulator";
   status: CaptureStatus;
   notes?: string;
+  plantId?: string | null;
+  hingeDeg?: number | null;
+  motorMm?: number | null;
+  poseOrder?: number | null;
+  commandId?: string | null;
 }
 
 export interface SimilarImageMatch {

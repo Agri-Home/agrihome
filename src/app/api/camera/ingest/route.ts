@@ -5,6 +5,10 @@ import { ingestCameraCapture } from "@/lib/services/camera-service";
 
 export const runtime = "nodejs";
 
+/**
+ * Legacy JSON camera ingest (URL-only). Prefer POST /api/raspberry-pi/ingest
+ * for Moonraker / Pi multipart uploads with device API key auth.
+ */
 export async function POST(request: Request) {
   const payload = (await request.json()) as {
     trayId?: string;
