@@ -1,5 +1,7 @@
 import { createHash } from "crypto";
 
+import { NextResponse } from "next/server";
+
 import {
   apiErrorResponse,
   API_ERROR_CODES,

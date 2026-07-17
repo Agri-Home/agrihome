@@ -24,8 +24,9 @@ export default async function DevicesPage() {
       ? []
       : await queryRows<{ edge_device_id: string; id: string; name: string }>(
           `SELECT edge_device_id, id, name FROM tray_systems
-           WHERE owner_email = $1 AND edge_device_id = ANY($2::text[])`,
-          [user.email.toLowerCase(), devices.map((d) => d.id)]
+           WHERE owner_email = $1
+             AND edge_device_id IN (${devices.map((_, i) => `$${i + 2}`).join(",")})`,
+          [user.email.toLowerCase(), ...devices.map((d) => d.id)]
         );
 
   const trayByDevice = new Map(

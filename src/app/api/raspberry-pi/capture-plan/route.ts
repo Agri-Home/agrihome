@@ -38,31 +38,33 @@ export async function GET(request: Request) {
     );
 
     const trayIds = trays.map((t) => t.id);
-    const schedules =
-      trayIds.length === 0
-        ? []
-        : await queryRows<{
-            id: string;
-            name: string;
-            interval_minutes: number;
-            next_run_at: Date | string;
-            last_run_at: Date | string | null;
-            active: boolean;
-            scope_id: string;
-          }>(
-            `SELECT id, name, interval_minutes, next_run_at, last_run_at, active, scope_id
-             FROM capture_schedules
-             WHERE owner_email = $1
-               AND active = TRUE
-               AND destination = 'raspberry-pi-edge'
-               AND (
-                 (scope_type = 'tray' AND scope_id = ANY($2::text[]))
-                 OR scope_type = 'mesh'
-               )
-             ORDER BY next_run_at ASC
-             LIMIT 20`,
-            [auth.ownerEmail, trayIds]
-          );
+    let schedules: Array<{
+      id: string;
+      name: string;
+      interval_minutes: number;
+      next_run_at: Date | string;
+      last_run_at: Date | string | null;
+      active: boolean;
+      scope_id: string;
+    }> = [];
+
+    if (trayIds.length > 0) {
+      const trayPlaceholders = trayIds.map((_, i) => `$${i + 2}`).join(",");
+      schedules = await queryRows(
+        `SELECT id, name, interval_minutes, next_run_at, last_run_at, active, scope_id
+         FROM capture_schedules
+         WHERE owner_email = $1
+           AND active = TRUE
+           AND destination = 'raspberry-pi-edge'
+           AND (
+             (scope_type = 'tray' AND scope_id IN (${trayPlaceholders}))
+             OR scope_type = 'mesh'
+           )
+         ORDER BY next_run_at ASC
+         LIMIT 20`,
+        [auth.ownerEmail, ...trayIds]
+      );
+    }
 
     const sequence = await getActivePoseSequenceForDevice(auth.id);
 
