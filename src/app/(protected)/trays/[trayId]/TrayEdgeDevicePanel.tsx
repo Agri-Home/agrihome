@@ -15,6 +15,7 @@ type DeviceSummary = {
   lastHeartbeatAt: string | null;
   apiKeyPrefix: string;
   revokedAt: string | null;
+  moonrakerUrl?: string | null;
   actuatorLimits: {
     hingeMinDeg: number | null;
     hingeMaxDeg: number | null;
@@ -68,6 +69,7 @@ export function TrayEdgeDevicePanel({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [linkDeviceId, setLinkDeviceId] = useState("");
   const [allDevices, setAllDevices] = useState<DeviceSummary[]>([]);
+  const [moonrakerUrlDraft, setMoonrakerUrlDraft] = useState("");
 
   const load = useCallback(async () => {
     setError(null);
@@ -92,6 +94,7 @@ export function TrayEdgeDevicePanel({
         ? devices.find((d) => d.id === edgeDeviceId) ?? null
         : null;
       setDevice(linked);
+      setMoonrakerUrlDraft(linked?.moonrakerUrl?.trim() ?? "");
       setSequences(posesJson.data ?? []);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load device panel");
@@ -254,6 +257,57 @@ export function TrayEdgeDevicePanel({
     }
   }
 
+  async function saveMoonrakerUrl() {
+    if (!device) return;
+    const next = moonrakerUrlDraft.trim();
+    if (!next) {
+      setError("Moonraker URL is required");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const res = await fetch(
+        `/api/devices/${encodeURIComponent(device.id)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "updateMoonrakerUrl",
+            moonrakerUrl: next
+          })
+        }
+      );
+      const json = (await res.json()) as {
+        message?: string;
+        error?: { message?: string };
+        data?: DeviceSummary;
+      };
+      if (!res.ok) {
+        throw new Error(json.error?.message ?? "Could not update Moonraker URL");
+      }
+      setMessage(json.message ?? "Moonraker URL updated");
+      if (json.data) {
+        setDevice({
+          ...device,
+          ...json.data,
+          moonrakerUrl:
+            (json.data as { moonrakerUrl?: string | null }).moonrakerUrl ?? next
+        });
+        setMoonrakerUrlDraft(
+          (json.data as { moonrakerUrl?: string | null }).moonrakerUrl?.trim() ??
+            next
+        );
+      }
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Update failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (!device) {
     return (
       <Card className="space-y-4 p-4">
@@ -348,6 +402,32 @@ export function TrayEdgeDevicePanel({
           </dd>
         </div>
       </dl>
+
+      <div className="flex flex-wrap items-end gap-2 border-t border-ink/10 pt-4">
+        <label className="block min-w-[16rem] flex-1 text-sm">
+          <span className="text-ink/60">Moonraker URL</span>
+          <input
+            type="url"
+            className="mt-1 w-full rounded-md border border-ink/15 bg-white px-2 py-1.5 font-mono text-xs"
+            placeholder="http://192.168.1.x:7125"
+            value={moonrakerUrlDraft}
+            onChange={(e) => setMoonrakerUrlDraft(e.target.value)}
+            disabled={busy || Boolean(device.revokedAt)}
+          />
+        </label>
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={
+            busy ||
+            Boolean(device.revokedAt) ||
+            moonrakerUrlDraft.trim() === (device.moonrakerUrl?.trim() ?? "")
+          }
+          onClick={() => void saveMoonrakerUrl()}
+        >
+          Save URL
+        </Button>
+      </div>
 
       <div className="flex flex-wrap items-end gap-2 border-t border-ink/10 pt-4">
         <label className="block min-w-[10rem] flex-1 text-sm">

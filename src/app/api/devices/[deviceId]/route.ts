@@ -11,7 +11,8 @@ import {
   getEdgeDeviceById,
   linkDeviceToTray,
   revokeEdgeDevice,
-  rotateEdgeDeviceKey
+  rotateEdgeDeviceKey,
+  updateEdgeDeviceMoonrakerUrl
 } from "@/lib/services/edge-device-service";
 import { captureFromMoonrakerDirect } from "@/lib/services/edge-capture-service";
 import { enqueueEdgeCommand } from "@/lib/services/edge-command-service";
@@ -57,7 +58,7 @@ export async function GET(_request: Request, context: RouteContext) {
 
 /**
  * POST /api/devices/[deviceId]
- * Actions: capture | linkTray | revoke | rotateKey | updateLimits
+ * Actions: capture | linkTray | revoke | rotateKey | updateLimits | updateMoonrakerUrl
  */
 export async function POST(request: Request, context: RouteContext) {
   const auth = await requireApiAccountUser();
@@ -75,6 +76,7 @@ export async function POST(request: Request, context: RouteContext) {
       trayId?: string;
       plantId?: string;
       runPoses?: boolean;
+      moonrakerUrl?: string;
       actuatorLimits?: {
         hingeMinDeg?: number;
         hingeMaxDeg?: number;
@@ -153,9 +155,17 @@ export async function POST(request: Request, context: RouteContext) {
       return NextResponse.json({
         message: runPoses
           ? "Pose capture queued. The Pi agent will claim it on the next heartbeat."
-          : device.moonrakerUrl?.trim()
-            ? "Moonraker not reachable from the server; capture queued for the Pi agent."
-            : "Capture command queued. The Pi agent will claim it on the next heartbeat.",
+          : (() => {
+              const mr = device.moonrakerUrl?.trim() ?? "";
+              const loopback =
+                /:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/i.test(mr);
+              if (loopback) {
+                return "Moonraker URL is loopback (127.0.0.1); update it to the Pi LAN IP or a tunnel URL, or wait for the Pi agent.";
+              }
+              return mr
+                ? "Moonraker not reachable from the server; capture queued for the Pi agent."
+                : "Capture command queued. The Pi agent will claim it on the next heartbeat.";
+            })(),
         queued: true,
         data: cmd
       });
@@ -224,9 +234,43 @@ export async function POST(request: Request, context: RouteContext) {
       return NextResponse.json({ data: updated });
     }
 
+    if (body.action === "updateMoonrakerUrl") {
+      if (!body.moonrakerUrl?.trim()) {
+        return apiErrorResponse(
+          API_ERROR_CODES.BAD_REQUEST,
+          "moonrakerUrl is required",
+          400
+        );
+      }
+      try {
+        const updated = await updateEdgeDeviceMoonrakerUrl({
+          ownerEmail: auth.email,
+          deviceId,
+          moonrakerUrl: body.moonrakerUrl
+        });
+        if (!updated) {
+          return apiErrorResponse(
+            API_ERROR_CODES.NOT_FOUND,
+            "Device not found",
+            404
+          );
+        }
+        return NextResponse.json({
+          data: updated,
+          message: "Moonraker URL updated"
+        });
+      } catch (err) {
+        return apiErrorResponse(
+          API_ERROR_CODES.BAD_REQUEST,
+          err instanceof Error ? err.message : "Invalid moonrakerUrl",
+          400
+        );
+      }
+    }
+
     return apiErrorResponse(
       API_ERROR_CODES.BAD_REQUEST,
-      "Unknown action. Use capture, linkTray, revoke, rotateKey, or updateLimits.",
+      "Unknown action. Use capture, linkTray, revoke, rotateKey, updateLimits, or updateMoonrakerUrl.",
       400
     );
   } catch (error) {

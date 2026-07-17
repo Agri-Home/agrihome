@@ -64,6 +64,25 @@ function resolveSnapshotUrl(moonrakerUrl: string, snapshotPath: string): string 
   return `${base}${path}`;
 }
 
+/**
+ * Klipper stacks often expose webcam stills on nginx :80 while Moonraker API
+ * stays on :7125. When the stored URL is :7125, also try the same host on :80.
+ */
+function candidateMoonrakerBases(moonrakerUrl: string): string[] {
+  const base = moonrakerUrl.replace(/\/+$/, "");
+  const bases = [base];
+  try {
+    const u = new URL(base);
+    if (u.port === "7125") {
+      const viaHttp = `${u.protocol}//${u.hostname}`;
+      if (!bases.includes(viaHttp)) bases.push(viaHttp);
+    }
+  } catch {
+    // ignore invalid URL; fetch will surface the error
+  }
+  return bases;
+}
+
 function candidateSnapshotPaths(configured?: string | null): string[] {
   const paths: string[] = [];
   const preferred = configured?.trim() || env.device.snapshotPath;
@@ -75,32 +94,37 @@ function candidateSnapshotPaths(configured?: string | null): string[] {
 }
 
 async function listWebcamSnapshotUrls(moonrakerUrl: string): Promise<string[]> {
-  const base = moonrakerUrl.replace(/\/+$/, "");
-  const controller = new AbortController();
-  const timer = setTimeout(
-    () => controller.abort(),
-    Math.min(env.device.snapshotTimeoutMs, 5_000)
-  );
-  try {
-    const res = await fetch(`${base}/server/webcams/list`, {
-      method: "GET",
-      signal: controller.signal,
-      cache: "no-store"
-    });
-    if (!res.ok) return [];
-    const json = (await res.json()) as {
-      result?: { webcams?: Array<{ enabled?: boolean; snapshot_url?: string }> };
-      webcams?: Array<{ enabled?: boolean; snapshot_url?: string }>;
-    };
-    const webcams = json.result?.webcams ?? json.webcams ?? [];
-    return webcams
-      .filter((w) => w.enabled !== false && w.snapshot_url?.trim())
-      .map((w) => resolveSnapshotUrl(base, w.snapshot_url!.trim()));
-  } catch {
-    return [];
-  } finally {
-    clearTimeout(timer);
+  const urls: string[] = [];
+  for (const base of candidateMoonrakerBases(moonrakerUrl)) {
+    const controller = new AbortController();
+    const timer = setTimeout(
+      () => controller.abort(),
+      Math.min(env.device.snapshotTimeoutMs, 5_000)
+    );
+    try {
+      const res = await fetch(`${base}/server/webcams/list`, {
+        method: "GET",
+        signal: controller.signal,
+        cache: "no-store"
+      });
+      if (!res.ok) continue;
+      const json = (await res.json()) as {
+        result?: { webcams?: Array<{ enabled?: boolean; snapshot_url?: string }> };
+        webcams?: Array<{ enabled?: boolean; snapshot_url?: string }>;
+      };
+      const webcams = json.result?.webcams ?? json.webcams ?? [];
+      for (const w of webcams) {
+        if (w.enabled === false || !w.snapshot_url?.trim()) continue;
+        const resolved = resolveSnapshotUrl(base, w.snapshot_url.trim());
+        if (!urls.includes(resolved)) urls.push(resolved);
+      }
+    } catch {
+      // try next base
+    } finally {
+      clearTimeout(timer);
+    }
   }
+  return urls;
 }
 
 async function fetchSnapshotBytes(
@@ -108,9 +132,11 @@ async function fetchSnapshotBytes(
   snapshotPath?: string | null
 ): Promise<{ buffer: Buffer; snapshotUrl: string; contentType: string | null }> {
   const urls: string[] = [];
-  for (const path of candidateSnapshotPaths(snapshotPath)) {
-    const url = resolveSnapshotUrl(moonrakerUrl, path);
-    if (!urls.includes(url)) urls.push(url);
+  for (const base of candidateMoonrakerBases(moonrakerUrl)) {
+    for (const path of candidateSnapshotPaths(snapshotPath)) {
+      const url = resolveSnapshotUrl(base, path);
+      if (!urls.includes(url)) urls.push(url);
+    }
   }
   for (const url of await listWebcamSnapshotUrls(moonrakerUrl)) {
     if (!urls.includes(url)) urls.push(url);

@@ -308,6 +308,39 @@ export async function rotateEdgeDeviceKey(
   return { device: updated, apiKey: key.plaintext };
 }
 
+/** Operator-facing update of the Moonraker base URL (no re-provision). */
+export async function updateEdgeDeviceMoonrakerUrl(input: {
+  ownerEmail: string;
+  deviceId: string;
+  moonrakerUrl: string;
+}): Promise<AuthenticatedEdgeDevice | null> {
+  const device = await getEdgeDeviceById(input.deviceId);
+  if (!device || device.ownerEmail !== input.ownerEmail.toLowerCase()) {
+    return null;
+  }
+  const url = input.moonrakerUrl.trim();
+  if (!url) {
+    throw new Error("moonrakerUrl is required");
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error("moonrakerUrl must be a valid URL");
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("moonrakerUrl must use http or https");
+  }
+  const pool = requirePostgresPool();
+  await pool.query(
+    `UPDATE edge_devices
+     SET moonraker_url = $1, updated_at = NOW()
+     WHERE id = $2 AND owner_email = $3`,
+    [url.replace(/\/+$/, ""), input.deviceId, input.ownerEmail.toLowerCase()]
+  );
+  return getEdgeDeviceById(input.deviceId);
+}
+
 export async function updateDeviceHeartbeat(input: {
   deviceId: string;
   status?: EdgeDeviceStatus;
