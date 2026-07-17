@@ -11,9 +11,11 @@ fork under `agrihome_agent/` (branch `feature/agrihome-bridge`).
 1. **Detect / register** — Pi sends CPU serial + MAC + hostname; AgriHome creates
    an `edge_devices` row, hashed API key, and a new linked tray.
 2. **Heartbeat** — agent reports online; Vision Console shows status.
-3. **Take picture** — operator clicks **Take picture** on the tray; AgriHome
-   enqueues `capture_now`; agent snapshots via Moonraker webcam and uploads
-   multipart JPEG to AgriHome for the tray (optional `plantId`).
+3. **Take picture** — operator clicks **Take picture** on the tray. AgriHome
+   first tries a **server-side** snapshot from `edge_devices.moonraker_url`
+   (when reachable from the Mac/server). If that fails (Pi only on LAN behind
+   NAT), it queues `capture_now` and the Pi agent snapshots + uploads on the
+   next heartbeat.
 
 ```mermaid
 sequenceDiagram
@@ -24,17 +26,22 @@ sequenceDiagram
 
   Agent->>AH: POST /api/raspberry-pi/register
   AH-->>Agent: deviceId, trayId, apiKey (once)
-  loop every ~15s
+  loop every ~5s
     Agent->>AH: POST /api/raspberry-pi/heartbeat
     AH-->>Agent: pending commands
   end
   UI->>AH: POST /api/devices/{id} action=capture
-  AH-->>UI: command queued
-  Agent->>AH: heartbeat claims capture_now
-  Agent->>MR: GET /webcam/?action=snapshot
-  MR-->>Agent: JPEG bytes
-  Agent->>AH: POST /api/raspberry-pi/ingest (multipart)
-  AH-->>UI: tray last_capture_at + camera_captures row
+  alt moonrakerUrl reachable from server
+    AH->>MR: GET /webcam/?action=snapshot
+    MR-->>AH: JPEG bytes
+    AH-->>UI: imageUrl (immediate)
+  else fallback
+    AH-->>UI: command queued
+    Agent->>AH: heartbeat claims capture_now
+    Agent->>MR: GET snapshot (configurable path)
+    MR-->>Agent: JPEG bytes
+    Agent->>AH: POST /api/raspberry-pi/ingest (multipart)
+  end
 ```
 
 ## AgriHome setup
@@ -46,11 +53,36 @@ DEVICE_DEFAULT_OWNER_EMAIL=you@example.com
 # optional
 DEVICE_AUTO_VISION_ON_INGEST=false
 DEVICE_HEARTBEAT_STALE_MINUTES=5
+# Server-side Take Picture snapshot (when Moonraker is reachable from AgriHome)
+AGRIHOME_SNAPSHOT_PATH=/webcam/?action=snapshot
+DEVICE_SNAPSHOT_TIMEOUT_MS=8000
 
 npm run db:migrate
 npm run dev
 ```
 
+### Finding a working webcam snapshot URL (on the Pi)
+
+From the Pi (or any host that can reach Moonraker):
+
+```bash
+# List configured webcams (note snapshot_url)
+curl -sS http://127.0.0.1:7125/server/webcams/list | jq .
+
+# Common crowsnest / mjpegstreamer paths
+curl -sS -o /tmp/snap.jpg -w "%{http_code} %{size_download}\n" \
+  "http://127.0.0.1:7125/webcam/?action=snapshot"
+file /tmp/snap.jpg
+
+# If the path differs, set it on the agent:
+#   export AGRIHOME_SNAPSHOT_PATH='/webcam/?action=snapshot'
+# or edit ~/.config/agrihome/agent.json "snapshotPath"
+# Absolute URLs are also supported, e.g. http://127.0.0.1:8080/?action=snapshot
+```
+
+For **server-side** Take Picture to work, `moonrakerUrl` stored on the device
+must be reachable from the AgriHome host (e.g. `http://192.168.1.50:7125`),
+not only `http://127.0.0.1:7125` on the Pi.
 ### API surface (device key = `X-Agrihome-Device-Key`)
 
 | Method | Path | Auth | Purpose |
@@ -148,5 +180,5 @@ See [EDGE_DEVICE_SECURITY.md](./EDGE_DEVICE_SECURITY.md).
 - [ ] Provisioning secret set on server and Pi
 - [ ] Agent registered; tray visible in Console
 - [ ] Heartbeat shows **online** within stale window
-- [ ] Take picture → frame on tray within ~heartbeat interval
+- [ ] Take picture → frame appears immediately when Moonraker is reachable from AgriHome; otherwise within ~heartbeat interval via agent
 - [ ] Optional: generate poses, schedule `raspberry-pi-edge`, run runner

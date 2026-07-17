@@ -13,12 +13,30 @@ import {
   revokeEdgeDevice,
   rotateEdgeDeviceKey
 } from "@/lib/services/edge-device-service";
+import { captureFromMoonrakerDirect } from "@/lib/services/edge-capture-service";
 import { enqueueEdgeCommand } from "@/lib/services/edge-command-service";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 type RouteContext = { params: Promise<{ deviceId: string }> };
+
+async function resolveLinkedTrayId(
+  deviceId: string,
+  ownerEmail: string,
+  trayId?: string
+): Promise<string | undefined> {
+  if (trayId) return trayId;
+  const { requirePostgresPool } = await import("@/lib/db/postgres");
+  const pool = requirePostgresPool();
+  const linked = await pool.query<{ id: string }>(
+    `SELECT id FROM tray_systems
+     WHERE edge_device_id = $1 AND owner_email = $2
+     LIMIT 1`,
+    [deviceId, ownerEmail.toLowerCase()]
+  );
+  return linked.rows[0]?.id;
+}
 
 /** GET /api/devices/[deviceId] */
 export async function GET(_request: Request, context: RouteContext) {
@@ -73,18 +91,11 @@ export async function POST(request: Request, context: RouteContext) {
           403
         );
       }
-      let trayId = body.trayId;
-      if (!trayId) {
-        const { requirePostgresPool } = await import("@/lib/db/postgres");
-        const pool = requirePostgresPool();
-        const linked = await pool.query<{ id: string }>(
-          `SELECT id FROM tray_systems
-           WHERE edge_device_id = $1 AND owner_email = $2
-           LIMIT 1`,
-          [deviceId, auth.email.toLowerCase()]
-        );
-        trayId = linked.rows[0]?.id;
-      }
+      const trayId = await resolveLinkedTrayId(
+        deviceId,
+        auth.email,
+        body.trayId
+      );
       if (!trayId) {
         return apiErrorResponse(
           API_ERROR_CODES.BAD_REQUEST,
@@ -92,19 +103,60 @@ export async function POST(request: Request, context: RouteContext) {
           400
         );
       }
+
+      const runPoses = Boolean(body.runPoses);
+
+      // Fast path: server fetches Moonraker snapshot when reachable (single-shot only).
+      // Pose walks need the Pi agent for actuators, so they always queue.
+      if (!runPoses && device.moonrakerUrl?.trim()) {
+        try {
+          const direct = await captureFromMoonrakerDirect({
+            ownerEmail: auth.email,
+            deviceId,
+            trayId,
+            plantId: body.plantId,
+            moonrakerUrl: device.moonrakerUrl.trim(),
+            notes: "take_picture_server_direct"
+          });
+          return NextResponse.json({
+            message: "Picture captured",
+            queued: false,
+            data: {
+              captureId: direct.capture.id,
+              imageUrl: direct.imageUrl,
+              bytes: direct.bytes,
+              capturedAt: direct.capture.capturedAt,
+              snapshotUrl: direct.snapshotUrl,
+              trayId,
+              plantId: body.plantId ?? null
+            }
+          });
+        } catch (directError) {
+          // Fall through to Pi agent queue when LAN/NAT blocks server → Moonraker.
+          console.warn(
+            "[devices/capture] direct Moonraker snapshot failed; queueing agent fallback:",
+            directError instanceof Error ? directError.message : directError
+          );
+        }
+      }
+
       const cmd = await enqueueEdgeCommand({
         deviceId,
         trayId,
         plantId: body.plantId,
         commandType: "capture_now",
         payload: {
-          runPoses: Boolean(body.runPoses),
+          runPoses,
           requestedBy: auth.email
         }
       });
       return NextResponse.json({
-        message:
-          "Capture command queued. The Pi agent will claim it on the next heartbeat.",
+        message: runPoses
+          ? "Pose capture queued. The Pi agent will claim it on the next heartbeat."
+          : device.moonrakerUrl?.trim()
+            ? "Moonraker not reachable from the server; capture queued for the Pi agent."
+            : "Capture command queued. The Pi agent will claim it on the next heartbeat.",
+        queued: true,
         data: cmd
       });
     }

@@ -120,6 +120,16 @@ export const env = {
     autoVisionOnIngest: parseBoolean(
       process.env.DEVICE_AUTO_VISION_ON_INGEST,
       false
+    ),
+    /** Relative path or absolute URL for Moonraker/crowsnest still frames. */
+    snapshotPath:
+      process.env.AGRIHOME_SNAPSHOT_PATH?.trim() ||
+      process.env.DEVICE_SNAPSHOT_PATH?.trim() ||
+      "/webcam/?action=snapshot",
+    /** Server-side direct snapshot fetch timeout (Take Picture fast path). */
+    snapshotTimeoutMs: parseNumber(
+      process.env.DEVICE_SNAPSHOT_TIMEOUT_MS,
+      8_000
     )
   }
 };

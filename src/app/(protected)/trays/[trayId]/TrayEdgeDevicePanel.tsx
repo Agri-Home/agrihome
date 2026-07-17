@@ -65,6 +65,7 @@ export function TrayEdgeDevicePanel({
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [linkDeviceId, setLinkDeviceId] = useState("");
   const [allDevices, setAllDevices] = useState<DeviceSummary[]>([]);
 
@@ -101,11 +102,38 @@ export function TrayEdgeDevicePanel({
     void load();
   }, [load]);
 
+  async function pollLatestCapture(sinceMs: number): Promise<string | null> {
+    for (let i = 0; i < 8; i++) {
+      await new Promise((r) => setTimeout(r, i === 0 ? 800 : 1500));
+      try {
+        const res = await fetch(
+          `/api/camera/latest?trayId=${encodeURIComponent(trayId)}`
+        );
+        if (!res.ok) continue;
+        const json = (await res.json()) as {
+          data?: { imageUrl?: string | null; capturedAt?: string };
+        };
+        const url = json.data?.imageUrl;
+        const at = json.data?.capturedAt
+          ? Date.parse(json.data.capturedAt)
+          : NaN;
+        if (url && Number.isFinite(at) && at >= sinceMs - 2_000) {
+          return url;
+        }
+      } catch {
+        // keep polling
+      }
+    }
+    return null;
+  }
+
   async function takePicture() {
     if (!device) return;
     setBusy(true);
     setMessage(null);
     setError(null);
+    setPreviewUrl(null);
+    const startedAt = Date.now();
     try {
       const res = await fetch(
         `/api/devices/${encodeURIComponent(device.id)}`,
@@ -122,16 +150,39 @@ export function TrayEdgeDevicePanel({
       );
       const json = (await res.json()) as {
         message?: string;
+        queued?: boolean;
         error?: { message?: string };
-        data?: { id?: string };
+        data?: {
+          id?: string;
+          imageUrl?: string;
+          captureId?: string;
+        };
       };
       if (!res.ok) {
         throw new Error(json.error?.message ?? "Capture failed");
       }
+
+      if (json.data?.imageUrl && json.queued !== true) {
+        setPreviewUrl(json.data.imageUrl);
+        setMessage(json.message ?? "Picture captured");
+        router.refresh();
+        return;
+      }
+
       setMessage(
         json.message ??
-          `Capture queued (${json.data?.id ?? "ok"}). Wait for the Pi heartbeat.`
+          `Capture queued (${json.data?.id ?? "ok"}). Waiting for the Pi…`
       );
+      const polled = await pollLatestCapture(startedAt);
+      if (polled) {
+        setPreviewUrl(polled);
+        setMessage("Picture arrived from the Pi agent");
+      } else {
+        setMessage(
+          (json.message ?? "Capture queued") +
+            " Still waiting — the frame will show when the agent finishes."
+        );
+      }
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Capture failed");
@@ -319,7 +370,7 @@ export function TrayEdgeDevicePanel({
           disabled={busy || Boolean(device.revokedAt) || device.status === "offline"}
           onClick={() => void takePicture()}
         >
-          {busy ? "Queuing…" : "Take picture"}
+          {busy ? "Capturing…" : "Take picture"}
         </Button>
         <Button
           type="button"
@@ -361,6 +412,17 @@ export function TrayEdgeDevicePanel({
 
       {error && <p className="text-sm text-red-700">{error}</p>}
       {message && <p className="text-sm text-emerald-700">{message}</p>}
+      {previewUrl && (
+        <div className="border-t border-ink/10 pt-4">
+          <p className="mb-2 text-sm text-ink/55">Latest capture</p>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={previewUrl}
+            alt="Latest tray capture"
+            className="max-h-56 w-auto max-w-full rounded-md object-contain"
+          />
+        </div>
+      )}
     </Card>
   );
 }
