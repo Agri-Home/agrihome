@@ -98,7 +98,8 @@ function candidateSnapshotPaths(configured?: string | null): string[] {
 
 async function listWebcamSnapshotUrls(moonrakerUrl: string): Promise<string[]> {
   const urls: string[] = [];
-  for (const base of candidateMoonrakerBases(moonrakerUrl)) {
+  const bases = candidateMoonrakerBases(moonrakerUrl);
+  for (const base of bases) {
     const controller = new AbortController();
     const timer = setTimeout(
       () => controller.abort(),
@@ -118,8 +119,16 @@ async function listWebcamSnapshotUrls(moonrakerUrl: string): Promise<string[]> {
       const webcams = json.result?.webcams ?? json.webcams ?? [];
       for (const w of webcams) {
         if (w.enabled === false || !w.snapshot_url?.trim()) continue;
-        const resolved = resolveSnapshotUrl(base, w.snapshot_url.trim());
-        if (!urls.includes(resolved)) urls.push(resolved);
+        const snap = w.snapshot_url.trim();
+        // Relative paths (e.g. /webcam/?action=snapshot) often live on nginx :80
+        // while Moonraker API is on :7125 — resolve against every candidate base.
+        const resolveBases = snap.startsWith("http://") || snap.startsWith("https://")
+          ? [base]
+          : bases;
+        for (const b of resolveBases) {
+          const resolved = resolveSnapshotUrl(b, snap);
+          if (!urls.includes(resolved)) urls.push(resolved);
+        }
       }
     } catch {
       // try next base
@@ -128,6 +137,25 @@ async function listWebcamSnapshotUrls(moonrakerUrl: string): Promise<string[]> {
     }
   }
   return urls;
+}
+
+/** Short operator-facing reason when server → Moonraker snapshot fails. */
+export function summarizeMoonrakerReachabilityError(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  if (/timeout after|AbortError/i.test(msg)) {
+    return "timeout reaching Pi (if Cloudflare WARP is on, run: warp-cli override local-network allow)";
+  }
+  if (/ECONNREFUSED|connection refused/i.test(msg)) {
+    return "connection refused";
+  }
+  if (/ENETUNREACH|EHOSTUNREACH|other side closed|fetch failed/i.test(msg)) {
+    return "network unreachable (check Pi IP / WARP LAN override)";
+  }
+  if (/HTTP 404/i.test(msg)) {
+    return "snapshot 404 on tried URLs (webcam is often on http://PI_IP/webcam/?action=snapshot, not :7125)";
+  }
+  const trimmed = msg.replace(/^Could not fetch Moonraker snapshot from \S+:\s*/i, "");
+  return trimmed.length > 220 ? `${trimmed.slice(0, 217)}…` : trimmed;
 }
 
 async function fetchSnapshotBytes(

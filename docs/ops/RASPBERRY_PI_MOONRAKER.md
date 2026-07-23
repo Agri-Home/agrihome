@@ -83,6 +83,41 @@ file /tmp/snap.jpg
 For **server-side** Take Picture to work, `moonrakerUrl` stored on the device
 must be reachable from the AgriHome host (e.g. `http://192.168.1.50:7125`),
 not only `http://127.0.0.1:7125` on the Pi.
+
+Many Klipper stacks expose the JPEG still on **nginx :80**
+(`http://PI_IP/webcam/?action=snapshot`) while Moonraker’s API stays on
+**:7125**. AgriHome’s server fast path tries both. On the Pi agent, set an
+absolute snapshot URL if `:7125/webcam` 404s:
+
+```bash
+# on the Pi (~/.config/agrihome/agent.json or env)
+export AGRIHOME_SNAPSHOT_PATH='http://127.0.0.1/webcam/?action=snapshot'
+```
+
+### Cloudflare WARP (Mac / AgriHome host)
+
+If Postgres or other LAN hosts need WARP, keep WARP **Connected**, but allow
+local LAN or Moonraker will time out from the Next server:
+
+```bash
+warp-cli override local-network allow
+```
+
+This override often resets when WARP reconnects — re-run it after reconnects.
+Keep `moonraker_url` as the Moonraker API base (`http://PI_IP:7125`); do not
+point it at `:80` unless that host also serves `/server/info`.
+
+### Vision Console: update Moonraker URL
+
+On the tray’s Raspberry Pi panel, edit **Moonraker URL** and save
+(`action: updateMoonrakerUrl` on `POST /api/devices/{id}`), or SQL:
+
+```sql
+UPDATE edge_devices
+SET moonraker_url = 'http://192.168.1.108:7125', updated_at = NOW()
+WHERE id = 'edge-…';
+```
+
 ### API surface (device key = `X-Agrihome-Device-Key`)
 
 | Method | Path | Auth | Purpose |

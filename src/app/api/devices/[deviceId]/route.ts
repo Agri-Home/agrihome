@@ -14,8 +14,14 @@ import {
   rotateEdgeDeviceKey,
   updateEdgeDeviceMoonrakerUrl
 } from "@/lib/services/edge-device-service";
-import { captureFromMoonrakerDirect } from "@/lib/services/edge-capture-service";
-import { enqueueEdgeCommand } from "@/lib/services/edge-command-service";
+import {
+  captureFromMoonrakerDirect,
+  summarizeMoonrakerReachabilityError
+} from "@/lib/services/edge-capture-service";
+import {
+  enqueueEdgeCommand,
+  getEdgeCommandForOwner
+} from "@/lib/services/edge-command-service";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -39,8 +45,8 @@ async function resolveLinkedTrayId(
   return linked.rows[0]?.id;
 }
 
-/** GET /api/devices/[deviceId] */
-export async function GET(_request: Request, context: RouteContext) {
+/** GET /api/devices/[deviceId] — optional ?commandId= to poll a queued capture */
+export async function GET(request: Request, context: RouteContext) {
   const auth = await requireApiAccountUser();
   if (auth instanceof Response) return auth;
   const { deviceId } = await context.params;
@@ -49,6 +55,18 @@ export async function GET(_request: Request, context: RouteContext) {
     const device = await getEdgeDeviceById(deviceId);
     if (!device || device.ownerEmail !== auth.email.toLowerCase()) {
       return apiErrorResponse(API_ERROR_CODES.NOT_FOUND, "Device not found", 404);
+    }
+    const commandId = new URL(request.url).searchParams.get("commandId")?.trim();
+    if (commandId) {
+      const command = await getEdgeCommandForOwner(auth.email, commandId);
+      if (!command || command.deviceId !== deviceId) {
+        return apiErrorResponse(
+          API_ERROR_CODES.NOT_FOUND,
+          "Command not found",
+          404
+        );
+      }
+      return NextResponse.json({ data: device, command });
     }
     return NextResponse.json({ data: device });
   } catch (error) {
@@ -110,6 +128,7 @@ export async function POST(request: Request, context: RouteContext) {
 
       // Fast path: server fetches Moonraker snapshot when reachable (single-shot only).
       // Pose walks need the Pi agent for actuators, so they always queue.
+      let reachabilityError: string | null = null;
       if (!runPoses && device.moonrakerUrl?.trim()) {
         try {
           const direct = await captureFromMoonrakerDirect({
@@ -136,6 +155,7 @@ export async function POST(request: Request, context: RouteContext) {
           });
         } catch (directError) {
           // Fall through to Pi agent queue when LAN/NAT blocks server → Moonraker.
+          reachabilityError = summarizeMoonrakerReachabilityError(directError);
           console.warn(
             "[devices/capture] direct Moonraker snapshot failed; queueing agent fallback:",
             directError instanceof Error ? directError.message : directError
@@ -163,11 +183,15 @@ export async function POST(request: Request, context: RouteContext) {
               if (loopback) {
                 return "Moonraker URL is loopback (127.0.0.1); update it to the Pi LAN IP or a tunnel URL, or wait for the Pi agent.";
               }
+              if (reachabilityError) {
+                return `Moonraker not reachable from the server (${reachabilityError}); capture queued for the Pi agent.`;
+              }
               return mr
                 ? "Moonraker not reachable from the server; capture queued for the Pi agent."
                 : "Capture command queued. The Pi agent will claim it on the next heartbeat.";
             })(),
         queued: true,
+        reachabilityError,
         data: cmd
       });
     }
