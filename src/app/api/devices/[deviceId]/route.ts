@@ -130,7 +130,8 @@ export async function POST(request: Request, context: RouteContext) {
               capturedAt: direct.capture.capturedAt,
               snapshotUrl: direct.snapshotUrl,
               trayId,
-              plantId: body.plantId ?? null
+              plantId: direct.plantId,
+              plantCreated: direct.plantCreated
             }
           });
         } catch (directError) {

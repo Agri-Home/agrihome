@@ -647,7 +647,40 @@ async function finalizePhotoPostgres(
     {
       healthScore: newHealth,
       status: newStatus,
-      latestDiagnosis: report.diagnosis
+      latestDiagnosis: report.diagnosis.slice(0, 160)
     }
+  );
+}
+
+/**
+ * Run leaf species/disease classifier on an already-persisted capture
+ * (Pi ingest / server-side Take Picture). Same prediction_results +
+ * plant_reports + plant health updates as user photo upload.
+ */
+export async function analyzeExistingCaptureForPlant(input: {
+  ownerEmail: string;
+  plant: PlantUnit;
+  capture: CameraCapture;
+  imageBytes: Buffer;
+  imageUrl: string;
+  speciesDetection?: PlantSpeciesDetection | null;
+}): Promise<{
+  captureId: string;
+  imageUrl: string;
+  report: PlantReport;
+  prediction: PredictionResult;
+}> {
+  const pool = requirePostgresPool();
+  const detection =
+    input.speciesDetection ??
+    (await detectPlantSpeciesFromImage(input.imageBytes));
+
+  return finalizePhotoPostgres(
+    pool,
+    input.ownerEmail,
+    input.plant,
+    input.capture,
+    input.imageUrl,
+    detection
   );
 }

@@ -3,6 +3,7 @@ import { createHash } from "crypto";
 import { env } from "@/lib/config/env";
 import { requirePostgresPool } from "@/lib/db/postgres";
 import { ingestCameraCapture } from "@/lib/services/camera-service";
+import { postprocessEdgeCapture } from "@/lib/services/edge-capture-postprocess";
 import { getTrayById } from "@/lib/services/topology-service";
 import {
   savePlantLeafOriginal,
@@ -16,6 +17,8 @@ export type DirectCaptureResult = {
   bytes: number;
   sha256: string;
   snapshotUrl: string;
+  plantId: string;
+  plantCreated: boolean;
 };
 
 const DEFAULT_SNAPSHOT_PATHS = [
@@ -234,38 +237,22 @@ export async function captureFromMoonrakerDirect(input: {
     [capture.capturedAt, tray.id]
   );
 
-  if (input.plantId) {
-    await pool.query(
-      `UPDATE plants
-       SET last_image_url = $1, last_image_at = $2
-       WHERE id = $3 AND tray_id = $4 AND owner_email = $5`,
-      [
-        saved.imageUrl,
-        capture.capturedAt,
-        input.plantId,
-        tray.id,
-        ownerEmail
-      ]
-    );
-  }
-
-  if (env.device.autoVisionOnIngest) {
-    void import("@/lib/services/edge-vision-hook").then((m) =>
-      m.triggerVisionAfterPiIngest({
-        ownerEmail,
-        trayId: tray.id,
-        captureId: capture.id,
-        imageUrl: saved.imageUrl,
-        absolutePath: saved.absolutePath
-      })
-    );
-  }
+  const attached = await postprocessEdgeCapture({
+    ownerEmail,
+    trayId: tray.id,
+    capture,
+    imageUrl: saved.imageUrl,
+    absolutePath: saved.absolutePath,
+    plantId: input.plantId
+  });
 
   return {
     capture,
     imageUrl: saved.imageUrl,
     bytes: saved.bytes,
     sha256: createHash("sha256").update(buffer).digest("hex"),
-    snapshotUrl
+    snapshotUrl,
+    plantId: attached.plantId,
+    plantCreated: attached.plantCreated
   };
 }

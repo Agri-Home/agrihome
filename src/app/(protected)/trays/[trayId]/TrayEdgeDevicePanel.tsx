@@ -159,15 +159,27 @@ export function TrayEdgeDevicePanel({
           id?: string;
           imageUrl?: string;
           captureId?: string;
+          plantId?: string | null;
+          plantCreated?: boolean;
         };
       };
       if (!res.ok) {
         throw new Error(json.error?.message ?? "Capture failed");
       }
 
+      const resolvedPlantId = json.data?.plantId?.trim() || null;
+      if (resolvedPlantId) {
+        setPlantId(resolvedPlantId);
+      }
+
       if (json.data?.imageUrl && json.queued !== true) {
         setPreviewUrl(json.data.imageUrl);
-        setMessage(json.message ?? "Picture captured");
+        const plantNote = resolvedPlantId
+          ? json.data.plantCreated
+            ? " New plant added to this tray."
+            : " Plant image updated."
+          : "";
+        setMessage((json.message ?? "Picture captured") + plantNote);
         router.refresh();
         return;
       }
@@ -437,7 +449,10 @@ export function TrayEdgeDevicePanel({
             value={plantId}
             onChange={(e) => setPlantId(e.target.value)}
           >
-            <option value="">Whole tray / first plant</option>
+            <option value="">Auto-create / attach plant</option>
+            {plantId && !plants.some((p) => p.id === plantId) ? (
+              <option value={plantId}>New plant (just captured)</option>
+            ) : null}
             {plants.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.slotLabel || p.name}
@@ -491,7 +506,22 @@ export function TrayEdgeDevicePanel({
       )}
 
       {error && <p className="text-sm text-red-700">{error}</p>}
-      {message && <p className="text-sm text-emerald-700">{message}</p>}
+      {message && (
+        <p className="text-sm text-emerald-700">
+          {message}
+          {plantId ? (
+            <>
+              {" "}
+              <a
+                href={`/plants/${encodeURIComponent(plantId)}`}
+                className="underline underline-offset-2 hover:text-emerald-900"
+              >
+                Open plant
+              </a>
+            </>
+          ) : null}
+        </p>
+      )}
       {previewUrl && (
         <div className="border-t border-ink/10 pt-4">
           <p className="mb-2 text-sm text-ink/55">Latest capture</p>

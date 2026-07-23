@@ -121,6 +121,14 @@ export const env = {
       process.env.DEVICE_AUTO_VISION_ON_INGEST,
       false
     ),
+    /**
+     * When true (default), successful Pi ingest / Take Picture runs leaf
+     * species/disease classification asynchronously (failures logged only).
+     */
+    autoDiseaseOnIngest: parseBoolean(
+      process.env.DEVICE_AUTO_DISEASE_ON_INGEST,
+      true
+    ),
     /** Relative path or absolute URL for Moonraker/crowsnest still frames. */
     snapshotPath:
       process.env.AGRIHOME_SNAPSHOT_PATH?.trim() ||
