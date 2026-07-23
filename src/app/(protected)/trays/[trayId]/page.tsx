@@ -1,6 +1,5 @@
 export const dynamic = "force-dynamic";
 
-import Image from "next/image";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
@@ -22,6 +21,7 @@ import { formatDateTime, formatRelativeTimestamp } from "@/lib/utils";
 
 import { TrayManageClient } from "./TrayManageClient";
 import { TrayVisionAnalyzeClient } from "./TrayVisionAnalyzeClient";
+import { TrayEdgeDevicePanel } from "./TrayEdgeDevicePanel";
 
 function trayTone(status: string) {
   if (status === "alert") return "critical" as const;
@@ -95,6 +95,18 @@ export default async function TrayDetailPage({
         />
       </section>
 
+      <section className="animate-fade-in stagger-1">
+        <TrayEdgeDevicePanel
+          trayId={tray.id}
+          edgeDeviceId={tray.edgeDeviceId}
+          plants={plants.map((p) => ({
+            id: p.id,
+            name: p.name,
+            slotLabel: p.slotLabel
+          }))}
+        />
+      </section>
+
       {/* Stats grid */}
       <div className="animate-fade-in stagger-2 grid grid-cols-2 gap-3">
         <Card className="p-4">
@@ -132,7 +144,7 @@ export default async function TrayDetailPage({
           <SectionTitle>Latest Capture</SectionTitle>
           <Card className="overflow-hidden p-0">
             <div className="relative aspect-[16/10] w-full bg-mist">
-              <Image
+              <PlantImage
                 src={capture.imageUrl}
                 alt="Latest tray capture"
                 fill

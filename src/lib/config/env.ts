@@ -94,6 +94,43 @@ export const env = {
       privateKey: normalizeMultilineSecret(process.env.FIREBASE_PRIVATE_KEY),
       serviceAccountJson: process.env.FIREBASE_SERVICE_ACCOUNT_JSON ?? ""
     }
+  },
+  /** Raspberry Pi / Moonraker edge device provisioning & ingest. */
+  device: {
+    provisioningSecret: process.env.DEVICE_PROVISIONING_SECRET?.trim() ?? "",
+    defaultOwnerEmail:
+      process.env.DEVICE_DEFAULT_OWNER_EMAIL?.trim().toLowerCase() ?? "",
+    ingestMaxBytes: parseNumber(
+      process.env.DEVICE_INGEST_MAX_BYTES,
+      12 * 1024 * 1024
+    ),
+    ingestMaxPerDevicePerMin: parseNumber(
+      process.env.DEVICE_INGEST_MAX_PER_DEVICE_PER_MIN,
+      30
+    ),
+    ingestMaxPerIpPerMin: parseNumber(
+      process.env.DEVICE_INGEST_MAX_PER_IP_PER_MIN,
+      60
+    ),
+    heartbeatStaleMinutes: parseNumber(
+      process.env.DEVICE_HEARTBEAT_STALE_MINUTES,
+      5
+    ),
+    /** When true, successful Pi ingest may trigger tray CV asynchronously. */
+    autoVisionOnIngest: parseBoolean(
+      process.env.DEVICE_AUTO_VISION_ON_INGEST,
+      false
+    ),
+    /** Relative path or absolute URL for Moonraker/crowsnest still frames. */
+    snapshotPath:
+      process.env.AGRIHOME_SNAPSHOT_PATH?.trim() ||
+      process.env.DEVICE_SNAPSHOT_PATH?.trim() ||
+      "/webcam/?action=snapshot",
+    /** Server-side direct snapshot fetch timeout (Take Picture fast path). */
+    snapshotTimeoutMs: parseNumber(
+      process.env.DEVICE_SNAPSHOT_TIMEOUT_MS,
+      8_000
+    )
   }
 };
 

@@ -36,6 +36,8 @@ export interface TraySystem {
   healthScore: number;
   status: TrayHealthStatus;
   deviceId: string;
+  /** Linked Raspberry Pi / Moonraker edge device, when provisioned. */
+  edgeDeviceId?: string | null;
   lastCaptureAt: string;
 }
 
@@ -80,7 +82,7 @@ export interface CaptureSchedule {
   active: boolean;
   nextRunAt: string;
   lastRunAt?: string;
-  destination: "computer-vision-backend";
+  destination: "computer-vision-backend" | "raspberry-pi-edge";
 }
 
 export interface CameraCapture {
@@ -93,6 +95,11 @@ export interface CameraCapture {
   source: "hardware" | "simulator";
   status: CaptureStatus;
   notes?: string;
+  plantId?: string | null;
+  hingeDeg?: number | null;
+  motorMm?: number | null;
+  poseOrder?: number | null;
+  commandId?: string | null;
 }
 
 export interface SimilarImageMatch {

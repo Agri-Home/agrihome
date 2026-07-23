@@ -1,6 +1,5 @@
 export const dynamic = "force-dynamic";
 
-import Image from "next/image";
 import Link from "next/link";
 
 import { Badge } from "@/components/atoms/Badge";
@@ -9,6 +8,7 @@ import { StatusDot } from "@/components/atoms/StatusDot";
 import { SectionTitle } from "@/components/app/Section";
 import { requireSessionAccountUser } from "@/lib/auth/session";
 import { ClientChartFrame } from "@/components/charts/ClientChartFrame";
+import { PlantImage } from "@/components/media/PlantImage";
 import { TrayHealthBarChart } from "@/components/charts/TrayHealthBarChart";
 import { getLatestCameraCapture } from "@/lib/services/camera-service";
 import { getMonitoringLog } from "@/lib/services/monitoring-service";
@@ -151,7 +151,7 @@ export default async function HomePage() {
           <Link href={`/trays/${capture.trayId}`} className="block">
             <Card interactive className="overflow-hidden p-0">
               <div className="relative aspect-[16/10] w-full bg-mist">
-                <Image
+                <PlantImage
                   src={capture.imageUrl}
                   alt="Latest greenhouse frame"
                   fill

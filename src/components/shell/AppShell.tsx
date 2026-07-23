@@ -71,6 +71,16 @@ function IconSchedule({ active }: { active: boolean }) {
   );
 }
 
+function IconDevices({ active }: { active: boolean }) {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.2 : 1.8} strokeLinecap="round" strokeLinejoin="round">
+      <rect x="4" y="4" width="16" height="12" rx="2" fill={active ? "currentColor" : "none"} />
+      <path d="M8 20h8M12 16v4" stroke={active ? "currentColor" : "currentColor"} />
+      {!active && <rect x="4" y="4" width="16" height="12" rx="2" />}
+    </svg>
+  );
+}
+
 function IconFeedback({ active }: { active: boolean }) {
   return (
     <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.2 : 1.8} strokeLinecap="round" strokeLinejoin="round">
@@ -130,6 +140,12 @@ const PRIMARY_NAV: NavItem[] = [
     label: "Schedule",
     match: (p) => p.startsWith("/schedule"),
     icon: (active) => <IconSchedule active={active} />
+  },
+  {
+    href: "/devices",
+    label: "Devices",
+    match: (p) => p.startsWith("/devices"),
+    icon: (active) => <IconDevices active={active} />
   }
 ];
 
