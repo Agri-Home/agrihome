@@ -135,15 +135,17 @@ const syncCurrentFirebaseUserToServerSession = async (
 export function LoginForm({
   firebaseConfig,
   isServerConfigured,
-  variant = "default"
+  variant = "default",
+  initialMode = "sign-in"
 }: {
   firebaseConfig: FirebaseClientConfig;
   isServerConfigured: boolean;
   variant?: LoginFormVariant;
+  initialMode?: AuthMode;
 }) {
   const router = useRouter();
   const { show } = useSnackbar();
-  const [mode, setMode] = useState<AuthMode>("sign-in");
+  const [mode, setMode] = useState<AuthMode>(initialMode);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);

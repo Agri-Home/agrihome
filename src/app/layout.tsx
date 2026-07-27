@@ -13,7 +13,7 @@ const dmSans = DM_Sans({
 
 export const metadata: Metadata = {
   title: "AgriHome",
-  description: "Tray and plant monitoring.",
+  description: "Watch your trays grow — plant monitoring from capture to care.",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
