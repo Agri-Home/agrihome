@@ -77,11 +77,32 @@ function IconSchedule({ active }: { active: boolean }) {
 }
 
 function IconDevices({ active }: { active: boolean }) {
+  // Unicode has no microcontroller emoji; use the familiar IC/chip glyph instead.
   return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.2 : 1.8} strokeLinecap="round" strokeLinejoin="round">
-      <rect x="4" y="4" width="16" height="12" rx="2" fill={active ? "currentColor" : "none"} />
-      <path d="M8 20h8M12 16v4" stroke={active ? "currentColor" : "currentColor"} />
-      {!active && <rect x="4" y="4" width="16" height="12" rx="2" />}
+    <svg
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={active ? 2.2 : 1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <rect
+        x="7"
+        y="7"
+        width="10"
+        height="10"
+        rx="1.5"
+        fill={active ? "currentColor" : "none"}
+      />
+      {active && (
+        <rect x="10" y="10" width="4" height="4" rx="0.5" fill="var(--canvas)" stroke="none" />
+      )}
+      {!active && <rect x="10" y="10" width="4" height="4" rx="0.5" fill="currentColor" opacity="0.35" stroke="none" />}
+      <path d="M9 7V4M12 7V4M15 7V4M9 17v3M12 17v3M15 17v3M7 9H4M7 12H4M7 15H4M17 9h3M17 12h3M17 15h3" />
     </svg>
   );
 }
