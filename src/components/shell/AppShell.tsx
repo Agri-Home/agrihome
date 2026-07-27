@@ -207,46 +207,40 @@ const MOBILE_PRIMARY_NAV: NavItem[] = [
 /** Secondary destinations tucked into the mobile More menu. */
 const MORE_NAV: NavItem[] = [
   NAV_MESH,
-  NAV_SCHEDULE,
   NAV_FEEDBACK,
+  NAV_SCHEDULE,
   NAV_SETTINGS
 ];
 
-function buildMoreNavItems(participateMlFeedback: boolean): NavItem[] {
-  return participateMlFeedback
-    ? MORE_NAV
-    : MORE_NAV.filter((item) => item.href !== "/feedback");
-}
-
-/** Desktop sidebar keeps the original full-nav order. */
-function buildAppNavItems(participateMlFeedback: boolean): NavItem[] {
-  return [
-    NAV_DASHBOARD,
-    NAV_TRAYS,
-    NAV_ADD_PLANT,
-    NAV_MESH,
-    ...(participateMlFeedback ? [NAV_FEEDBACK] : []),
-    NAV_SCHEDULE,
-    NAV_DEVICES,
-    NAV_SETTINGS
-  ];
-}
+/** Desktop sidebar order (Feedback stays in a fixed slot for stable hydration). */
+const APP_NAV: NavItem[] = [
+  NAV_DASHBOARD,
+  NAV_TRAYS,
+  NAV_ADD_PLANT,
+  NAV_MESH,
+  NAV_FEEDBACK,
+  NAV_SCHEDULE,
+  NAV_DEVICES,
+  NAV_SETTINGS
+];
 
 export function AppShell({
   children,
   currentUser,
-  firebaseConfig,
-  participateMlFeedback
+  firebaseConfig
 }: {
   children: React.ReactNode;
   currentUser: AuthenticatedUser;
   firebaseConfig: FirebaseClientConfig;
-  /** When false, Feedback nav and training UI are hidden; default true. */
-  participateMlFeedback: boolean;
+  /**
+   * Accepted for layout compatibility. Feedback/training opt-out is enforced on
+   * those pages; nav keeps a fixed item list so SSR and client markup match.
+   */
+  participateMlFeedback?: boolean;
 }) {
   const pathname = usePathname();
-  const navItems = buildAppNavItems(participateMlFeedback);
-  const moreNavItems = buildMoreNavItems(participateMlFeedback);
+  const navItems = APP_NAV;
+  const moreNavItems = MORE_NAV;
   const moreActive = moreNavItems.some((item) => item.match(pathname));
   const [moreOpen, setMoreOpen] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
