@@ -105,24 +105,74 @@ export function TrayEdgeDevicePanel({
     void load();
   }, [load]);
 
+  async function pollLatestCaptureOnce(
+    sinceMs: number
+  ): Promise<string | null> {
+    try {
+      const res = await fetch(
+        `/api/camera/latest?trayId=${encodeURIComponent(trayId)}`
+      );
+      if (!res.ok) return null;
+      const json = (await res.json()) as {
+        data?: { imageUrl?: string | null; capturedAt?: string };
+      };
+      const url = json.data?.imageUrl;
+      const at = json.data?.capturedAt
+        ? Date.parse(json.data.capturedAt)
+        : NaN;
+      if (url && Number.isFinite(at) && at >= sinceMs - 2_000) {
+        return url;
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  }
+
   async function pollLatestCapture(sinceMs: number): Promise<string | null> {
     for (let i = 0; i < 8; i++) {
       await new Promise((r) => setTimeout(r, i === 0 ? 800 : 1500));
+      const url = await pollLatestCaptureOnce(sinceMs);
+      if (url) return url;
+    }
+    return null;
+  }
+
+  /** Poll queued command; return image URL, agent failure text, or null if still waiting. */
+  async function pollQueuedCapture(input: {
+    deviceId: string;
+    commandId: string;
+    sinceMs: number;
+  }): Promise<{ imageUrl?: string; agentError?: string } | null> {
+    for (let i = 0; i < 8; i++) {
+      await new Promise((r) => setTimeout(r, i === 0 ? 800 : 1500));
       try {
-        const res = await fetch(
-          `/api/camera/latest?trayId=${encodeURIComponent(trayId)}`
+        const cmdRes = await fetch(
+          `/api/devices/${encodeURIComponent(input.deviceId)}?commandId=${encodeURIComponent(input.commandId)}`
         );
-        if (!res.ok) continue;
-        const json = (await res.json()) as {
-          data?: { imageUrl?: string | null; capturedAt?: string };
-        };
-        const url = json.data?.imageUrl;
-        const at = json.data?.capturedAt
-          ? Date.parse(json.data.capturedAt)
-          : NaN;
-        if (url && Number.isFinite(at) && at >= sinceMs - 2_000) {
-          return url;
+        if (cmdRes.ok) {
+          const cmdJson = (await cmdRes.json()) as {
+            command?: {
+              status?: string;
+              errorMessage?: string | null;
+            };
+          };
+          const status = cmdJson.command?.status;
+          if (status === "failed") {
+            return {
+              agentError:
+                cmdJson.command?.errorMessage?.trim() ||
+                "Pi agent failed to capture"
+            };
+          }
+          if (status === "completed") {
+            const url = await pollLatestCaptureOnce(input.sinceMs);
+            if (url) return { imageUrl: url };
+            // ingest may lag a beat behind command completion
+          }
         }
+        const url = await pollLatestCaptureOnce(input.sinceMs);
+        if (url) return { imageUrl: url };
       } catch {
         // keep polling
       }
@@ -154,37 +204,76 @@ export function TrayEdgeDevicePanel({
       const json = (await res.json()) as {
         message?: string;
         queued?: boolean;
+        reachabilityError?: string | null;
         error?: { message?: string };
         data?: {
           id?: string;
           imageUrl?: string;
           captureId?: string;
+          plantId?: string | null;
+          plantCreated?: boolean;
         };
       };
       if (!res.ok) {
         throw new Error(json.error?.message ?? "Capture failed");
       }
 
+      const resolvedPlantId = json.data?.plantId?.trim() || null;
+      if (resolvedPlantId) {
+        setPlantId(resolvedPlantId);
+      }
+
       if (json.data?.imageUrl && json.queued !== true) {
         setPreviewUrl(json.data.imageUrl);
-        setMessage(json.message ?? "Picture captured");
+        const plantNote = resolvedPlantId
+          ? json.data.plantCreated
+            ? " New plant added to this tray."
+            : " Plant image updated."
+          : "";
+        setMessage((json.message ?? "Picture captured") + plantNote);
         router.refresh();
         return;
       }
 
+      const commandId = json.data?.id?.trim();
       setMessage(
         json.message ??
-          `Capture queued (${json.data?.id ?? "ok"}). Waiting for the Pi…`
+          `Capture queued (${commandId ?? "ok"}). Waiting for the Pi…`
       );
-      const polled = await pollLatestCapture(startedAt);
-      if (polled) {
-        setPreviewUrl(polled);
-        setMessage("Picture arrived from the Pi agent");
+      if (commandId) {
+        const polled = await pollQueuedCapture({
+          deviceId: device.id,
+          commandId,
+          sinceMs: startedAt
+        });
+        if (polled?.imageUrl) {
+          setPreviewUrl(polled.imageUrl);
+          setMessage("Picture arrived from the Pi agent");
+        } else if (polled?.agentError) {
+          setError(
+            `Pi agent capture failed: ${polled.agentError}` +
+              (json.reachabilityError
+                ? ` (server also could not reach Moonraker: ${json.reachabilityError})`
+                : "")
+          );
+          setMessage(null);
+        } else {
+          setMessage(
+            (json.message ?? "Capture queued") +
+              " Still waiting — the frame will show when the agent finishes."
+          );
+        }
       } else {
-        setMessage(
-          (json.message ?? "Capture queued") +
-            " Still waiting — the frame will show when the agent finishes."
-        );
+        const url = await pollLatestCapture(startedAt);
+        if (url) {
+          setPreviewUrl(url);
+          setMessage("Picture arrived from the Pi agent");
+        } else {
+          setMessage(
+            (json.message ?? "Capture queued") +
+              " Still waiting — the frame will show when the agent finishes."
+          );
+        }
       }
       router.refresh();
     } catch (e) {
@@ -437,7 +526,10 @@ export function TrayEdgeDevicePanel({
             value={plantId}
             onChange={(e) => setPlantId(e.target.value)}
           >
-            <option value="">Whole tray / first plant</option>
+            <option value="">Auto-create / attach plant</option>
+            {plantId && !plants.some((p) => p.id === plantId) ? (
+              <option value={plantId}>New plant (just captured)</option>
+            ) : null}
             {plants.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.slotLabel || p.name}
@@ -491,7 +583,22 @@ export function TrayEdgeDevicePanel({
       )}
 
       {error && <p className="text-sm text-red-700">{error}</p>}
-      {message && <p className="text-sm text-emerald-700">{message}</p>}
+      {message && (
+        <p className="text-sm text-emerald-700">
+          {message}
+          {plantId ? (
+            <>
+              {" "}
+              <a
+                href={`/plants/${encodeURIComponent(plantId)}`}
+                className="underline underline-offset-2 hover:text-emerald-900"
+              >
+                Open plant
+              </a>
+            </>
+          ) : null}
+        </p>
+      )}
       {previewUrl && (
         <div className="border-t border-ink/10 pt-4">
           <p className="mb-2 text-sm text-ink/55">Latest capture</p>

@@ -15,6 +15,7 @@ import {
 import { env } from "@/lib/config/env";
 import { requirePostgresPool } from "@/lib/db/postgres";
 import { ingestCameraCapture } from "@/lib/services/camera-service";
+import { postprocessEdgeCapture } from "@/lib/services/edge-capture-postprocess";
 import { completeEdgeCommand } from "@/lib/services/edge-command-service";
 import { savePlantLeafOriginal, type LeafImageExt } from "@/lib/storage/save-original";
 import { getTrayById } from "@/lib/services/topology-service";
@@ -54,7 +55,7 @@ function parseOptionalNumber(value: FormDataEntryValue | null): number | undefin
  * Fields:
  *   image (file, required) — JPEG/PNG/WebP
  *   trayId (optional) — defaults to tray linked to this device
- *   plantId, capturedAt, hingeDeg, motorMm, poseOrder, notes, commandId (optional)
+ *   plantId, slotLabel, capturedAt, hingeDeg, motorMm, poseOrder, notes, commandId (optional)
  */
 export async function POST(request: Request) {
   const ip = clientIp(request);
@@ -172,12 +173,15 @@ export async function POST(request: Request) {
     }
 
     const plantId = String(form.get("plantId") ?? "").trim() || undefined;
+    const slotLabel = String(form.get("slotLabel") ?? "").trim() || undefined;
     const notes = String(form.get("notes") ?? "").trim() || undefined;
     const commandId = String(form.get("commandId") ?? "").trim() || undefined;
     const capturedAt = String(form.get("capturedAt") ?? "").trim() || undefined;
     const hingeDeg = parseOptionalNumber(form.get("hingeDeg"));
     const motorMm = parseOptionalNumber(form.get("motorMm"));
     const poseOrder = parseOptionalNumber(form.get("poseOrder"));
+    const poseOrderInt =
+      poseOrder != null ? Math.round(poseOrder) : undefined;
 
     const capture = await ingestCameraCapture({
       trayId: tray.id,
@@ -190,7 +194,7 @@ export async function POST(request: Request) {
       plantId,
       hingeDeg,
       motorMm,
-      poseOrder: poseOrder != null ? Math.round(poseOrder) : undefined,
+      poseOrder: poseOrderInt,
       commandId
     });
 
@@ -200,20 +204,16 @@ export async function POST(request: Request) {
       [capture.capturedAt, tray.id]
     );
 
-    if (plantId) {
-      await pool.query(
-        `UPDATE plants
-         SET last_image_url = $1, last_image_at = $2
-         WHERE id = $3 AND tray_id = $4 AND owner_email = $5`,
-        [
-          saved.imageUrl,
-          capture.capturedAt,
-          plantId,
-          tray.id,
-          auth.ownerEmail
-        ]
-      );
-    }
+    const attached = await postprocessEdgeCapture({
+      ownerEmail: auth.ownerEmail,
+      trayId: tray.id,
+      capture,
+      imageUrl: saved.imageUrl,
+      absolutePath: saved.absolutePath,
+      plantId,
+      poseOrder: poseOrderInt,
+      slotLabel
+    });
 
     if (commandId) {
       await completeEdgeCommand({
@@ -223,22 +223,10 @@ export async function POST(request: Request) {
         result: {
           captureId: capture.id,
           imageUrl: saved.imageUrl,
+          plantId: attached.plantId,
           sha256: createHash("sha256").update(buffer).digest("hex")
         }
       });
-    }
-
-    // Optional async CV — fire-and-forget; failures must not fail ingest.
-    if (env.device.autoVisionOnIngest) {
-      void import("@/lib/services/edge-vision-hook").then((m) =>
-        m.triggerVisionAfterPiIngest({
-          ownerEmail: auth.ownerEmail,
-          trayId: tray!.id,
-          captureId: capture.id,
-          imageUrl: saved.imageUrl,
-          absolutePath: saved.absolutePath
-        })
-      );
     }
 
     return NextResponse.json({
@@ -250,10 +238,11 @@ export async function POST(request: Request) {
         imageUrl: saved.imageUrl,
         bytes: saved.bytes,
         capturedAt: capture.capturedAt,
-        plantId: plantId ?? null,
+        plantId: attached.plantId,
+        plantCreated: attached.plantCreated,
         hingeDeg: hingeDeg ?? null,
         motorMm: motorMm ?? null,
-        poseOrder: poseOrder ?? null
+        poseOrder: poseOrderInt ?? null
       }
     });
   } catch (error) {
@@ -271,6 +260,7 @@ export async function GET() {
       "image",
       "trayId?",
       "plantId?",
+      "slotLabel?",
       "capturedAt?",
       "hingeDeg?",
       "motorMm?",

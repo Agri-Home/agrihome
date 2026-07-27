@@ -2,7 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode
+} from "react";
 
 import { LogoutButton } from "@/components/auth/LogoutButton";
 import type {
@@ -102,65 +107,108 @@ function IconSettings({ active }: { active: boolean }) {
   );
 }
 
-const PRIMARY_NAV: NavItem[] = [
-  {
-    href: "/dashboard",
-    label: "Dashboard",
-    match: (p) => p === "/dashboard",
-    icon: (active) => <IconDashboard active={active} />
-  },
-  {
-    href: "/trays",
-    label: "Trays",
-    match: (p) =>
-      (p.startsWith("/trays") || p.startsWith("/plants")) && !p.startsWith("/plants/new"),
-    icon: (active) => <IconTrays active={active} />
-  },
-  {
-    href: "/plants/new",
-    label: "Add Plant",
-    match: (p) => p.startsWith("/plants/new"),
-    icon: () => <IconAddPlant />,
-    isFab: true
-  },
-  {
-    href: "/mesh",
-    label: "Mesh",
-    match: (p) => p.startsWith("/mesh"),
-    icon: (active) => <IconMesh active={active} />
-  },
-  {
-    href: "/feedback",
-    label: "Feedback",
-    match: (p) => p.startsWith("/feedback"),
-    icon: (active) => <IconFeedback active={active} />
-  },
-  {
-    href: "/schedule",
-    label: "Schedule",
-    match: (p) => p.startsWith("/schedule"),
-    icon: (active) => <IconSchedule active={active} />
-  },
-  {
-    href: "/devices",
-    label: "Devices",
-    match: (p) => p.startsWith("/devices"),
-    icon: (active) => <IconDevices active={active} />
-  }
-];
+function IconMore({ active }: { active: boolean }) {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={active ? 2.2 : 1.8} strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="5" cy="12" r="1.5" fill="currentColor" />
+      <circle cx="12" cy="12" r="1.5" fill="currentColor" />
+      <circle cx="19" cy="12" r="1.5" fill="currentColor" />
+    </svg>
+  );
+}
 
-const SETTINGS_NAV: NavItem = {
+const NAV_DASHBOARD: NavItem = {
+  href: "/dashboard",
+  label: "Dashboard",
+  match: (p) => p === "/dashboard",
+  icon: (active) => <IconDashboard active={active} />
+};
+
+const NAV_TRAYS: NavItem = {
+  href: "/trays",
+  label: "Trays",
+  match: (p) =>
+    (p.startsWith("/trays") || p.startsWith("/plants")) && !p.startsWith("/plants/new"),
+  icon: (active) => <IconTrays active={active} />
+};
+
+const NAV_ADD_PLANT: NavItem = {
+  href: "/plants/new",
+  label: "Add Plant",
+  match: (p) => p.startsWith("/plants/new"),
+  icon: () => <IconAddPlant />,
+  isFab: true
+};
+
+const NAV_MESH: NavItem = {
+  href: "/mesh",
+  label: "Mesh",
+  match: (p) => p.startsWith("/mesh"),
+  icon: (active) => <IconMesh active={active} />
+};
+
+const NAV_FEEDBACK: NavItem = {
+  href: "/feedback",
+  label: "Feedback",
+  match: (p) => p.startsWith("/feedback"),
+  icon: (active) => <IconFeedback active={active} />
+};
+
+const NAV_SCHEDULE: NavItem = {
+  href: "/schedule",
+  label: "Schedule",
+  match: (p) => p.startsWith("/schedule"),
+  icon: (active) => <IconSchedule active={active} />
+};
+
+const NAV_DEVICES: NavItem = {
+  href: "/devices",
+  label: "Devices",
+  match: (p) => p.startsWith("/devices"),
+  icon: (active) => <IconDevices active={active} />
+};
+
+const NAV_SETTINGS: NavItem = {
   href: "/settings",
   label: "Settings",
   match: (p) => p.startsWith("/settings"),
   icon: (active) => <IconSettings active={active} />
 };
 
+/** Primary destinations shown directly on the mobile bottom bar. */
+const MOBILE_PRIMARY_NAV: NavItem[] = [
+  NAV_DASHBOARD,
+  NAV_TRAYS,
+  NAV_ADD_PLANT,
+  NAV_DEVICES
+];
+
+/** Secondary destinations tucked into the mobile More menu. */
+const MORE_NAV: NavItem[] = [
+  NAV_MESH,
+  NAV_SCHEDULE,
+  NAV_FEEDBACK,
+  NAV_SETTINGS
+];
+
+function buildMoreNavItems(participateMlFeedback: boolean): NavItem[] {
+  return participateMlFeedback
+    ? MORE_NAV
+    : MORE_NAV.filter((item) => item.href !== "/feedback");
+}
+
+/** Desktop sidebar keeps the original full-nav order. */
 function buildAppNavItems(participateMlFeedback: boolean): NavItem[] {
-  const main = participateMlFeedback
-    ? PRIMARY_NAV
-    : PRIMARY_NAV.filter((item) => item.href !== "/feedback");
-  return [...main, SETTINGS_NAV];
+  return [
+    NAV_DASHBOARD,
+    NAV_TRAYS,
+    NAV_ADD_PLANT,
+    NAV_MESH,
+    ...(participateMlFeedback ? [NAV_FEEDBACK] : []),
+    NAV_SCHEDULE,
+    NAV_DEVICES,
+    NAV_SETTINGS
+  ];
 }
 
 export function AppShell({
@@ -177,8 +225,39 @@ export function AppShell({
 }) {
   const pathname = usePathname();
   const navItems = buildAppNavItems(participateMlFeedback);
+  const moreNavItems = buildMoreNavItems(participateMlFeedback);
+  const moreActive = moreNavItems.some((item) => item.match(pathname));
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
   const identityLabel = currentUser.name ?? currentUser.email ?? "Operator";
   const identityInitial = identityLabel.charAt(0).toUpperCase();
+
+  useEffect(() => {
+    setMoreOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!moreOpen) return;
+
+    function handlePointerDown(event: MouseEvent | TouchEvent) {
+      if (moreRef.current && !moreRef.current.contains(event.target as Node)) {
+        setMoreOpen(false);
+      }
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setMoreOpen(false);
+    }
+
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("touchstart", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("touchstart", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [moreOpen]);
 
   return (
     <div className="flex min-h-[100dvh] flex-col bg-canvas">
@@ -249,7 +328,7 @@ export function AppShell({
       {/* Mobile bottom navigation */}
       <nav className="safe-bottom fixed bottom-0 left-0 right-0 z-30 border-t border-leaf/10 bg-white/92 backdrop-blur-2xl lg:hidden" style={{ boxShadow: "0 -8px 40px rgba(15, 31, 23, 0.07)" }}>
         <div className="mx-auto flex max-w-lg items-end justify-around px-1 pb-1 pt-1.5">
-          {navItems.map((item) => {
+          {MOBILE_PRIMARY_NAV.map((item) => {
             const active = item.match(pathname);
 
             if (item.isFab) {
@@ -294,6 +373,62 @@ export function AppShell({
               </Link>
             );
           })}
+
+          <div ref={moreRef} className="relative flex min-w-[4rem] flex-col items-center">
+            {moreOpen && (
+              <div
+                role="menu"
+                aria-label="More navigation"
+                className="absolute bottom-[calc(100%+0.75rem)] right-0 z-40 w-52 overflow-hidden rounded-2xl border border-ink/[0.08] bg-white/95 py-1.5 shadow-[0_12px_40px_rgba(15,31,23,0.18)] backdrop-blur-xl"
+              >
+                {moreNavItems.map((item) => {
+                  const active = item.match(pathname);
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      role="menuitem"
+                      onClick={() => setMoreOpen(false)}
+                      className={`flex items-center gap-3 px-3.5 py-2.5 text-sm font-semibold transition-colors ${
+                        active
+                          ? "bg-lime/30 text-leaf"
+                          : "text-ink/70 hover:bg-ink/[0.04] hover:text-ink"
+                      }`}
+                    >
+                      <span className={`flex h-8 w-8 items-center justify-center rounded-xl ${
+                        active ? "bg-lime/40 text-leaf" : "bg-ink/[0.04] text-ink/50"
+                      }`}>
+                        {item.icon(active)}
+                      </span>
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+
+            <button
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={moreOpen}
+              aria-label="More"
+              onClick={() => setMoreOpen((open) => !open)}
+              className={`group flex min-w-[4rem] flex-col items-center gap-0.5 rounded-xl px-2 py-1.5 transition-all duration-200 ${
+                moreOpen || moreActive ? "text-leaf" : "text-ink/40"
+              }`}
+            >
+              <span className={`flex h-8 w-8 items-center justify-center rounded-xl transition-all duration-200 ${
+                moreOpen || moreActive ? "bg-lime/25 text-leaf" : "group-hover:bg-ink/5"
+              }`}>
+                <IconMore active={moreOpen || moreActive} />
+              </span>
+              <span className={`text-[10px] font-semibold tracking-wide ${
+                moreOpen || moreActive ? "text-leaf" : "text-ink/40"
+              }`}>
+                More
+              </span>
+            </button>
+          </div>
         </div>
       </nav>
     </div>
