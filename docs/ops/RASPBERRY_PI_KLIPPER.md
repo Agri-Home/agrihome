@@ -158,12 +158,20 @@ Register / heartbeat accept deprecated `moonrakerUrl` as an alias for
 
 ## Capture on the Pi (fswebcam)
 
-From [Agri-Home/klipper](https://github.com/Agri-Home/klipper):
+`camera-macros/save_image.sh` **requires** an output path. It saves the JPEG on
+the Pi and, by default, uploads to AgriHome ingest (disease detection runs on
+the server when `DEVICE_AUTO_DISEASE_ON_INGEST` is enabled — default true).
 
 ```bash
-# Manual smoke test
-/home/pi/klipper/camera-macros/save_image.sh /tmp/agrihome-test.jpg
+# Smoke test capture only
+/home/pi/klipper/camera-macros/save_image.sh /tmp/agrihome-test.jpg --no-upload
 file /tmp/agrihome-test.jpg   # JPEG image data
+
+# Capture → save on Pi → upload → disease detection on AgriHome
+export PYTHONPATH=/home/pi/klipper:$PYTHONPATH
+/home/pi/klipper/camera-macros/save_image.sh /home/pi/agrihome/captures/leaf.jpg
+# or:
+python3 -m agrihome_agent capture /home/pi/agrihome/captures/leaf.jpg
 ```
 
 Agent env:
