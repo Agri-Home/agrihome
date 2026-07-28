@@ -22,8 +22,13 @@ to register or run the agent.
    pending commands.
 3. **Take picture** — Vision Console queues `capture_now` (or optionally pulls
    an HTTP streamer still if `klipper_url` is set and reachable). The agent
-   runs `save_image.sh` / fswebcam and `POST`s multipart ingest.
-4. **Poses / schedules** — pose walks and `destination: raspberry-pi-edge`
+   reads the live hinge/motor pose, runs `save_image.sh` / fswebcam, and
+   `POST`s multipart ingest with that pose. AgriHome stores the values on the
+   capture and upserts the plant's pose sequence entry.
+4. **Get position** — Vision Console queues `get_position`; the agent queries
+   Moonraker/Klipper and returns `{ hingeDeg, motorMm }`. With a plant
+   selected, the UI also saves that pose for the plant.
+5. **Poses / schedules** — pose walks and `destination: raspberry-pi-edge`
    schedules still enqueue commands the agent executes.
 
 ```mermaid
@@ -46,9 +51,14 @@ sequenceDiagram
   opt runPoses
     Agent->>K: G-code / macros (hinge + motor)
   end
+  Agent->>K: query hinge/motor position
   Agent->>Cam: save_image.sh /tmp/capture.jpg
   Cam-->>Agent: JPEG bytes
-  Agent->>AH: POST /api/raspberry-pi/ingest (multipart)
+  Agent->>AH: POST /api/raspberry-pi/ingest (multipart + hingeDeg/motorMm)
+  UI->>AH: POST /api/devices/{id} action=getPosition
+  Agent->>AH: heartbeat claims get_position
+  Agent->>K: query hinge/motor position
+  Agent->>AH: complete command with hingeDeg/motorMm
 ```
 
 ## AgriHome setup

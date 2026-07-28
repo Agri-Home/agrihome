@@ -232,6 +232,8 @@ export async function captureFromKlipperStreamerDirect(input: {
   klipperUrl: string;
   snapshotPath?: string | null;
   notes?: string;
+  hingeDeg?: number;
+  motorMm?: number;
 }): Promise<DirectCaptureResult> {
   const ownerEmail = input.ownerEmail.toLowerCase();
   const tray = await getTrayById(ownerEmail, input.trayId);
@@ -256,7 +258,9 @@ export async function captureFromKlipperStreamerDirect(input: {
     capturedAt,
     notes: input.notes ?? "server_direct_capture",
     source: "hardware",
-    plantId: input.plantId
+    plantId: input.plantId,
+    hingeDeg: input.hingeDeg,
+    motorMm: input.motorMm
   });
 
   const pool = requirePostgresPool();
@@ -271,7 +275,10 @@ export async function captureFromKlipperStreamerDirect(input: {
     capture,
     imageUrl: saved.imageUrl,
     absolutePath: saved.absolutePath,
-    plantId: input.plantId
+    plantId: input.plantId,
+    deviceId: input.deviceId,
+    hingeDeg: input.hingeDeg ?? null,
+    motorMm: input.motorMm ?? null
   });
 
   return {

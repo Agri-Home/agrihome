@@ -77,7 +77,8 @@ export async function GET(request: Request, context: RouteContext) {
 
 /**
  * POST /api/devices/[deviceId]
- * Actions: capture | linkTray | revoke | delete | rotateKey | updateLimits | updateKlipperUrl
+ * Actions: capture | getPosition | linkTray | revoke | delete | rotateKey |
+ *          updateLimits | updateKlipperUrl
  */
 export async function POST(request: Request, context: RouteContext) {
   const auth = await requireApiAccountUser();
@@ -95,6 +96,8 @@ export async function POST(request: Request, context: RouteContext) {
       trayId?: string;
       plantId?: string;
       runPoses?: boolean;
+      hingeDeg?: number;
+      motorMm?: number;
       klipperUrl?: string;
       /** @deprecated Prefer klipperUrl / updateKlipperUrl. */
       moonrakerUrl?: string;
@@ -147,7 +150,15 @@ export async function POST(request: Request, context: RouteContext) {
             trayId,
             plantId: body.plantId,
             klipperUrl: device.klipperUrl.trim(),
-            notes: "take_picture_server_direct"
+            notes: "take_picture_server_direct",
+            hingeDeg:
+              body.hingeDeg != null && Number.isFinite(body.hingeDeg)
+                ? body.hingeDeg
+                : undefined,
+            motorMm:
+              body.motorMm != null && Number.isFinite(body.motorMm)
+                ? body.motorMm
+                : undefined
           });
           return NextResponse.json({
             message: "Picture captured",
@@ -160,7 +171,9 @@ export async function POST(request: Request, context: RouteContext) {
               snapshotUrl: direct.snapshotUrl,
               trayId,
               plantId: direct.plantId,
-              plantCreated: direct.plantCreated
+              plantCreated: direct.plantCreated,
+              hingeDeg: direct.capture.hingeDeg ?? null,
+              motorMm: direct.capture.motorMm ?? null
             }
           });
         } catch (directError) {
@@ -201,6 +214,34 @@ export async function POST(request: Request, context: RouteContext) {
             })(),
         queued: true,
         reachabilityError,
+        data: cmd
+      });
+    }
+
+    if (body.action === "getPosition") {
+      if (device.revokedAt) {
+        return apiErrorResponse(
+          API_ERROR_CODES.FORBIDDEN,
+          "Device is revoked",
+          403
+        );
+      }
+      const trayId = await resolveLinkedTrayId(
+        deviceId,
+        auth.email,
+        body.trayId
+      );
+      const cmd = await enqueueEdgeCommand({
+        deviceId,
+        trayId,
+        plantId: body.plantId,
+        commandType: "get_position",
+        payload: { requestedBy: auth.email }
+      });
+      return NextResponse.json({
+        message:
+          "Position query queued. The Pi agent will report hinge/motor on the next heartbeat.",
+        queued: true,
         data: cmd
       });
     }
@@ -319,7 +360,7 @@ export async function POST(request: Request, context: RouteContext) {
 
     return apiErrorResponse(
       API_ERROR_CODES.BAD_REQUEST,
-      "Unknown action. Use capture, linkTray, revoke, delete, rotateKey, updateLimits, or updateKlipperUrl.",
+      "Unknown action. Use capture, getPosition, linkTray, revoke, delete, rotateKey, updateLimits, or updateKlipperUrl.",
       400
     );
   } catch (error) {

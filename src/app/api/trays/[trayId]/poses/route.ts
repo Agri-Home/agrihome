@@ -10,6 +10,7 @@ import {
   generatePosesFromPlantLayout,
   listPoseSequencesForTray,
   updateDeviceActuatorLimits,
+  upsertPlantPosePosition,
   upsertPoseSequence
 } from "@/lib/services/capture-pose-service";
 import { getTrayById } from "@/lib/services/topology-service";
@@ -40,7 +41,8 @@ export async function GET(
 
 /**
  * POST /api/trays/[trayId]/poses
- * Body: { name, poses[], generateFromLayout?, deviceId?, actuatorLimits? }
+ * Body: { name, poses[], generateFromLayout?, upsertPlantPose?, plantId?,
+ *         hingeDeg?, motorMm?, deviceId?, actuatorLimits? }
  */
 export async function POST(
   request: Request,
@@ -60,6 +62,10 @@ export async function POST(
       name?: string;
       deviceId?: string;
       generateFromLayout?: boolean;
+      upsertPlantPose?: boolean;
+      plantId?: string;
+      hingeDeg?: number;
+      motorMm?: number;
       sequenceId?: string;
       poses?: Array<{
         poseOrder: number;
@@ -86,6 +92,40 @@ export async function POST(
         ownerEmail: auth.email,
         deviceId,
         ...body.actuatorLimits
+      });
+    }
+
+    if (body.upsertPlantPose) {
+      if (!body.plantId?.trim()) {
+        return apiErrorResponse(
+          API_ERROR_CODES.BAD_REQUEST,
+          "plantId is required to save a plant pose",
+          400
+        );
+      }
+      if (
+        body.hingeDeg == null ||
+        !Number.isFinite(body.hingeDeg) ||
+        body.motorMm == null ||
+        !Number.isFinite(body.motorMm)
+      ) {
+        return apiErrorResponse(
+          API_ERROR_CODES.BAD_REQUEST,
+          "hingeDeg and motorMm are required",
+          400
+        );
+      }
+      const sequence = await upsertPlantPosePosition({
+        ownerEmail: auth.email,
+        trayId,
+        plantId: body.plantId.trim(),
+        hingeDeg: body.hingeDeg,
+        motorMm: body.motorMm,
+        deviceId
+      });
+      return NextResponse.json({
+        data: sequence,
+        message: "Plant pose position saved"
       });
     }
 
