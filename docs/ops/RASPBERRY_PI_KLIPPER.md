@@ -26,8 +26,13 @@ to register or run the agent.
    `POST`s multipart ingest with that pose. AgriHome stores the values on the
    capture and upserts the plant's pose sequence entry.
 4. **Get position** — Vision Console queues `get_position`; the agent queries
-   Moonraker/Klipper and returns `{ hingeDeg, motorMm }`. With a plant
-   selected, the UI also saves that pose for the plant.
+   local Moonraker (`http://127.0.0.1:7125` by default, or
+   `AGRIHOME_MOONRAKER_URL`) and maps **`toolhead.position` X/Y** to
+   `{ hingeDeg, motorMm }` (fallbacks: `gcode_move`, then optional
+   `manual_stepper HINGE`/`MOTOR`). With a plant selected, the UI also saves
+   that pose for the plant. The Vision Console **Streamer URL** (`klipper_url`)
+   is an optional HTTP webcam still endpoint — it is **not** used for Moonraker
+   `/printer/objects/query`.
 5. **Poses / schedules** — pose walks and `destination: raspberry-pi-edge`
    schedules still enqueue commands the agent executes.
 
@@ -98,7 +103,10 @@ export DEVICE_PROVISIONING_SECRET='same-as-server'
 export AGRIHOME_OWNER_EMAIL=you@example.com
 export AGRIHOME_SNAPSHOT_CMD=/home/pi/klipper/camera-macros/save_image.sh
 # Optional: LAN HTTP streamer base for server-side Take Picture
-# export KLIPPER_URL=http://192.168.1.50
+# (Vision Console "Streamer URL" — webcam stills, NOT Moonraker)
+# export KLIPPER_URL=http://192.168.1.50:8080
+# Moonraker on the Pi (Get position / G-code). Default if unset:
+# export AGRIHOME_MOONRAKER_URL=http://127.0.0.1:7125
 
 python3 -m agrihome_agent register
 python3 -m agrihome_agent run
@@ -191,11 +199,14 @@ Agent env:
 | `AGRIHOME_URL` | — | AgriHome base URL |
 | `DEVICE_PROVISIONING_SECRET` | — | Must match server |
 | `AGRIHOME_OWNER_EMAIL` | — | Tray owner if server has no default |
-| `KLIPPER_URL` | — | Optional LAN base stored as `klipper_url` |
+| `KLIPPER_URL` | — | Optional LAN HTTP streamer stored as `klipper_url` (not Moonraker) |
+| `AGRIHOME_MOONRAKER_URL` | `http://127.0.0.1:7125` | Moonraker control API for Get position / G-code |
 | `AGRIHOME_SNAPSHOT_CMD` | — | Path to `save_image.sh` (preferred) |
 | `AGRIHOME_SNAPSHOT_PATH` | — | Fallback HTTP still path/URL |
 | `AGRIHOME_HEARTBEAT_SECONDS` | `5` | Poll / claim interval |
 | `AGRIHOME_ACTUATOR_DRY_RUN` | `1` | Skip real G-code until macros ready |
+| `AGRIHOME_STUB_HINGE_DEG` | — | Bench hinge pose without Moonraker |
+| `AGRIHOME_STUB_MOTOR_MM` | — | Bench motor pose without Moonraker |
 
 ## Vision Console
 
@@ -205,11 +216,14 @@ Agent env:
 3. **Generate poses from layout** then schedule with
    `destination: raspberry-pi-edge` for multi-angle runs.
 
-Update optional streamer URL via UI (`action: updateKlipperUrl`) or SQL:
+Update optional streamer URL via UI (`action: updateKlipperUrl`) or SQL.
+This field is for HTTP stills only — Get position uses Moonraker on the Pi
+(`AGRIHOME_MOONRAKER_URL` / `http://127.0.0.1:7125`), reading
+`toolhead.position` X→`hingeDeg` / Y→`motorMm`, not `klipper_url`.
 
 ```sql
 UPDATE edge_devices
-SET klipper_url = 'http://192.168.1.108', updated_at = NOW()
+SET klipper_url = 'http://192.168.1.108:8080', updated_at = NOW()
 WHERE id = 'edge-…';
 ```
 

@@ -738,7 +738,9 @@ export function TrayEdgeDevicePanel({
           Optional HTTP still for server-side Take Picture. Primary capture uses
           the Pi agent with Klipper + fswebcam (
           <code className="rounded bg-ink/5 px-1">camera-macros/save_image.sh</code>
-          ).
+          ). Get position uses Moonraker on the Pi (
+          <code className="rounded bg-ink/5 px-1">http://127.0.0.1:7125</code>
+          ), not this streamer URL.
         </p>
       </div>
 
