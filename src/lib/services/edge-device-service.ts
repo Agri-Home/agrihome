@@ -17,7 +17,7 @@ interface EdgeDeviceRow {
   mac_address: string | null;
   hostname: string | null;
   model: string | null;
-  moonraker_url: string | null;
+  klipper_url: string | null;
   api_key_prefix: string;
   status: string;
   last_heartbeat_at: Date | string | null;
@@ -33,7 +33,7 @@ export interface RegisterEdgeDeviceInput {
   macAddress?: string;
   hostname?: string;
   model?: string;
-  moonrakerUrl?: string;
+  klipperUrl?: string;
   provisioningCode: string;
   ownerEmail?: string;
   trayName?: string;
@@ -69,7 +69,7 @@ export async function getEdgeDeviceById(
 ): Promise<AuthenticatedEdgeDevice | null> {
   const rows = await queryRows<EdgeDeviceRow>(
     `SELECT id, owner_email, cpu_serial, mac_address, hostname, model,
-            moonraker_url, api_key_prefix, status, last_heartbeat_at,
+            klipper_url, api_key_prefix, status, last_heartbeat_at,
             hinge_min_deg, hinge_max_deg, motor_min_mm, motor_max_mm, revoked_at
      FROM edge_devices
      WHERE id = $1
@@ -84,7 +84,7 @@ export async function listEdgeDevicesForOwner(
 ): Promise<AuthenticatedEdgeDevice[]> {
   const rows = await queryRows<EdgeDeviceRow>(
     `SELECT id, owner_email, cpu_serial, mac_address, hostname, model,
-            moonraker_url, api_key_prefix, status, last_heartbeat_at,
+            klipper_url, api_key_prefix, status, last_heartbeat_at,
             hinge_min_deg, hinge_max_deg, motor_min_mm, motor_max_mm, revoked_at
      FROM edge_devices
      WHERE owner_email = $1
@@ -100,7 +100,7 @@ export async function getEdgeDeviceForTray(
 ): Promise<AuthenticatedEdgeDevice | null> {
   const rows = await queryRows<EdgeDeviceRow>(
     `SELECT d.id, d.owner_email, d.cpu_serial, d.mac_address, d.hostname, d.model,
-            d.moonraker_url, d.api_key_prefix, d.status, d.last_heartbeat_at,
+            d.klipper_url, d.api_key_prefix, d.status, d.last_heartbeat_at,
             d.hinge_min_deg, d.hinge_max_deg, d.motor_min_mm, d.motor_max_mm,
             d.revoked_at
      FROM edge_devices d
@@ -161,7 +161,7 @@ export async function registerEdgeDevice(
            mac_address = $2,
            hostname = $3,
            model = $4,
-           moonraker_url = COALESCE($5, moonraker_url),
+           klipper_url = COALESCE($5, klipper_url),
            api_key_hash = $6,
            api_key_prefix = $7,
            status = 'offline',
@@ -173,7 +173,7 @@ export async function registerEdgeDevice(
         input.macAddress?.trim() || null,
         input.hostname?.trim() || null,
         input.model?.trim() || null,
-        input.moonrakerUrl?.trim() || null,
+        input.klipperUrl?.trim() || null,
         key.hash,
         key.prefix,
         now,
@@ -184,7 +184,7 @@ export async function registerEdgeDevice(
     deviceId = `edge-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
     await pool.query(
       `INSERT INTO edge_devices
-        (id, owner_email, cpu_serial, mac_address, hostname, model, moonraker_url,
+        (id, owner_email, cpu_serial, mac_address, hostname, model, klipper_url,
          api_key_hash, api_key_prefix, status, created_at, updated_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'offline',$10,$10)`,
       [
@@ -194,7 +194,7 @@ export async function registerEdgeDevice(
         input.macAddress?.trim() || null,
         input.hostname?.trim() || null,
         input.model?.trim() || null,
-        input.moonrakerUrl?.trim() || null,
+        input.klipperUrl?.trim() || null,
         key.hash,
         key.prefix,
         now
@@ -286,6 +286,61 @@ export async function revokeEdgeDevice(
   return getEdgeDeviceById(deviceId);
 }
 
+/**
+ * Permanently unregister an edge device owned by the account.
+ * Clears tray links and related command/pose rows so the same CPU serial
+ * can register again without reProvision.
+ */
+export async function deleteEdgeDevice(
+  ownerEmail: string,
+  deviceId: string
+): Promise<boolean> {
+  const email = ownerEmail.toLowerCase();
+  const device = await getEdgeDeviceById(deviceId);
+  if (!device || device.ownerEmail !== email) {
+    return false;
+  }
+
+  const pool = requirePostgresPool();
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `UPDATE tray_systems
+       SET edge_device_id = NULL
+       WHERE edge_device_id = $1`,
+      [deviceId]
+    );
+    await client.query(
+      `UPDATE capture_pose_sequences
+       SET device_id = NULL
+       WHERE device_id = $1`,
+      [deviceId]
+    );
+    await client.query(
+      `DELETE FROM edge_device_commands WHERE device_id = $1`,
+      [deviceId]
+    );
+    const deleted = await client.query(
+      `DELETE FROM edge_devices
+       WHERE id = $1 AND owner_email = $2
+       RETURNING id`,
+      [deviceId, email]
+    );
+    if (!deleted.rowCount) {
+      await client.query("ROLLBACK");
+      return false;
+    }
+    await client.query("COMMIT");
+    return true;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export async function rotateEdgeDeviceKey(
   ownerEmail: string,
   deviceId: string
@@ -308,33 +363,33 @@ export async function rotateEdgeDeviceKey(
   return { device: updated, apiKey: key.plaintext };
 }
 
-/** Operator-facing update of the Moonraker base URL (no re-provision). */
-export async function updateEdgeDeviceMoonrakerUrl(input: {
+/** Operator-facing update of the Klipper base URL (no re-provision). */
+export async function updateEdgeDeviceKlipperUrl(input: {
   ownerEmail: string;
   deviceId: string;
-  moonrakerUrl: string;
+  klipperUrl: string;
 }): Promise<AuthenticatedEdgeDevice | null> {
   const device = await getEdgeDeviceById(input.deviceId);
   if (!device || device.ownerEmail !== input.ownerEmail.toLowerCase()) {
     return null;
   }
-  const url = input.moonrakerUrl.trim();
+  const url = input.klipperUrl.trim();
   if (!url) {
-    throw new Error("moonrakerUrl is required");
+    throw new Error("klipperUrl is required");
   }
   let parsed: URL;
   try {
     parsed = new URL(url);
   } catch {
-    throw new Error("moonrakerUrl must be a valid URL");
+    throw new Error("klipperUrl must be a valid URL");
   }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new Error("moonrakerUrl must use http or https");
+    throw new Error("klipperUrl must use http or https");
   }
   const pool = requirePostgresPool();
   await pool.query(
     `UPDATE edge_devices
-     SET moonraker_url = $1, updated_at = NOW()
+     SET klipper_url = $1, updated_at = NOW()
      WHERE id = $2 AND owner_email = $3`,
     [url.replace(/\/+$/, ""), input.deviceId, input.ownerEmail.toLowerCase()]
   );
@@ -348,7 +403,7 @@ export async function updateDeviceHeartbeat(input: {
   hingeMaxDeg?: number;
   motorMinMm?: number;
   motorMaxMm?: number;
-  moonrakerUrl?: string;
+  klipperUrl?: string;
 }): Promise<AuthenticatedEdgeDevice | null> {
   const pool = requirePostgresPool();
   await pool.query(
@@ -359,7 +414,7 @@ export async function updateDeviceHeartbeat(input: {
          hinge_max_deg = COALESCE($4, hinge_max_deg),
          motor_min_mm = COALESCE($5, motor_min_mm),
          motor_max_mm = COALESCE($6, motor_max_mm),
-         moonraker_url = COALESCE($7, moonraker_url),
+         klipper_url = COALESCE($7, klipper_url),
          updated_at = NOW()
      WHERE id = $1 AND revoked_at IS NULL`,
     [
@@ -369,7 +424,7 @@ export async function updateDeviceHeartbeat(input: {
       input.hingeMaxDeg ?? null,
       input.motorMinMm ?? null,
       input.motorMaxMm ?? null,
-      input.moonrakerUrl?.trim() || null
+      input.klipperUrl?.trim() || null
     ]
   );
   return getEdgeDeviceById(input.deviceId);

@@ -8,7 +8,7 @@ export type EdgeCapturePostprocessResult = {
 };
 
 /**
- * After a Pi/Moonraker frame is on disk and ingested: attach/create a tray
+ * After a Pi/Klipper frame is on disk and ingested: attach/create a tray
  * plant, then best-effort async tray vision + disease classification.
  */
 export async function postprocessEdgeCapture(input: {

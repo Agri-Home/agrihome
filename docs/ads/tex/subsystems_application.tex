@@ -1,4 +1,4 @@
-The Application Layer implements the \textbf{control plane} of AgriHome: every client request is authenticated, validated, mapped to domain operations, and translated into data-layer and optional processing-layer calls. The subsystems below follow the decomposition style of the reference architectural document while reflecting AgriHome's agronomic domain.
+The Application Layer implements the \textbf{control plane} of AgriHome: every client request is authenticated, validated, mapped to domain operations, and translated into data-layer and optional processing-layer calls. Device-key traffic from Raspberry~Pi agents shares the same layer through dedicated \texttt{/api/raspberry-pi/*} routes. The subsystems below follow the decomposition style of the reference architectural document while reflecting AgriHome's agronomic and edge-capture domain.
 
 \subsection{API entry and routing subsystem}
 
@@ -19,13 +19,14 @@ The \textbf{API entry} subsystem exposes HTTP routes and, where used, a GraphQL 
 
 \subsubsection{Assumptions}
 \begin{itemize}
-  \item All mutating operations require authenticated context unless explicitly public.
+  \item All mutating operator operations require authenticated context unless explicitly public.
+  \item Device routes authenticate with provisioning secrets or hashed device API keys rather than Firebase sessions.
   \item Rate limiting may be enforced externally (gateway) or internally per deployment.
 \end{itemize}
 
 \subsubsection{Responsibilities}
 \begin{itemize}
-  \item Accept REST and GraphQL traffic on documented paths.
+  \item Accept REST and GraphQL traffic on documented paths, including \texttt{/api/raspberry-pi/*} and \texttt{/api/devices/*}.
   \item Dispatch to validation and domain orchestration pipelines.
   \item Normalize HTTP status codes and error envelopes.
 \end{itemize}
@@ -134,7 +135,7 @@ A-V1 & Session broker $\rightarrow$ Validator & Parsed body & Validated DTO \\
 
 \subsection{Domain orchestration subsystem}
 
-\textbf{Domain orchestration} implements AgriHome use cases: tray and plant CRUD, mesh membership, schedule upserts, monitoring log writes, prediction snapshots, and file handoffs. It is the primary caller of the Data Layer and the orchestrator of Processing Layer calls.
+\textbf{Domain orchestration} implements AgriHome use cases: tray and plant CRUD, mesh membership, schedule upserts, monitoring log writes, prediction snapshots, file handoffs, edge device lifecycle, and Take Picture coordination (queued agent \texttt{fswebcam} capture or optional HTTP streamer still). It is the primary caller of the Data Layer and the orchestrator of Processing Layer calls.
 
 \begin{figure}[H]
 \centering
@@ -264,4 +265,103 @@ A-E2 & Response handler $\rightarrow$ Presentation & HTTP response & Rendered UX
 \hline
 \end{tabular}
 \caption{Response and error handling subsystem interfaces}
+\end{table}
+
+\subsection{Raspberry Pi edge API subsystem}
+
+The \textbf{Raspberry~Pi edge API} (\texttt{/api/raspberry-pi/*}) is the device-facing control and ingest surface. Agents present a provisioning code at register time and thereafter a device API key (\texttt{X-Agrihome-Device-Key}). Routes cover register, heartbeat (claim pending commands), multipart ingest, command listing, active poses, and capture-plan (schedules + poses + limits).
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\scriptsize, box/.style={draw, rounded corners, align=center, minimum width=2.3cm, minimum height=0.7cm}, arr/.style={-{Stealth}, thick}]
+\node[box, fill=teal!12] (agent) {agrihome\_agent};
+\node[box, right=1.0cm of agent, fill=blue!10] (rpi) {/api/raspberry-pi/*};
+\node[box, right=1.0cm of rpi, fill=gray!14] (data) {Data Layer};
+\draw[arr] (agent) -- (rpi);
+\draw[arr] (rpi) -- (data);
+\end{tikzpicture}
+\caption{Raspberry Pi edge API: device-key routes into domain persistence.}
+\label{fig:app-rpi}
+\end{figure}
+
+\subsubsection{Assumptions}
+\begin{itemize}
+  \item API keys are stored only as hashes; plaintext is returned once at registration.
+  \item Ingest may optionally trigger post-process hooks (plant attach, disease detection).
+\end{itemize}
+
+\subsubsection{Responsibilities}
+\begin{itemize}
+  \item Auto-provision \texttt{edge\_devices} and linked trays on register.
+  \item Update online status and claim \texttt{edge\_device\_commands} on heartbeat.
+  \item Persist multipart frames to media storage and \texttt{camera\_captures}.
+  \item Serve pose sequences and capture plans for multi-angle runs.
+\end{itemize}
+
+\subsubsection{Subsystem interfaces}
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|p{0.9cm}|p{3.4cm}|p{3.0cm}|p{3.5cm}|}
+\hline
+\textbf{ID} & \textbf{Description} & \textbf{Inputs} & \textbf{Outputs} \\
+\hline
+A-RP1 & Agent $\rightarrow$ register & Fingerprint + provisioning code & Device/tray IDs + API key \\
+\hline
+A-RP2 & Agent $\rightarrow$ heartbeat & Device key & Pending commands \\
+\hline
+A-RP3 & Agent $\rightarrow$ ingest & Multipart image + metadata & Capture DTO / URL \\
+\hline
+A-RP4 & Agent $\rightarrow$ poses/plan & Device key & Pose sequence / schedule plan \\
+\hline
+\end{tabular}
+\caption{Raspberry Pi edge API subsystem interfaces}
+\end{table}
+
+\subsection{Operator devices API subsystem}
+
+The \textbf{operator devices API} (\texttt{/api/devices} and \texttt{/api/devices/\{id\}}) is the session-authenticated control plane for Vision Console operators. It lists devices and performs actions such as \texttt{capture} (Take Picture), \texttt{linkTray}, \texttt{revoke}, \texttt{rotateKey}, and \texttt{updateKlipperUrl} (alias \texttt{updateMoonrakerUrl}). Capture primarily inserts a pending \texttt{capture\_now} for the agent (\texttt{fswebcam}); when \texttt{klipper\_url} is set it may attempt an optional HTTP streamer still first.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\scriptsize, box/.style={draw, rounded corners, align=center, minimum width=2.2cm, minimum height=0.7cm}, arr/.style={-{Stealth}, thick}]
+\node[box, fill=leafgreen!12] (ui) {Devices /\\Pi panel};
+\node[box, right=1.0cm of ui, fill=blue!10] (dev) {/api/devices};
+\node[box, right=1.0cm of dev, fill=teal!12, dashed] (mr) {Klipper/streamer};
+\draw[arr] (ui) -- (dev);
+\draw[arr, dashed] (dev) -- node[above] {snapshot} (mr);
+\end{tikzpicture}
+\caption{Operator devices API: Take Picture and device administration.}
+\label{fig:app-devices}
+\end{figure}
+
+\subsubsection{Assumptions}
+\begin{itemize}
+  \item Operators may only act on devices they own.
+  \item Optional streamer URL candidates include common nginx \texttt{:80} webcam paths derived from \texttt{klipper\_url}.
+\end{itemize}
+
+\subsubsection{Responsibilities}
+\begin{itemize}
+  \item Authorize and execute device actions from the Presentation Layer.
+  \item Attempt server-side snapshot before queuing agent capture.
+  \item Persist Klipper/streamer URL and linkage changes to \texttt{edge\_devices} / trays.
+\end{itemize}
+
+\subsubsection{Subsystem interfaces}
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|p{0.9cm}|p{3.4cm}|p{3.0cm}|p{3.5cm}|}
+\hline
+\textbf{ID} & \textbf{Description} & \textbf{Inputs} & \textbf{Outputs} \\
+\hline
+A-DV1 & Presentation $\rightarrow$ devices API & Session + filters & Device list \\
+\hline
+A-DV2 & Presentation $\rightarrow$ devices API & \texttt{capture} action & Image URL or queued command \\
+\hline
+A-DV3 & Presentation $\rightarrow$ devices API & Admin actions & Updated device/tray state \\
+\hline
+\end{tabular}
+\caption{Operator devices API subsystem interfaces}
 \end{table}

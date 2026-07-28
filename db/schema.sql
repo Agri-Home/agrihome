@@ -24,7 +24,7 @@ CREATE TABLE IF NOT EXISTS edge_devices (
   mac_address VARCHAR(64) NULL,
   hostname VARCHAR(255) NULL,
   model VARCHAR(120) NULL,
-  moonraker_url TEXT NULL,
+  klipper_url TEXT NULL,
   api_key_hash VARCHAR(128) NOT NULL,
   api_key_prefix VARCHAR(16) NOT NULL,
   status VARCHAR(32) NOT NULL DEFAULT 'offline',

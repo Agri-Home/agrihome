@@ -57,22 +57,22 @@ function extFromBuffer(buffer: Buffer): LeafImageExt | null {
   return null;
 }
 
-function resolveSnapshotUrl(moonrakerUrl: string, snapshotPath: string): string {
+function resolveSnapshotUrl(klipperUrl: string, snapshotPath: string): string {
   const trimmed = snapshotPath.trim();
   if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
     return trimmed;
   }
-  const base = moonrakerUrl.replace(/\/+$/, "");
+  const base = klipperUrl.replace(/\/+$/, "");
   const path = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
   return `${base}${path}`;
 }
 
 /**
- * Klipper stacks often expose webcam stills on nginx :80 while Moonraker API
+ * Klipper stacks often expose webcam stills on nginx :80 while Klipper API
  * stays on :7125. When the stored URL is :7125, also try the same host on :80.
  */
-function candidateMoonrakerBases(moonrakerUrl: string): string[] {
-  const base = moonrakerUrl.replace(/\/+$/, "");
+function candidateStreamerBases(klipperUrl: string): string[] {
+  const base = klipperUrl.replace(/\/+$/, "");
   const bases = [base];
   try {
     const u = new URL(base);
@@ -96,9 +96,9 @@ function candidateSnapshotPaths(configured?: string | null): string[] {
   return paths;
 }
 
-async function listWebcamSnapshotUrls(moonrakerUrl: string): Promise<string[]> {
+async function listWebcamSnapshotUrls(klipperUrl: string): Promise<string[]> {
   const urls: string[] = [];
-  const bases = candidateMoonrakerBases(moonrakerUrl);
+  const bases = candidateStreamerBases(klipperUrl);
   for (const base of bases) {
     const controller = new AbortController();
     const timer = setTimeout(
@@ -121,7 +121,7 @@ async function listWebcamSnapshotUrls(moonrakerUrl: string): Promise<string[]> {
         if (w.enabled === false || !w.snapshot_url?.trim()) continue;
         const snap = w.snapshot_url.trim();
         // Relative paths (e.g. /webcam/?action=snapshot) often live on nginx :80
-        // while Moonraker API is on :7125 — resolve against every candidate base.
+        // while Klipper API is on :7125 — resolve against every candidate base.
         const resolveBases = snap.startsWith("http://") || snap.startsWith("https://")
           ? [base]
           : bases;
@@ -139,8 +139,8 @@ async function listWebcamSnapshotUrls(moonrakerUrl: string): Promise<string[]> {
   return urls;
 }
 
-/** Short operator-facing reason when server → Moonraker snapshot fails. */
-export function summarizeMoonrakerReachabilityError(err: unknown): string {
+/** Short operator-facing reason when server → Klipper snapshot fails. */
+export function summarizeStreamerReachabilityError(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err);
   if (/timeout after|AbortError/i.test(msg)) {
     return "timeout reaching Pi (if Cloudflare WARP is on, run: warp-cli override local-network allow)";
@@ -154,22 +154,22 @@ export function summarizeMoonrakerReachabilityError(err: unknown): string {
   if (/HTTP 404/i.test(msg)) {
     return "snapshot 404 on tried URLs (webcam is often on http://PI_IP/webcam/?action=snapshot, not :7125)";
   }
-  const trimmed = msg.replace(/^Could not fetch Moonraker snapshot from \S+:\s*/i, "");
+  const trimmed = msg.replace(/^Could not fetch Klipper snapshot from \S+:\s*/i, "");
   return trimmed.length > 220 ? `${trimmed.slice(0, 217)}…` : trimmed;
 }
 
 async function fetchSnapshotBytes(
-  moonrakerUrl: string,
+  klipperUrl: string,
   snapshotPath?: string | null
 ): Promise<{ buffer: Buffer; snapshotUrl: string; contentType: string | null }> {
   const urls: string[] = [];
-  for (const base of candidateMoonrakerBases(moonrakerUrl)) {
+  for (const base of candidateStreamerBases(klipperUrl)) {
     for (const path of candidateSnapshotPaths(snapshotPath)) {
       const url = resolveSnapshotUrl(base, path);
       if (!urls.includes(url)) urls.push(url);
     }
   }
-  for (const url of await listWebcamSnapshotUrls(moonrakerUrl)) {
+  for (const url of await listWebcamSnapshotUrls(klipperUrl)) {
     if (!urls.includes(url)) urls.push(url);
   }
 
@@ -216,20 +216,20 @@ async function fetchSnapshotBytes(
   }
 
   throw new Error(
-    `Could not fetch Moonraker snapshot from ${moonrakerUrl}: ${errors.join("; ")}`
+    `Could not fetch Klipper snapshot from ${klipperUrl}: ${errors.join("; ")}`
   );
 }
 
 /**
- * Fetch a still frame from the device's Moonraker webcam (when reachable from
+ * Fetch a still frame from the device's Klipper webcam (when reachable from
  * the AgriHome server) and persist it as a camera capture.
  */
-export async function captureFromMoonrakerDirect(input: {
+export async function captureFromKlipperStreamerDirect(input: {
   ownerEmail: string;
   deviceId: string;
   trayId: string;
   plantId?: string;
-  moonrakerUrl: string;
+  klipperUrl: string;
   snapshotPath?: string | null;
   notes?: string;
 }): Promise<DirectCaptureResult> {
@@ -240,7 +240,7 @@ export async function captureFromMoonrakerDirect(input: {
   }
 
   const { buffer, snapshotUrl, contentType } = await fetchSnapshotBytes(
-    input.moonrakerUrl,
+    input.klipperUrl,
     input.snapshotPath
   );
   const ext: LeafImageExt =

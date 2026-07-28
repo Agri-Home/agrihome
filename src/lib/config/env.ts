@@ -95,7 +95,7 @@ export const env = {
       serviceAccountJson: process.env.FIREBASE_SERVICE_ACCOUNT_JSON ?? ""
     }
   },
-  /** Raspberry Pi / Moonraker edge device provisioning & ingest. */
+  /** Raspberry Pi / Klipper edge device provisioning & ingest. */
   device: {
     provisioningSecret: process.env.DEVICE_PROVISIONING_SECRET?.trim() ?? "",
     defaultOwnerEmail:
@@ -129,12 +129,12 @@ export const env = {
       process.env.DEVICE_AUTO_DISEASE_ON_INGEST,
       true
     ),
-    /** Relative path or absolute URL for Moonraker/crowsnest still frames. */
+    /** Relative path or absolute URL for optional HTTP still frames (streamer). */
     snapshotPath:
       process.env.AGRIHOME_SNAPSHOT_PATH?.trim() ||
       process.env.DEVICE_SNAPSHOT_PATH?.trim() ||
       "/webcam/?action=snapshot",
-    /** Server-side direct snapshot fetch timeout (Take Picture fast path). */
+    /** Server-side optional streamer fetch timeout (Take Picture fast path). */
     snapshotTimeoutMs: parseNumber(
       process.env.DEVICE_SNAPSHOT_TIMEOUT_MS,
       8_000

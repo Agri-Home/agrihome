@@ -1,20 +1,30 @@
-\contentsline {table}{\numberline {2}{\ignorespaces Write coordination subsystem interfaces}}{14}{table.2}%
-\contentsline {table}{\numberline {3}{\ignorespaces Integrity and constraint enforcement subsystem interfaces}}{15}{table.3}%
-\contentsline {table}{\numberline {4}{\ignorespaces Query and transaction execution subsystem interfaces}}{16}{table.4}%
-\contentsline {table}{\numberline {5}{\ignorespaces PostgreSQL domain database subsystem interfaces}}{16}{table.5}%
-\contentsline {table}{\numberline {6}{\ignorespaces Image and media storage subsystem interfaces}}{17}{table.6}%
-\contentsline {table}{\numberline {7}{\ignorespaces Authentication and session UI subsystem interfaces}}{18}{table.7}%
-\contentsline {table}{\numberline {8}{\ignorespaces Dashboard and overview subsystem interfaces}}{19}{table.8}%
-\contentsline {table}{\numberline {9}{\ignorespaces Tray monitoring console subsystem interfaces}}{19}{table.9}%
-\contentsline {table}{\numberline {10}{\ignorespaces Plant detail and health history subsystem interfaces}}{20}{table.10}%
-\contentsline {table}{\numberline {11}{\ignorespaces Mesh and topology subsystem interfaces}}{20}{table.11}%
-\contentsline {table}{\numberline {12}{\ignorespaces Schedule management subsystem interfaces}}{21}{table.12}%
-\contentsline {table}{\numberline {13}{\ignorespaces API entry and routing subsystem interfaces}}{22}{table.13}%
-\contentsline {table}{\numberline {14}{\ignorespaces Session and authentication broker subsystem interfaces}}{23}{table.14}%
-\contentsline {table}{\numberline {15}{\ignorespaces Input validation subsystem interfaces}}{23}{table.15}%
-\contentsline {table}{\numberline {16}{\ignorespaces Domain orchestration subsystem interfaces}}{24}{table.16}%
-\contentsline {table}{\numberline {17}{\ignorespaces GraphQL facade subsystem interfaces}}{25}{table.17}%
-\contentsline {table}{\numberline {18}{\ignorespaces Response and error handling subsystem interfaces}}{25}{table.18}%
-\contentsline {table}{\numberline {19}{\ignorespaces Species and leaf inference adapter interfaces}}{26}{table.19}%
-\contentsline {table}{\numberline {20}{\ignorespaces Tray vision and layout adapter interfaces}}{27}{table.20}%
-\contentsline {table}{\numberline {21}{\ignorespaces Inference normalization subsystem interfaces}}{27}{table.21}%
+\contentsline {table}{\numberline {2}{\ignorespaces Write coordination subsystem interfaces}}{17}{table.2}%
+\contentsline {table}{\numberline {3}{\ignorespaces Integrity and constraint enforcement subsystem interfaces}}{18}{table.3}%
+\contentsline {table}{\numberline {4}{\ignorespaces Query and transaction execution subsystem interfaces}}{19}{table.4}%
+\contentsline {table}{\numberline {5}{\ignorespaces PostgreSQL domain database subsystem interfaces}}{19}{table.5}%
+\contentsline {table}{\numberline {6}{\ignorespaces Edge domain persistence subsystem interfaces}}{20}{table.6}%
+\contentsline {table}{\numberline {7}{\ignorespaces Image and media storage subsystem interfaces}}{21}{table.7}%
+\contentsline {table}{\numberline {8}{\ignorespaces Authentication and session UI subsystem interfaces}}{22}{table.8}%
+\contentsline {table}{\numberline {9}{\ignorespaces Dashboard and overview subsystem interfaces}}{23}{table.9}%
+\contentsline {table}{\numberline {10}{\ignorespaces Tray monitoring console subsystem interfaces}}{23}{table.10}%
+\contentsline {table}{\numberline {11}{\ignorespaces Plant detail and health history subsystem interfaces}}{24}{table.11}%
+\contentsline {table}{\numberline {12}{\ignorespaces Mesh and topology subsystem interfaces}}{25}{table.12}%
+\contentsline {table}{\numberline {13}{\ignorespaces Schedule management subsystem interfaces}}{25}{table.13}%
+\contentsline {table}{\numberline {14}{\ignorespaces Devices UI subsystem interfaces}}{26}{table.14}%
+\contentsline {table}{\numberline {15}{\ignorespaces Tray Raspberry Pi panel and Take Picture subsystem interfaces}}{26}{table.15}%
+\contentsline {table}{\numberline {16}{\ignorespaces API entry and routing subsystem interfaces}}{27}{table.16}%
+\contentsline {table}{\numberline {17}{\ignorespaces Session and authentication broker subsystem interfaces}}{28}{table.17}%
+\contentsline {table}{\numberline {18}{\ignorespaces Input validation subsystem interfaces}}{29}{table.18}%
+\contentsline {table}{\numberline {19}{\ignorespaces Domain orchestration subsystem interfaces}}{29}{table.19}%
+\contentsline {table}{\numberline {20}{\ignorespaces GraphQL facade subsystem interfaces}}{30}{table.20}%
+\contentsline {table}{\numberline {21}{\ignorespaces Response and error handling subsystem interfaces}}{30}{table.21}%
+\contentsline {table}{\numberline {22}{\ignorespaces Raspberry Pi edge API subsystem interfaces}}{31}{table.22}%
+\contentsline {table}{\numberline {23}{\ignorespaces Operator devices API subsystem interfaces}}{32}{table.23}%
+\contentsline {table}{\numberline {24}{\ignorespaces Species and leaf inference adapter interfaces}}{33}{table.24}%
+\contentsline {table}{\numberline {25}{\ignorespaces Tray vision and layout adapter interfaces}}{34}{table.25}%
+\contentsline {table}{\numberline {26}{\ignorespaces Inference normalization subsystem interfaces}}{34}{table.26}%
+\contentsline {table}{\numberline {27}{\ignorespaces Edge disease hook subsystem interfaces}}{35}{table.27}%
+\contentsline {table}{\numberline {28}{\ignorespaces Capture schedule runner subsystem interfaces}}{36}{table.28}%
+\contentsline {table}{\numberline {29}{\ignorespaces Raspberry Pi edge host subsystem interfaces}}{37}{table.29}%
+\contentsline {table}{\numberline {30}{\ignorespaces Klipper / fswebcam capture subsystem interfaces}}{38}{table.30}%
+\contentsline {table}{\numberline {31}{\ignorespaces \texttt {agrihome\_agent} bridge subsystem interfaces}}{39}{table.31}%

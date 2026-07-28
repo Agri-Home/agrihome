@@ -87,6 +87,8 @@
 	\vhEntry{1.0}{03.04.2026}{Team}{Layered overview, figures, PDF verified}
 	\vhEntry{1.1}{03.04.2026}{Team}{Raised system-level abstraction in overview sections}
 	\vhEntry{2.0}{03.04.2026}{GA, LB, TD, SK, MSM, AT, NNT}{Restructure to CSE 4316 ADS format; subsystems, interfaces; team roster}
+	\vhEntry{3.0}{07.23.2026}{Team}{Summer update: Pi/Moonraker edge layer, Devices UI, capture APIs}
+	\vhEntry{3.1}{07.28.2026}{Team}{Klipper edge: fswebcam primary capture; klipper\_url rename}
 \end{versionhistory}
 \newpage
 
@@ -126,6 +128,10 @@
 \input{tex/subsystems_processing.tex}
 \newpage
 
+\section{Hardware Layer Subsystems}
+\input{tex/subsystems_hardware.tex}
+\newpage
+
 % thebibliography already emits \section*{\refname}; do not add a second References heading
 \phantomsection
 \addcontentsline{toc}{section}{References}
@@ -144,6 +150,14 @@ Google. ``Firebase Authentication.'' \url{https://firebase.google.com/docs/auth}
 
 \bibitem{pwa}
 W3C. ``Progressive Web Apps.'' \url{https://www.w3.org/TR/appmanifest/} (accessed 2026).
+
+\bibitem{klipper}
+Agri-Home. ``klipper'' companion firmware (camera-macros / fswebcam). \url{https://github.com/Agri-Home/klipper} (accessed 2026).
+\bibitem{moonraker}
+Arksine et al. ``Moonraker: API Web Server for Klipper.'' \url{https://moonraker.readthedocs.io/} (accessed 2026). Historical companion; AgriHome agent package still lives under Agri-Home/moonraker.
+
+\bibitem{edgeops}
+Agrihome. \textit{Raspberry Pi + Klipper} operations guide (\texttt{docs/ops/RASPBERRY\_PI\_KLIPPER.md}), 2026. (Moonraker guide superseded stub.)
 \end{thebibliography}
 
 \end{document}

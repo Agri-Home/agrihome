@@ -12,7 +12,7 @@ export const runtime = "nodejs";
 
 /**
  * POST /api/raspberry-pi/register
- * Auto-provision a Moonraker-backed Raspberry Pi.
+ * Auto-provision a Klipper-backed Raspberry Pi.
  * Auth: DEVICE_PROVISIONING_SECRET via body.provisioningCode (not Firebase).
  */
 export async function POST(request: Request) {
@@ -22,6 +22,8 @@ export async function POST(request: Request) {
       macAddress?: string;
       hostname?: string;
       model?: string;
+      klipperUrl?: string;
+      /** @deprecated Prefer klipperUrl (accepted for older agents). */
       moonrakerUrl?: string;
       provisioningCode?: string;
       ownerEmail?: string;
@@ -43,8 +45,8 @@ export async function POST(request: Request) {
       cpuSerial: body.cpuSerial,
       macAddress: body.macAddress,
       hostname: body.hostname,
-      model: body.model,
-      moonrakerUrl: body.moonrakerUrl,
+      model: body.model ?? "raspberry-pi-klipper",
+      klipperUrl: body.klipperUrl?.trim() || body.moonrakerUrl?.trim(),
       provisioningCode: body.provisioningCode,
       ownerEmail: body.ownerEmail,
       trayName: body.trayName,

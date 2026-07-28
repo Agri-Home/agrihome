@@ -1,63 +1,69 @@
 \label{sec:systemdesc}
 
-This section provides a consolidated \textbf{subsystem definition} and \textbf{data-flow} narrative for the AgriHome Vision Console. Figure~\ref{fig:subsys-flow} maps major building blocks to the four layers introduced in Section~2. The text following the figure walks through each layer and explains how information moves from user intent to durable storage and back.
+This section provides a consolidated \textbf{subsystem definition} and \textbf{data-flow} narrative for the AgriHome Vision Console, including the Summer~2026 Raspberry~Pi / Klipper edge path. Figure~\ref{fig:subsys-flow} maps major building blocks to the five layers introduced in Section~2. The text following the figure walks through each layer and explains how information moves from user or agent intent to durable storage and back.
 
 \begin{figure}[H]
 \centering
-\scalebox{0.88}{
+\scalebox{0.86}{
 \begin{tikzpicture}[
   font=\footnotesize,
   arr/.style={-{Stealth}, thick},
-  band/.style={draw, rounded corners, align=left, inner sep=7pt, text width=12.8cm},
+  band/.style={draw, rounded corners, align=left, inner sep=7pt, text width=13.0cm},
 ]
 \node[band, fill=leafgreen!16] (r1) {
   \textbf{Presentation Layer}\par
-  Auth \& registration UI \textbullet{} Dashboard \textbullet{} Tray console \textbullet{} Plant detail \textbullet{} Mesh views \textbullet{} Schedule editor \textbullet{} PWA shell
+  Auth UI \textbullet{} Dashboard \textbullet{} Tray console \textbullet{} Devices UI \textbullet{} Tray Raspberry~Pi panel / Take Picture \textbullet{} Plant detail \textbullet{} Mesh \textbullet{} Schedule editor \textbullet{} PWA shell
 };
-\node[band, fill=blue!7, below=0.5cm of r1] (r2) {
+\node[band, fill=blue!7, below=0.45cm of r1] (r2) {
   \textbf{Application Layer}\par
-  HTTP/GraphQL entry \textbullet{} Session \& auth broker \textbullet{} Input validation \textbullet{} Domain orchestration (trays, plants, meshes, schedules) \textbullet{} Monitoring \& prediction coordination \textbullet{} Media URL orchestration \textbullet{} Response assembly
+  HTTP/GraphQL entry \textbullet{} Session \& device-key auth \textbullet{} \texttt{/api/raspberry-pi/*} \textbullet{} \texttt{/api/devices/*} \textbullet{} Domain orchestration \textbullet{} optional streamer still client \textbullet{} Response assembly
 };
-\node[band, fill=orange!12, below=0.5cm of r2] (r3) {
-  \textbf{Processing Layer (optional)}\par
-  Species/leaf inference adapter \textbullet{} Tray vision adapter \textbullet{} Result normalization
+\node[band, fill=orange!12, below=0.45cm of r2] (r3) {
+  \textbf{Processing Layer}\par
+  Species/leaf inference \textbullet{} Tray vision adapter \textbullet{} Edge disease hook \textbullet{} Capture schedule runner \textbullet{} Result normalization
 };
-\node[band, fill=gray!13, below=0.5cm of r3] (r4) {
+\node[band, fill=gray!13, below=0.45cm of r3] (r4) {
   \textbf{Data Layer}\par
-  Write coordination \textbullet{} Integrity \& constraints \textbullet{} Query \& transaction execution \textbullet{} PostgreSQL domain store \textbullet{} Image/media object store \textbullet{} (optional) vector index
+  PostgreSQL (\texttt{edge\_devices}, commands, poses, schedules, \texttt{camera\_captures}, \texttt{plants}, \texttt{prediction\_results}, \ldots) \textbullet{} Image/media object store
+};
+\node[band, fill=teal!14, below=0.45cm of r4] (r5) {
+  \textbf{Hardware Layer}\par
+  Raspberry~Pi \textbullet{} Agri-Home/klipper + \texttt{fswebcam} (\texttt{save\_image.sh}) \textbullet{} optional HTTP streamer \textbullet{} \texttt{agrihome\_agent}
 };
 \draw[arr] (r1.south) -- (r2.north);
 \draw[arr, dashed] (r2.south) -- node[right, font=\scriptsize] {invoke when required} (r3.north);
 \draw[arr] (r3.south) -- (r4.north);
-\draw[arr, bend left=14] (r2.west) to node[left, font=\scriptsize, sloped, pos=0.45] {CRUD} (r4.west);
+\draw[arr, bend left=12] (r2.west) to node[left, font=\scriptsize, sloped, pos=0.4] {CRUD} (r4.west);
+\draw[arr, bend left=16] (r5.west) to node[left, font=\scriptsize, align=center] {register /\\heartbeat / ingest} (r2.west);
+\draw[arr, dashed, bend right=10] (r2.east) to node[right, font=\scriptsize] {snapshot} (r5.east);
 \end{tikzpicture}
 }
-\caption{Subsystem definitions and primary vertical data flow (application also reads/writes the data layer directly for most CRUD paths).}
+\caption{Subsystem definitions and primary data flow (edge hardware talks to the application layer; application also reads/writes the data layer directly for most CRUD paths).}
 \label{fig:subsys-flow}
 \end{figure}
 
 \subsection{Presentation layer composition}
 
-The Presentation Layer is organized around \textbf{workspaces} that match operator mental models. \textbf{Authentication and registration} establish identity and tie the browser to a server session. The \textbf{dashboard} summarizes tray health and recent activity for SRS-aligned ``at a glance'' monitoring. The \textbf{tray console} shows imagery, monitoring charts, and plant rows for a single tray. \textbf{Plant detail} focuses on one organism: photos, editable metadata, report history, and plant-scoped logs. \textbf{Mesh views} aggregate multiple trays for experiments or facility zones. The \textbf{schedule editor} binds capture policy to trays or meshes. The \textbf{PWA shell} supplies offline-friendly installation and static asset caching where supported.
+The Presentation Layer is organized around \textbf{workspaces} that match operator mental models. \textbf{Authentication and registration} establish identity and tie the browser to a server session. The \textbf{dashboard} summarizes tray health and recent activity. The \textbf{tray console} shows imagery, monitoring charts, and plant rows for a single tray, including a \textbf{Raspberry~Pi panel} with Take Picture, device link, and Klipper/streamer URL edit. The \textbf{Devices} view lists provisioned edge devices (serial, status, last heartbeat, linked tray). \textbf{Plant detail} focuses on one organism. \textbf{Mesh views} aggregate trays. The \textbf{schedule editor} binds capture policy to trays or meshes, including \texttt{raspberry-pi-edge} destinations. The \textbf{PWA shell} supplies offline-friendly installation where supported.
 
 User gestures in these areas become HTTPS requests to the Application Layer; no presentation component queries the database directly.
 
 \subsection{Application layer composition}
 
-The Application Layer terminates TLS, verifies cookies or tokens, and maps the caller to an \textbf{account context}. \textbf{Validation} rejects malformed payloads before any side effect. \textbf{Domain orchestration} implements use cases: create or update plants, attach photos, record monitoring events, link trays into meshes, upsert schedules, and fetch history for charts. When a use case requires inference, the same layer forwards work to the Processing Layer and merges outcomes into domain writes. \textbf{Response assembly} maps internal results to JSON or GraphQL shapes consumed by the UI.
-
-This layer is the only tier that routinely touches both the Data Layer and (optionally) the Processing Layer.
+The Application Layer terminates TLS, verifies cookies/tokens or \textbf{device API keys}, and maps the caller to an account or device context. \textbf{Validation} rejects malformed payloads before any side effect. \textbf{Domain orchestration} implements use cases: plant/tray CRUD, meshes, schedules, monitoring, edge register/heartbeat/ingest, operator device actions (\texttt{capture}, \texttt{linkTray}, \texttt{revoke}, \texttt{rotateKey}, \texttt{updateKlipperUrl}), and optional HTTP streamer still attempts. When a use case requires inference, the same layer forwards work to the Processing Layer and merges outcomes into domain writes. \textbf{Response assembly} maps internal results to JSON or GraphQL shapes consumed by the UI or agent.
 
 \subsection{Processing layer composition}
 
-The Processing Layer is deliberately \textbf{thin at the product boundary}: it exposes inference contracts, not user workflows. A \textbf{species or leaf adapter} may classify a single-plant photo for onboarding flows. A \textbf{tray vision adapter} may estimate plant count or regions on a tray image. \textbf{Result normalization} ensures that bounding boxes, labels, and scores share a consistent schema before the Application Layer persists them.
-
-If adapters are offline, the Application Layer may return errors or deterministic stand-ins according to deployment policy; the SRS still governs what the customer should observe in those cases.
+The Processing Layer exposes inference contracts and asynchronous capture helpers. A \textbf{species or leaf adapter} may classify a single-plant photo. A \textbf{tray vision adapter} may estimate plant count or regions. The \textbf{edge disease hook} optionally classifies captures after Pi ingest. The \textbf{capture schedule runner} evaluates due schedules with destination \texttt{raspberry-pi-edge} and enqueues \texttt{capture\_now} (optionally with \texttt{runPoses}). \textbf{Result normalization} keeps bounding boxes, labels, and scores consistent before persistence.
 
 \subsection{Data layer composition}
 
-The Data Layer splits \textbf{transactional} concerns from \textbf{bulk media}. A \textbf{write coordination} path sequences inserts and updates so that relational rows and file metadata stay aligned. \textbf{Integrity and constraints} guard required fields, foreign keys, and business invariants. \textbf{Query and transaction execution} runs SELECT/INSERT/UPDATE/DELETE operations against \textbf{PostgreSQL}. The \textbf{object store} retains images and large binaries; the relational model stores pointers or paths. An optional \textbf{vector index} supports similarity workflows without becoming the system of record.
+The Data Layer splits \textbf{transactional} concerns from \textbf{bulk media}. Write coordination sequences inserts so relational rows and file metadata stay aligned. Integrity constraints guard keys and ownership. Query execution runs against \textbf{PostgreSQL}, which holds trays, plants, meshes, schedules, monitoring events, predictions, reports, and edge tables (\texttt{edge\_devices}, \texttt{edge\_device\_commands}, \texttt{capture\_pose\_sequences}, \texttt{capture\_poses}, \texttt{capture\_schedules}, \texttt{camera\_captures}). The \textbf{object store} retains images; the relational model stores pointers.
+
+\subsection{Hardware layer composition}
+
+The Hardware Layer is the bench capture plane: a \textbf{Raspberry~Pi} host, \textbf{Agri-Home/klipper} with \texttt{fswebcam}, optional HTTP streamer, and \textbf{\texttt{agrihome\_agent}}. Agents register and heartbeat; operators trigger Take Picture; schedules drive multi-pose walks. Primary capture is agent + \texttt{fswebcam}; optional server-side stills use a LAN-reachable \texttt{klipper\_url}.
 
 \subsection{End-to-end data flow summary}
 
-The data flow begins when a user interacts with the Presentation Layer. Requests pass to the Application Layer, which authorizes and validates them. For ordinary reads, the Application Layer queries the Data Layer and returns results. For vision-assisted actions, the Application Layer calls the Processing Layer, then commits structured outputs through the Data Layer. Responses propagate back to the Presentation Layer for rendering, completing the loop required by the SRS for health display, history, and dashboard experiences.
+The data flow begins when a user interacts with the Presentation Layer or when an edge agent heartbeats. Requests pass to the Application Layer, which authorizes and validates them. Ordinary reads query the Data Layer. Take Picture primarily queues a command claimed by the Hardware Layer agent (\texttt{fswebcam}); it may optionally pull JPEG bytes from an HTTP streamer. Vision-assisted actions call the Processing Layer, then commit structured outputs through the Data Layer. Responses propagate back to the Presentation Layer (or agent) for rendering or further capture steps.

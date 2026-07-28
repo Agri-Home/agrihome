@@ -141,7 +141,7 @@ D-Q3 & Query executor $\rightarrow$ Media store & Put/get requests & Handles / s
 
 \subsection{PostgreSQL domain database subsystem}
 
-The \textbf{relational database} is the system of record for trays, plants, meshes, schedules, monitoring events, predictions, reports, and linkage to media. It satisfies SRS needs for structured historical data and dashboard queries.
+The \textbf{relational database} is the system of record for trays, plants, meshes, schedules, monitoring events, predictions, reports, media linkage, and Summer~2026 \textbf{edge} entities. Core edge-related tables include \texttt{edge\_devices}, \texttt{edge\_device\_commands}, \texttt{capture\_pose\_sequences}, \texttt{capture\_poses}, \texttt{capture\_schedules}, \texttt{camera\_captures}, \texttt{plants}, and \texttt{prediction\_results}. It satisfies SRS needs for structured historical data, dashboard queries, and device command queues.
 
 \begin{figure}[H]
 \centering
@@ -150,20 +150,20 @@ The \textbf{relational database} is the system of record for trays, plants, mesh
 \node[box, left=1.5cm of db, fill=gray!14] (qe) {Query executor};
 \draw[arr] (qe) -- (db);
 \end{tikzpicture}
-\caption{PostgreSQL domain database subsystem.}
+\caption{PostgreSQL domain database subsystem (includes edge device and pose tables).}
 \label{fig:data-pg}
 \end{figure}
 
 \subsubsection{Assumptions}
 \begin{itemize}
-  \item Schema is versioned; migrations are applied through controlled processes.
+  \item Schema is versioned; migrations (including \texttt{009}--\texttt{011} edge migrations) are applied through controlled processes.
   \item Backup and restore procedures meet institutional RPO/RTO.
 \end{itemize}
 
 \subsubsection{Responsibilities}
 \begin{itemize}
-  \item Persist authoritative entities and relationships.
-  \item Support indexed access paths for tray/plant/mesh navigation.
+  \item Persist authoritative entities and relationships, including device registry and command queues.
+  \item Support indexed access paths for tray/plant/mesh and device/heartbeat navigation.
   \item Retain audit-relevant history as required by product policy.
 \end{itemize}
 
@@ -181,6 +181,52 @@ D-P2 & PostgreSQL $\rightarrow$ Query executor & Internal state & Constraints / 
 \hline
 \end{tabular}
 \caption{PostgreSQL domain database subsystem interfaces}
+\end{table}
+
+\subsection{Edge domain persistence subsystem}
+
+\textbf{Edge domain persistence} groups the relational structures that back Raspberry~Pi integration: device identity and Klipper/streamer URL \texttt{klipper\_url} (\texttt{edge\_devices}), pending/completed commands (\texttt{edge\_device\_commands}), multi-angle pose sequences (\texttt{capture\_pose\_sequences}, \texttt{capture\_poses}), schedule rows targeting \texttt{raspberry-pi-edge} (\texttt{capture\_schedules}), capture metadata including hinge/motor/pose fields (\texttt{camera\_captures}), plant linkage (\texttt{plants}), and optional inference outcomes (\texttt{prediction\_results}).
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\scriptsize, box/.style={draw, rounded corners, align=center, minimum width=2.4cm, minimum height=0.7cm}, arr/.style={-{Stealth}, thick}]
+\node[box, fill=blue!8] (app) {Application\\edge APIs};
+\node[box, right=1.0cm of app, fill=gray!16] (edge) {Edge tables};
+\node[box, right=1.0cm of edge, fill=yellow!12] (media) {Media store};
+\draw[arr] (app) -- (edge);
+\draw[arr] (app) -- (media);
+\end{tikzpicture}
+\caption{Edge domain persistence: relational edge tables plus capture binaries.}
+\label{fig:data-edge}
+\end{figure}
+
+\subsubsection{Assumptions}
+\begin{itemize}
+  \item \texttt{tray\_systems.edge\_device\_id} links at most one active device per tray policy as implemented.
+  \item Command rows are claimed atomically on heartbeat to avoid double execution.
+\end{itemize}
+
+\subsubsection{Responsibilities}
+\begin{itemize}
+  \item Store hashed device credentials and heartbeat timestamps.
+  \item Queue and complete capture commands with optional pose-run payloads.
+  \item Retain pose sequences and capture metadata for multi-angle workflows.
+\end{itemize}
+
+\subsubsection{Subsystem interfaces}
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|p{0.85cm}|p{3.5cm}|p{3.0cm}|p{3.5cm}|}
+\hline
+\textbf{ID} & \textbf{Description} & \textbf{Inputs} & \textbf{Outputs} \\
+\hline
+D-E1 & Application $\rightarrow$ Edge tables & Device/command/pose DTOs & Persisted rows \\
+\hline
+D-E2 & Application $\rightarrow$ Media + captures & Image bytes + metadata & Capture record + URL \\
+\hline
+\end{tabular}
+\caption{Edge domain persistence subsystem interfaces}
 \end{table}
 
 \subsection{Image and media storage subsystem}
