@@ -5,14 +5,14 @@ Connect bench Raspberry Pi devices running
 auto-provisioning, secure image ingest, and Take Picture / scheduled capture.
 
 **Capture path:** the Pi agent grabs frames with **fswebcam** via
-`camera-macros/save_image.sh` in the Klipper fork (not Moonraker’s HTTP webcam
-API). Optional HTTP streamer URLs remain supported for a server-side Take
-Picture fast path when a LAN still endpoint exists.
+`camera-macros/save_image.sh` in the Klipper fork (not an HTTP webcam API).
+Optional HTTP streamer URLs remain supported for a server-side Take Picture
+fast path when a LAN still endpoint exists.
 
-The reference agent currently lives beside the older Moonraker fork under
-`agrihome_agent/` ([Agri-Home/moonraker](https://github.com/Agri-Home/moonraker)
-branch `feature/agrihome-bridge`) and has been updated to speak `klipperUrl` +
-fswebcam. Point it at your Klipper install for macros and motion.
+The reference agent lives in the same repo under `agrihome_agent/`
+([Agri-Home/klipper](https://github.com/Agri-Home/klipper) branch
+`feature/agrihome-agent`). Clone **klipper only** — you do not need Moonraker
+to register or run the agent.
 
 ## What “connected” means
 
@@ -76,23 +76,19 @@ npm run dev
 On the Pi (with Klipper + `fswebcam` installed):
 
 ```bash
-# Firmware + camera macro
+cd /home/pi
 git clone git@github.com:Agri-Home/klipper.git
+cd klipper
+git checkout feature/agrihome-agent   # until merged to master
 sudo apt-get install -y fswebcam
 
-# Agent (PYTHONPATH = moonraker repo root that contains agrihome_agent/)
-cd /home/pi
-git clone git@github.com:Agri-Home/moonraker.git
-cd moonraker
-git checkout feature/agrihome-bridge
-export PYTHONPATH=/home/pi/moonraker:$PYTHONPATH
-
+export PYTHONPATH=/home/pi/klipper:$PYTHONPATH
 export AGRIHOME_URL=https://agrihome.example.com   # or http://LAN_IP:3000
 export DEVICE_PROVISIONING_SECRET='same-as-server'
 export AGRIHOME_OWNER_EMAIL=you@example.com
+export AGRIHOME_SNAPSHOT_CMD=/home/pi/klipper/camera-macros/save_image.sh
 # Optional: LAN HTTP streamer base for server-side Take Picture
 # export KLIPPER_URL=http://192.168.1.50
-export AGRIHOME_SNAPSHOT_CMD='/home/pi/klipper/camera-macros/save_image.sh'
 
 python3 -m agrihome_agent register
 python3 -m agrihome_agent run
@@ -100,6 +96,15 @@ python3 -m agrihome_agent run
 
 Credentials land in `~/.config/agrihome/agent.json` (mode 600). The plaintext
 API key is shown only there after registration.
+
+Enable as a service (optional):
+
+```bash
+sudo cp /home/pi/klipper/agrihome_agent/systemd/agrihome-agent.service \
+  /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now agrihome-agent.service
+```
 
 Re-provision (rotate key, same CPU serial):
 
@@ -200,6 +205,6 @@ agent API key or an unauthenticated webcam stream to the public internet.
 - [ ] `npm run db:migrate` applied (`012_klipper_url`)
 - [ ] `DEVICE_PROVISIONING_SECRET` set on server and Pi
 - [ ] Agri-Home/klipper installed; `save_image.sh` writes a JPEG
-- [ ] Agent registered; Devices page shows **online**
+- [ ] Agent registered from the klipper clone; Devices page shows **online**
 - [ ] Take picture → frame via agent ingest (and plant attach / disease hooks)
 - [ ] Optional: LAN streamer URL for server-side fast path
