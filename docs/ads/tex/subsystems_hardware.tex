@@ -1,0 +1,148 @@
+The Hardware Layer comprises \textbf{bench capture endpoints}: Raspberry Pi devices running
+Agri-Home/klipper with \texttt{fswebcam} camera macros and the AgriHome edge agent. It is the
+physical source of tray imagery for automatic and operator-triggered capture. Unlike the
+Presentation Layer, these nodes authenticate with hashed \textbf{device API keys}, not Firebase
+user sessions.
+
+\subsection{Raspberry Pi edge host subsystem}
+
+Each provisioned \textbf{Raspberry Pi} (or compatible board) is a durable edge host with a CPU serial fingerprint used at registration. AgriHome stores the device in \texttt{edge\_devices}, links it to a tray, and issues a one-time API key that the agent persists locally. Register uses \texttt{POST /api/raspberry-pi/register} with \texttt{DEVICE\_PROVISIONING\_SECRET}; the default model string is \texttt{raspberry-pi-klipper}.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\scriptsize, box/.style={draw, rounded corners, align=center, minimum width=2.3cm, minimum height=0.7cm}, arr/.style={-{Stealth}, thick}]
+\node[box, fill=teal!14] (pi) {Raspberry Pi\\host};
+\node[box, right=1.0cm of pi, fill=blue!8] (api) {Application\\APIs};
+\draw[arr] (pi) -- node[above] {register / heartbeat} (api);
+\end{tikzpicture}
+\caption{Pi edge host: register and heartbeat against AgriHome.}
+\label{fig:hw-pi}
+\end{figure}
+
+\subsubsection{Assumptions}
+\begin{itemize}
+  \item The host has network reachability to the AgriHome base URL.
+  \item A shared provisioning secret is configured on both server and agent.
+\end{itemize}
+
+\subsubsection{Responsibilities}
+\begin{itemize}
+  \item Present stable hardware identity (CPU serial, MAC, hostname, model).
+  \item Store the device API key securely on disk after first registration.
+  \item Remain online via periodic heartbeats so Vision Console status stays current.
+\end{itemize}
+
+\subsubsection{Subsystem interfaces}
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|p{0.9cm}|p{3.4cm}|p{3.0cm}|p{3.5cm}|}
+\hline
+\textbf{ID} & \textbf{Description} & \textbf{Inputs} & \textbf{Outputs} \\
+\hline
+H-P1 & Pi host $\rightarrow$ Application & Fingerprint + provisioning code & \texttt{deviceId}, \texttt{trayId}, API key \\
+\hline
+H-P2 & Pi host $\rightarrow$ Application & Device-key heartbeat & Online status; pending commands \\
+\hline
+\end{tabular}
+\caption{Raspberry Pi edge host subsystem interfaces}
+\end{table}
+
+\subsection{Klipper / fswebcam capture subsystem}
+
+\textbf{Agri-Home/klipper}\cite{klipper} provides G-code/macros for axis motion and
+\texttt{camera-macros/save\_image.sh}, which captures JPEG stills with \texttt{fswebcam}. This is
+the \textbf{primary} Take Picture path when the agent claims \texttt{capture\_now}. An optional LAN
+HTTP streamer base may be stored as \texttt{klipper\_url} (migration \texttt{012\_klipper\_url} renamed
+\texttt{moonraker\_url}$\rightarrow$\texttt{klipper\_url}) so the Application Layer can attempt a
+server-side still when reachable. Register/heartbeat accept deprecated \texttt{moonrakerUrl} as an
+alias for \texttt{klipperUrl}.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\scriptsize, box/.style={draw, rounded corners, align=center, minimum width=2.2cm, minimum height=0.7cm}, arr/.style={-{Stealth}, thick}]
+\node[box, fill=blue!8] (app) {Application};
+\node[box, right=1.0cm of app, fill=teal!12] (cam) {fswebcam\\save\_image.sh};
+\node[box, below=0.85cm of cam, fill=teal!10] (agent) {agrihome\_agent};
+\node[box, left=1.0cm of agent, fill=gray!12, dashed] (str) {optional\\HTTP streamer};
+\draw[arr] (agent) -- (cam);
+\draw[arr, dashed] (app) -- node[above] {GET still} (str);
+\end{tikzpicture}
+\caption{Primary fswebcam capture on the agent; optional server-side HTTP streamer still.}
+\label{fig:hw-moonraker}
+\end{figure}
+
+\subsubsection{Assumptions}
+\begin{itemize}
+  \item \texttt{fswebcam} and Agri-Home/klipper camera macros are installed on the Pi.
+  \item Optional server-side Take Picture requires the AgriHome host to reach the streamer URL on the LAN (WARP local-network overrides may be required).
+\end{itemize}
+
+\subsubsection{Responsibilities}
+\begin{itemize}
+  \item Produce JPEG stills for operator and scheduled capture via \texttt{save\_image.sh}.
+  \item Optionally expose an HTTP streamer base for operators who want an immediate server pull.
+  \item Keep \texttt{klipper\_url} as an optional streamer/API base distinct from the agent capture command.
+\end{itemize}
+
+\subsubsection{Subsystem interfaces}
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|p{0.9cm}|p{3.4cm}|p{3.0cm}|p{3.5cm}|}
+\hline
+\textbf{ID} & \textbf{Description} & \textbf{Inputs} & \textbf{Outputs} \\
+\hline
+H-M1 & Application $\rightarrow$ streamer & Snapshot URL candidates & JPEG bytes or timeout \\
+\hline
+H-M2 & agrihome\_agent $\rightarrow$ fswebcam & \texttt{save\_image.sh} path & JPEG bytes \\
+\hline
+\end{tabular}
+\caption{Klipper / fswebcam capture subsystem interfaces}
+\end{table}
+
+\subsection{agrihome\_agent bridge subsystem}
+
+The \textbf{\texttt{agrihome\_agent}} Python package (still hosted under the Agri-Home/moonraker companion repo, branch \texttt{feature/agrihome-bridge}) registers the device, heartbeats, claims \texttt{capture\_now} commands, walks pose sequences when requested, runs \texttt{fswebcam} via Klipper camera macros, and multipart-ingests frames to AgriHome. It speaks \texttt{klipperUrl} (with deprecated \texttt{moonrakerUrl} alias).
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\scriptsize, box/.style={draw, rounded corners, align=center, minimum width=2.3cm, minimum height=0.7cm}, arr/.style={-{Stealth}, thick}]
+\node[box, fill=teal!12] (agent) {agrihome\_agent};
+\node[box, right=1.0cm of agent, fill=blue!8] (api) {/api/raspberry-pi/*};
+\node[box, below=0.85cm of agent, fill=teal!10] (cam) {fswebcam / Klipper};
+\draw[arr] (agent) -- node[above] {ingest / claim} (api);
+\draw[arr] (agent) -- (cam);
+\end{tikzpicture}
+\caption{Edge agent bridges Klipper/fswebcam local capture to AgriHome APIs.}
+\label{fig:hw-agent}
+\end{figure}
+
+\subsubsection{Assumptions}
+\begin{itemize}
+  \item Agent configuration lives under a local agrihome agent config file (or equivalent environment variables), including \texttt{AGRIHOME\_SNAPSHOT\_CMD} pointing at \texttt{save\_image.sh}.
+  \item Failed individual poses do not abort the remainder of a multi-pose run.
+\end{itemize}
+
+\subsubsection{Responsibilities}
+\begin{itemize}
+  \item Execute register / run loops against documented \texttt{/api/raspberry-pi/*} routes.
+  \item Claim and complete edge commands; upload multipart captures with pose metadata.
+  \item Fetch active pose sequences and capture plans for scheduled multi-angle work.
+\end{itemize}
+
+\subsubsection{Subsystem interfaces}
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|p{0.9cm}|p{3.4cm}|p{3.0cm}|p{3.5cm}|}
+\hline
+\textbf{ID} & \textbf{Description} & \textbf{Inputs} & \textbf{Outputs} \\
+\hline
+H-A1 & Agent $\rightarrow$ Application & Device-key HTTP & Commands, plans, ingest ack \\
+\hline
+H-A2 & Agent $\rightarrow$ Klipper/fswebcam & Snapshot / motion cues & Frame bytes; pose dwell \\
+\hline
+\end{tabular}
+\caption{\texttt{agrihome\_agent} bridge subsystem interfaces}
+\end{table}

@@ -36,7 +36,7 @@ export interface TraySystem {
   healthScore: number;
   status: TrayHealthStatus;
   deviceId: string;
-  /** Linked Raspberry Pi / Moonraker edge device, when provisioned. */
+  /** Linked Raspberry Pi / Klipper edge device, when provisioned. */
   edgeDeviceId?: string | null;
   lastCaptureAt: string;
 }

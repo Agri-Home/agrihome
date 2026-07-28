@@ -1,4 +1,4 @@
-The Presentation Layer implements all user-visible behavior described at a high level in the SRS: authentication, dashboards, plant health display, historical views, scheduling, and mesh-oriented navigation. Each subsystem below corresponds to a coherent screen family or cross-cutting UI concern.
+The Presentation Layer implements all user-visible behavior described at a high level in the SRS: authentication, dashboards, plant health display, historical views, scheduling, mesh-oriented navigation, and Summer~2026 \textbf{edge device} controls (Devices list, tray Raspberry~Pi panel, Take Picture). Each subsystem below corresponds to a coherent screen family or cross-cutting UI concern.
 
 \subsection{Authentication and session UI subsystem}
 
@@ -90,7 +90,7 @@ P-D2 & Application $\rightarrow$ Dashboard & JSON payloads & Rendered charts / l
 
 \subsection{Tray monitoring console subsystem}
 
-The \textbf{tray console} shows the active tray: latest imagery, monitoring trends, plant thumbnails, events, and optional tray-level vision uploads. It aligns with \textbf{automatic image capture} presentation and tray-scoped monitoring in the SRS.
+The \textbf{tray console} shows the active tray: latest imagery, monitoring trends, plant thumbnails, events, optional tray-level vision uploads, and the embedded \textbf{Raspberry~Pi panel}. It aligns with \textbf{automatic image capture} presentation and tray-scoped monitoring in the SRS.
 
 \begin{figure}[H]
 \centering
@@ -109,12 +109,14 @@ The \textbf{tray console} shows the active tray: latest imagery, monitoring tren
 \begin{itemize}
   \item Each tray identifier maps to authorized user scope.
   \item Large images may be progressively loaded or thumbnailed.
+  \item A tray may be linked to zero or one \texttt{edge\_devices} row.
 \end{itemize}
 
 \subsubsection{Responsibilities}
 \begin{itemize}
   \item Render tray imagery, charts, and plant rows.
   \item Submit tray-scoped uploads or vision jobs as permitted.
+  \item Host the Raspberry~Pi panel affordances (link device, Take Picture, Klipper/streamer URL).
   \item Poll or refresh data according to UX policy.
 \end{itemize}
 
@@ -241,6 +243,7 @@ The \textbf{schedule editor} binds capture timing to trays or meshes, supporting
 \subsubsection{Responsibilities}
 \begin{itemize}
   \item List and edit schedules with clear scope (tray vs.\ mesh).
+  \item Support destination \texttt{raspberry-pi-edge} for edge capture policies.
   \item Validate user inputs (cadence, start/end) before submission.
 \end{itemize}
 
@@ -256,4 +259,96 @@ P-S1 & Schedule UI $\rightarrow$ Application & Schedule DTO & Persisted schedule
 \hline
 \end{tabular}
 \caption{Schedule management subsystem interfaces}
+\end{table}
+
+\subsection{Devices UI subsystem}
+
+The \textbf{Devices} navigation lists provisioned Raspberry~Pi edge devices for the signed-in owner: CPU serial, online/offline status, last heartbeat, and linked tray. It is the fleet-level companion to the per-tray Raspberry~Pi panel.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\scriptsize, box/.style={draw, rounded corners, align=center, minimum width=2.2cm, minimum height=0.7cm}, arr/.style={-{Stealth}, thick}]
+\node[box, fill=leafgreen!14] (dev) {Devices\\list UI};
+\node[box, right=1.0cm of dev, fill=blue!8] (api) {/api/devices};
+\draw[arr] (dev) -- node[above] {GET / actions} (api);
+\end{tikzpicture}
+\caption{Devices UI: operator fleet view over edge device APIs.}
+\label{fig:pres-devices}
+\end{figure}
+
+\subsubsection{Assumptions}
+\begin{itemize}
+  \item Only devices owned by the authenticated account are visible.
+  \item Heartbeat stale windows determine online presentation.
+\end{itemize}
+
+\subsubsection{Responsibilities}
+\begin{itemize}
+  \item Render device inventory and status.
+  \item Navigate to linked trays when present.
+  \item Surface revoke / rotate-key actions when exposed by product policy.
+\end{itemize}
+
+\subsubsection{Subsystem interfaces}
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|p{0.9cm}|p{3.4cm}|p{3.0cm}|p{3.5cm}|}
+\hline
+\textbf{ID} & \textbf{Description} & \textbf{Inputs} & \textbf{Outputs} \\
+\hline
+P-DV1 & Devices UI $\rightarrow$ Application & Session context & Device list DTO \\
+\hline
+P-DV2 & Devices UI $\rightarrow$ Application & Device action payload & Updated device state \\
+\hline
+\end{tabular}
+\caption{Devices UI subsystem interfaces}
+\end{table}
+
+\subsection{Tray Raspberry Pi panel and Take Picture subsystem}
+
+The \textbf{tray Raspberry~Pi panel} embeds edge controls on tray detail: link/unlink device, edit and save \textbf{Klipper/streamer URL} (\texttt{klipper\_url}), generate poses from plant layout, and \textbf{Take Picture}. Take Picture posts \texttt{action=capture} to \texttt{/api/devices/\{id\}}; the UI primarily expects a queued-command acknowledgment for agent \texttt{fswebcam} capture, or an immediate image URL when an optional HTTP streamer is reachable.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\scriptsize, box/.style={draw, rounded corners, align=center, minimum width=2.1cm, minimum height=0.65cm}, arr/.style={-{Stealth}, thick}]
+\node[box, fill=leafgreen!14] (panel) {Pi panel\\Take Picture};
+\node[box, right=0.9cm of panel, fill=blue!8] (api) {/api/devices};
+\node[box, right=0.9cm of api, fill=teal!12, dashed] (hw) {Klipper\\/ agent};
+\draw[arr] (panel) -- (api);
+\draw[arr, dashed] (api) -- (hw);
+\end{tikzpicture}
+\caption{Tray Pi panel: Take Picture and Klipper URL management via devices API.}
+\label{fig:pres-pi-panel}
+\end{figure}
+
+\subsubsection{Assumptions}
+\begin{itemize}
+  \item Offline empty states are shown when no device is linked or heartbeat is stale.
+  \item Klipper/streamer URL updates validate http/https schemes before save.
+\end{itemize}
+
+\subsubsection{Responsibilities}
+\begin{itemize}
+  \item Trigger Take Picture and display returned capture or queue status.
+  \item Persist Klipper URL edits (\texttt{updateKlipperUrl}; alias \texttt{updateMoonrakerUrl}).
+  \item Support pose generation entry points for multi-angle capture.
+\end{itemize}
+
+\subsubsection{Subsystem interfaces}
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|p{0.9cm}|p{3.4cm}|p{3.0cm}|p{3.5cm}|}
+\hline
+\textbf{ID} & \textbf{Description} & \textbf{Inputs} & \textbf{Outputs} \\
+\hline
+P-PI1 & Pi panel $\rightarrow$ Application & \texttt{capture} action & Image URL or queued command \\
+\hline
+P-PI2 & Pi panel $\rightarrow$ Application & Klipper URL & Updated \texttt{edge\_devices} row \\
+\hline
+P-PI3 & Pi panel $\rightarrow$ Application & Pose generate request & Pose sequence DTO \\
+\hline
+\end{tabular}
+\caption{Tray Raspberry Pi panel and Take Picture subsystem interfaces}
 \end{table}

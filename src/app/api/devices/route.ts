@@ -30,7 +30,7 @@ export async function GET() {
         macAddress: d.macAddress,
         hostname: d.hostname,
         model: d.model,
-        moonrakerUrl: d.moonrakerUrl,
+        klipperUrl: d.klipperUrl,
         status: d.status,
         lastHeartbeatAt: d.lastHeartbeatAt,
         apiKeyPrefix: d.apiKeyPrefix,

@@ -14,6 +14,8 @@ import {
 import { queryRows } from "@/lib/db/postgres";
 import { formatRelativeTimestamp } from "@/lib/utils";
 
+import { UnregisterDeviceButton } from "./UnregisterDeviceButton";
+
 export default async function DevicesPage() {
   const user = await requireSessionAccountUser();
   await markStaleDevicesOffline(env.device.heartbeatStaleMinutes);
@@ -41,7 +43,7 @@ export default async function DevicesPage() {
           Edge devices
         </h1>
         <p className="mt-1 text-sm text-ink/55">
-          Raspberry Pi / Moonraker benches linked to your trays. Heartbeats older
+          Raspberry Pi / Klipper benches linked to your trays. Heartbeats older
           than {env.device.heartbeatStaleMinutes} minutes are shown as offline.
         </p>
       </div>
@@ -49,10 +51,12 @@ export default async function DevicesPage() {
       {devices.length === 0 ? (
         <Card className="p-6">
           <p className="text-sm text-ink/65">
-            No devices yet. On the Pi, run the AgriHome Moonraker agent
-            register-once script with{" "}
+            No devices yet. On the Pi (Agri-Home/klipper + agrihome agent), run
+            register-once with{" "}
             <code className="rounded bg-ink/5 px-1">DEVICE_PROVISIONING_SECRET</code>
-            . A tray is created automatically on first registration.
+            . A tray is created automatically on first registration. See{" "}
+            <code className="rounded bg-ink/5 px-1">docs/ops/RASPBERRY_PI_KLIPPER.md</code>
+            .
           </p>
         </Card>
       ) : (
@@ -101,14 +105,20 @@ export default async function DevicesPage() {
                       )}
                     </p>
                   </div>
-                  {tray && (
-                    <Link
-                      href={`/trays/${encodeURIComponent(tray.id)}`}
-                      className="text-sm font-medium text-leaf hover:underline"
-                    >
-                      Open tray →
-                    </Link>
-                  )}
+                  <div className="flex flex-wrap items-center gap-3">
+                    {tray && (
+                      <Link
+                        href={`/trays/${encodeURIComponent(tray.id)}`}
+                        className="text-sm font-medium text-leaf hover:underline"
+                      >
+                        Open tray →
+                      </Link>
+                    )}
+                    <UnregisterDeviceButton
+                      deviceId={d.id}
+                      label={d.hostname || d.model || d.cpuSerial}
+                    />
+                  </div>
                 </Card>
               </li>
             );

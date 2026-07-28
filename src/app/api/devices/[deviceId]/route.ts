@@ -8,15 +8,16 @@ import {
 import { requireApiAccountUser } from "@/lib/auth/session";
 import { updateDeviceActuatorLimits } from "@/lib/services/capture-pose-service";
 import {
+  deleteEdgeDevice,
   getEdgeDeviceById,
   linkDeviceToTray,
   revokeEdgeDevice,
   rotateEdgeDeviceKey,
-  updateEdgeDeviceMoonrakerUrl
+  updateEdgeDeviceKlipperUrl
 } from "@/lib/services/edge-device-service";
 import {
-  captureFromMoonrakerDirect,
-  summarizeMoonrakerReachabilityError
+  captureFromKlipperStreamerDirect,
+  summarizeStreamerReachabilityError
 } from "@/lib/services/edge-capture-service";
 import {
   enqueueEdgeCommand,
@@ -76,7 +77,7 @@ export async function GET(request: Request, context: RouteContext) {
 
 /**
  * POST /api/devices/[deviceId]
- * Actions: capture | linkTray | revoke | rotateKey | updateLimits | updateMoonrakerUrl
+ * Actions: capture | linkTray | revoke | delete | rotateKey | updateLimits | updateKlipperUrl
  */
 export async function POST(request: Request, context: RouteContext) {
   const auth = await requireApiAccountUser();
@@ -94,6 +95,8 @@ export async function POST(request: Request, context: RouteContext) {
       trayId?: string;
       plantId?: string;
       runPoses?: boolean;
+      klipperUrl?: string;
+      /** @deprecated Prefer klipperUrl / updateKlipperUrl. */
       moonrakerUrl?: string;
       actuatorLimits?: {
         hingeMinDeg?: number;
@@ -102,6 +105,12 @@ export async function POST(request: Request, context: RouteContext) {
         motorMaxMm?: number;
       };
     };
+
+    // Alias for older Vision Console clients.
+    if (body.action === "updateMoonrakerUrl") {
+      body.action = "updateKlipperUrl";
+      body.klipperUrl = body.klipperUrl ?? body.moonrakerUrl;
+    }
 
     if (body.action === "capture") {
       if (device.revokedAt) {
@@ -126,17 +135,18 @@ export async function POST(request: Request, context: RouteContext) {
 
       const runPoses = Boolean(body.runPoses);
 
-      // Fast path: server fetches Moonraker snapshot when reachable (single-shot only).
-      // Pose walks need the Pi agent for actuators, so they always queue.
+      // Optional fast path: HTTP streamer still (crowsnest/nginx) when a LAN URL
+      // is stored. Primary path for Agri-Home/klipper is the Pi agent + fswebcam
+      // (camera-macros/save_image.sh). Pose walks always queue for the agent.
       let reachabilityError: string | null = null;
-      if (!runPoses && device.moonrakerUrl?.trim()) {
+      if (!runPoses && device.klipperUrl?.trim()) {
         try {
-          const direct = await captureFromMoonrakerDirect({
+          const direct = await captureFromKlipperStreamerDirect({
             ownerEmail: auth.email,
             deviceId,
             trayId,
             plantId: body.plantId,
-            moonrakerUrl: device.moonrakerUrl.trim(),
+            klipperUrl: device.klipperUrl.trim(),
             notes: "take_picture_server_direct"
           });
           return NextResponse.json({
@@ -154,10 +164,9 @@ export async function POST(request: Request, context: RouteContext) {
             }
           });
         } catch (directError) {
-          // Fall through to Pi agent queue when LAN/NAT blocks server → Moonraker.
-          reachabilityError = summarizeMoonrakerReachabilityError(directError);
+          reachabilityError = summarizeStreamerReachabilityError(directError);
           console.warn(
-            "[devices/capture] direct Moonraker snapshot failed; queueing agent fallback:",
+            "[devices/capture] optional HTTP streamer failed; queueing agent fswebcam capture:",
             directError instanceof Error ? directError.message : directError
           );
         }
@@ -177,18 +186,18 @@ export async function POST(request: Request, context: RouteContext) {
         message: runPoses
           ? "Pose capture queued. The Pi agent will claim it on the next heartbeat."
           : (() => {
-              const mr = device.moonrakerUrl?.trim() ?? "";
+              const url = device.klipperUrl?.trim() ?? "";
               const loopback =
-                /:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/i.test(mr);
+                /:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/i.test(url);
               if (loopback) {
-                return "Moonraker URL is loopback (127.0.0.1); update it to the Pi LAN IP or a tunnel URL, or wait for the Pi agent.";
+                return "Streamer URL is loopback (127.0.0.1); update it to the Pi LAN IP, or wait for the Pi agent (fswebcam).";
               }
               if (reachabilityError) {
-                return `Moonraker not reachable from the server (${reachabilityError}); capture queued for the Pi agent.`;
+                return `HTTP streamer not reachable (${reachabilityError}); capture queued for the Pi agent (fswebcam / Klipper).`;
               }
-              return mr
-                ? "Moonraker not reachable from the server; capture queued for the Pi agent."
-                : "Capture command queued. The Pi agent will claim it on the next heartbeat.";
+              return url
+                ? "HTTP streamer not reachable from the server; capture queued for the Pi agent."
+                : "Capture queued for the Pi agent (fswebcam via Agri-Home/klipper camera-macros).";
             })(),
         queued: true,
         reachabilityError,
@@ -222,6 +231,21 @@ export async function POST(request: Request, context: RouteContext) {
     if (body.action === "revoke") {
       const revoked = await revokeEdgeDevice(auth.email, deviceId);
       return NextResponse.json({ data: revoked, message: "Device revoked" });
+    }
+
+    if (body.action === "delete" || body.action === "unregister") {
+      const deleted = await deleteEdgeDevice(auth.email, deviceId);
+      if (!deleted) {
+        return apiErrorResponse(
+          API_ERROR_CODES.NOT_FOUND,
+          "Device not found",
+          404
+        );
+      }
+      return NextResponse.json({
+        data: { id: deviceId },
+        message: "Device unregistered"
+      });
     }
 
     if (body.action === "rotateKey") {
@@ -259,19 +283,19 @@ export async function POST(request: Request, context: RouteContext) {
       return NextResponse.json({ data: updated });
     }
 
-    if (body.action === "updateMoonrakerUrl") {
-      if (!body.moonrakerUrl?.trim()) {
+    if (body.action === "updateKlipperUrl") {
+      if (!body.klipperUrl?.trim()) {
         return apiErrorResponse(
           API_ERROR_CODES.BAD_REQUEST,
-          "moonrakerUrl is required",
+          "klipperUrl is required",
           400
         );
       }
       try {
-        const updated = await updateEdgeDeviceMoonrakerUrl({
+        const updated = await updateEdgeDeviceKlipperUrl({
           ownerEmail: auth.email,
           deviceId,
-          moonrakerUrl: body.moonrakerUrl
+          klipperUrl: body.klipperUrl
         });
         if (!updated) {
           return apiErrorResponse(
@@ -282,12 +306,12 @@ export async function POST(request: Request, context: RouteContext) {
         }
         return NextResponse.json({
           data: updated,
-          message: "Moonraker URL updated"
+          message: "Klipper URL updated"
         });
       } catch (err) {
         return apiErrorResponse(
           API_ERROR_CODES.BAD_REQUEST,
-          err instanceof Error ? err.message : "Invalid moonrakerUrl",
+          err instanceof Error ? err.message : "Invalid klipperUrl",
           400
         );
       }
@@ -295,7 +319,7 @@ export async function POST(request: Request, context: RouteContext) {
 
     return apiErrorResponse(
       API_ERROR_CODES.BAD_REQUEST,
-      "Unknown action. Use capture, linkTray, revoke, rotateKey, updateLimits, or updateMoonrakerUrl.",
+      "Unknown action. Use capture, linkTray, revoke, delete, rotateKey, updateLimits, or updateKlipperUrl.",
       400
     );
   } catch (error) {

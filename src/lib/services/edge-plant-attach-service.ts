@@ -84,7 +84,7 @@ async function touchPlantLastImage(input: {
 }
 
 /**
- * Ensure a plant row exists on the tray for a Pi / Moonraker capture.
+ * Ensure a plant row exists on the tray for a Pi / Klipper capture.
  * Prefer explicit plantId, then pose plantId/slot, then upsert by slot,
  * otherwise create a new plant with sensible defaults.
  */

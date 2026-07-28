@@ -35,6 +35,8 @@ export async function POST(request: Request) {
       hingeMaxDeg?: number;
       motorMinMm?: number;
       motorMaxMm?: number;
+      klipperUrl?: string;
+      /** @deprecated Prefer klipperUrl. */
       moonrakerUrl?: string;
       claimCommands?: boolean;
     };
@@ -46,7 +48,7 @@ export async function POST(request: Request) {
       hingeMaxDeg: body.hingeMaxDeg,
       motorMinMm: body.motorMinMm,
       motorMaxMm: body.motorMaxMm,
-      moonrakerUrl: body.moonrakerUrl
+      klipperUrl: body.klipperUrl?.trim() || body.moonrakerUrl?.trim()
     });
 
     if (!device) {

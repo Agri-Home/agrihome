@@ -1,4 +1,4 @@
-The Processing Layer encapsulates \textbf{model-based and computer-vision} work for AgriHome. It is optional in the sense that core monitoring and CRUD remain available without it; when present, it enriches the product with species hints, tray-level detections, and future scoring models aligned with the SRS's emphasis on plant health insight.
+The Processing Layer encapsulates \textbf{model-based and computer-vision} work for AgriHome, plus \textbf{asynchronous edge capture orchestration}. It is optional in the sense that core monitoring and CRUD remain available without external models; when present, it enriches the product with species hints, tray-level detections, post-ingest disease analysis, and scheduled Pi captures aligned with the SRS's emphasis on plant health insight and automatic image capture.
 
 \subsection{Species and leaf inference adapter subsystem}
 
@@ -131,4 +131,96 @@ PR-N2 & Normalizer $\rightarrow$ Application & Canonical DTO & Ready for persist
 \hline
 \end{tabular}
 \caption{Inference normalization subsystem interfaces}
+\end{table}
+
+\subsection{Edge disease hook subsystem}
+
+The \textbf{edge disease hook} (\texttt{edge-disease-hook}) runs after a successful Pi ingest or direct capture when a plant ID is present and species inference is configured. It invokes the leaf/species adapter on the stored frame, writes prediction/report outcomes through domain services, and records monitoring events on skip or failure---without failing the ingest itself.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\scriptsize, box/.style={draw, rounded corners, align=center, minimum width=2.4cm, minimum height=0.72cm}, arr/.style={-{Stealth}, thick}]
+\node[box, fill=blue!8] (ingest) {Pi ingest\\complete};
+\node[box, right=1.1cm of ingest, fill=orange!14] (hook) {edge-disease\\hook};
+\node[box, right=1.1cm of hook, fill=orange!10] (cv) {Species\\adapter};
+\draw[arr] (ingest) -- (hook);
+\draw[arr] (hook) -- (cv);
+\end{tikzpicture}
+\caption{Edge disease hook: optional classification after Pi capture.}
+\label{fig:proc-edge-disease}
+\end{figure}
+
+\subsubsection{Assumptions}
+\begin{itemize}
+  \item \texttt{CV\_SPECIES\_INFERENCE\_URL} (or equivalent) may be unset; then the hook records a skip event.
+  \item Hook execution is fire-and-forget relative to the HTTP ingest response path when configured asynchronously.
+\end{itemize}
+
+\subsubsection{Responsibilities}
+\begin{itemize}
+  \item Load capture bytes and call plant analysis services.
+  \item Persist prediction/report results when inference succeeds.
+  \item Emit monitoring events for skip, success, and failure cases.
+\end{itemize}
+
+\subsubsection{Subsystem interfaces}
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|p{0.9cm}|p{3.4cm}|p{3.0cm}|p{3.5cm}|}
+\hline
+\textbf{ID} & \textbf{Description} & \textbf{Inputs} & \textbf{Outputs} \\
+\hline
+PR-E1 & Ingest path $\rightarrow$ Edge disease hook & Capture + plant context & Monitoring / prediction side effects \\
+\hline
+PR-E2 & Edge disease hook $\rightarrow$ Species adapter & Image bytes & Diagnosis DTO \\
+\hline
+\end{tabular}
+\caption{Edge disease hook subsystem interfaces}
+\end{table}
+
+\subsection{Capture schedule runner subsystem}
+
+The \textbf{capture schedule runner} (\texttt{capture:schedule-runner}) is a periodic job that evaluates due \texttt{capture\_schedules}. For destination \texttt{raspberry-pi-edge}, it enqueues \texttt{capture\_now} commands (optionally with \texttt{runPoses: true}) onto linked devices so \texttt{agrihome\_agent} performs multi-angle capture without an operator present.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[font=\scriptsize, box/.style={draw, rounded corners, align=center, minimum width=2.4cm, minimum height=0.72cm}, arr/.style={-{Stealth}, thick}]
+\node[box, fill=orange!12] (runner) {Schedule\\runner};
+\node[box, right=1.1cm of runner, fill=gray!14] (cmd) {edge device\\commands};
+\node[box, right=1.1cm of cmd, fill=teal!12] (agent) {agrihome\_agent};
+\draw[arr] (runner) -- (cmd);
+\draw[arr] (cmd) -- node[above] {heartbeat claim} (agent);
+\end{tikzpicture}
+\caption{Capture schedule runner: enqueues edge capture work for agents.}
+\label{fig:proc-sched-runner}
+\end{figure}
+
+\subsubsection{Assumptions}
+\begin{itemize}
+  \item The runner is invoked on a cron-like cadence (for example every minute).
+  \item Schedules and device linkage are authoritative in the Data Layer.
+\end{itemize}
+
+\subsubsection{Responsibilities}
+\begin{itemize}
+  \item Select due schedules with edge destinations.
+  \item Insert pending capture commands with pose-run flags as configured.
+  \item Avoid blocking the interactive Application Layer request path.
+\end{itemize}
+
+\subsubsection{Subsystem interfaces}
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{|p{0.9cm}|p{3.4cm}|p{3.0cm}|p{3.5cm}|}
+\hline
+\textbf{ID} & \textbf{Description} & \textbf{Inputs} & \textbf{Outputs} \\
+\hline
+PR-R1 & Runner $\rightarrow$ Data Layer & Due schedule query & Schedule/device rows \\
+\hline
+PR-R2 & Runner $\rightarrow$ Data Layer & \texttt{capture\_now} intents & Pending commands \\
+\hline
+\end{tabular}
+\caption{Capture schedule runner subsystem interfaces}
 \end{table}
