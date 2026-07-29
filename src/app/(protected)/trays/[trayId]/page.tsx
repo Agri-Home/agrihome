@@ -84,7 +84,13 @@ export default async function TrayDetailPage({
               {tray.crop} · {tray.zone}
             </p>
           </div>
-          <Badge tone={trayTone(tray.status)} className="mt-1">{tray.status}</Badge>
+          <Badge tone={trayTone(tray.status)} className="mt-1">
+            {tray.status === "alert"
+              ? "Needs care"
+              : tray.status === "watch"
+                ? "Watch"
+                : "Looking good"}
+          </Badge>
         </div>
       </div>
 
@@ -118,22 +124,35 @@ export default async function TrayDetailPage({
           <p className="mt-1 text-3xl font-bold tracking-tight text-ink">{tray.plantCount}</p>
           {tray.visionPlantCount != null && (
             <p className="mt-0.5 text-xs text-ink/40">
-              CV: {tray.visionPlantCount}
+              Last photo found {tray.visionPlantCount}
               {tray.visionPlantCountConfidence != null && (
-                <span className="ml-1">({(tray.visionPlantCountConfidence * 100).toFixed(0)}%)</span>
+                <span className="ml-1">
+                  · {(tray.visionPlantCountConfidence * 100).toFixed(0)}% sure
+                </span>
               )}
             </p>
           )}
         </Card>
         <Card className="p-4">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-ink/40">Camera</p>
-          <p className="mt-1 text-sm font-semibold font-mono text-ink/70">{tray.deviceId}</p>
-          <p className="mt-0.5 text-xs text-ink/40">{formatRelativeTimestamp(tray.lastCaptureAt)}</p>
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-ink/40">Last photo</p>
+          <p className="mt-1 text-sm font-semibold text-ink/70">
+            {formatRelativeTimestamp(tray.lastCaptureAt)}
+          </p>
+          <details className="mt-1">
+            <summary className="cursor-pointer text-xs text-ink/40 hover:text-ink/55">
+              Camera id
+            </summary>
+            <p className="mt-0.5 break-all font-mono text-[11px] text-ink/45">
+              {tray.deviceId}
+            </p>
+          </details>
         </Card>
         <Card className="p-4">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-ink/40">CV Analysis</p>
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-ink/40">Last count</p>
           <p className="mt-1 text-sm font-semibold text-ink/70">
-            {tray.visionPlantCountAt ? formatDateTime(tray.visionPlantCountAt) : "Not run yet"}
+            {tray.visionPlantCountAt
+              ? formatDateTime(tray.visionPlantCountAt)
+              : "Not run yet"}
           </p>
         </Card>
       </div>
@@ -176,9 +195,8 @@ export default async function TrayDetailPage({
         </ClientChartFrame>
       </section>
 
-      {/* CV Analysis */}
       <section className="animate-fade-in stagger-5">
-        <SectionTitle>Computer Vision</SectionTitle>
+        <SectionTitle>Plant detection</SectionTitle>
         <TrayVisionAnalyzeClient trayId={tray.id} />
       </section>
 

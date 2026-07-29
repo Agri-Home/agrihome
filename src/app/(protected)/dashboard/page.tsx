@@ -23,6 +23,12 @@ function trayTone(status: string) {
 }
 
 function trayStatusLabel(status: string) {
+  if (status === "alert") return "Needs care";
+  if (status === "watch") return "Watch";
+  return "Looking good";
+}
+
+function trayDotStatus(status: string) {
   if (status === "alert") return "critical" as const;
   if (status === "watch") return "warning" as const;
   return "healthy" as const;
@@ -31,6 +37,43 @@ function trayStatusLabel(status: string) {
 function overallHealth(trays: Array<{ healthScore: number }>) {
   if (trays.length === 0) return 0;
   return Math.round(trays.reduce((s, t) => s + t.healthScore, 0) / trays.length);
+}
+
+function nextStepCopy(input: {
+  trays: number;
+  alertCount: number;
+  watchCount: number;
+}) {
+  if (input.trays === 0) {
+    return {
+      title: "Add your first plant",
+      detail: "Take a photo to identify a plant and start monitoring.",
+      href: "/plants/new",
+      cta: "Add a plant"
+    };
+  }
+  if (input.alertCount > 0) {
+    return {
+      title: "Some trays need attention",
+      detail: `${input.alertCount} tray${input.alertCount === 1 ? "" : "s"} look critical — open them to check the latest photos and notes.`,
+      href: "/trays",
+      cta: "Review trays"
+    };
+  }
+  if (input.watchCount > 0) {
+    return {
+      title: "Keep an eye on a few trays",
+      detail: `${input.watchCount} tray${input.watchCount === 1 ? "" : "s"} are on watch. A quick check usually helps.`,
+      href: "/trays",
+      cta: "Open trays"
+    };
+  }
+  return {
+    title: "Everything looks calm",
+    detail: "Add a plant photo anytime, or open a tray to take a new picture.",
+    href: "/plants/new",
+    cta: "Add a plant"
+  };
 }
 
 export default async function HomePage() {
@@ -52,84 +95,106 @@ export default async function HomePage() {
   const watchCount = trays.filter((t) => t.status === "watch").length;
   const activeSchedules = schedules.filter((s) => s.active);
   const lastWatering = activeSchedules[0]?.lastRunAt;
+  const next = nextStepCopy({ trays: trays.length, alertCount, watchCount });
+  const systemOk = alertCount === 0;
 
   return (
     <div className="space-y-6">
-      {/* Hero section */}
       <section className="animate-fade-in">
-        <div className="flex items-start justify-between">
+        <div className="flex items-start justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-ink">
-              Dashboard
+              Home
             </h1>
             <p className="mt-0.5 text-sm text-ink/50">
-              Your greenhouse at a glance
+              How your greenhouse is doing today
             </p>
           </div>
           <div className="flex items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 text-xs font-semibold shadow-sm ring-1 ring-ink/5 backdrop-blur-sm">
-            <StatusDot status="healthy" pulse />
-            <span className="text-ink/70">System online</span>
+            <StatusDot status={systemOk ? "healthy" : "critical"} pulse />
+            <span className="text-ink/70">
+              {systemOk ? "Looking good" : "Needs attention"}
+            </span>
           </div>
         </div>
 
-        {/* Quick stats strip */}
+        <Card className="mt-5 flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-ink">{next.title}</p>
+            <p className="mt-0.5 text-sm text-ink/55">{next.detail}</p>
+          </div>
+          <Link
+            href={next.href}
+            className="inline-flex shrink-0 items-center justify-center rounded-xl bg-leaf px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-leaf/90"
+          >
+            {next.cta}
+          </Link>
+        </Card>
+
         <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Card className="animate-fade-in stagger-1 p-4">
-            <div className="flex items-center gap-2">
-              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2" /></svg>
-              </span>
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-ink/45">Health</p>
-            </div>
-            <p className="mt-2 text-2xl font-bold tracking-tight text-ink">{health}%</p>
-            <p className="mt-0.5 text-xs text-ink/45">Avg across {trays.length} trays</p>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-ink/45">
+              Health
+            </p>
+            <p className="mt-2 text-2xl font-bold tracking-tight text-ink">
+              {trays.length === 0 ? "—" : `${health}%`}
+            </p>
+            <p className="mt-0.5 text-xs text-ink/45">
+              {trays.length === 0
+                ? "No trays yet"
+                : `Average across ${trays.length} tray${trays.length === 1 ? "" : "s"}`}
+            </p>
           </Card>
 
           <Card className="animate-fade-in stagger-2 p-4">
-            <div className="flex items-center gap-2">
-              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-lime/25 text-leaf">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5z" /><path d="M2 17l10 5 10-5" /><path d="M2 12l10 5 10-5" /></svg>
-              </span>
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-ink/45">Trays</p>
-            </div>
-            <p className="mt-2 text-2xl font-bold tracking-tight text-ink">{trays.length}</p>
-            <p className="mt-0.5 text-xs text-ink/45">{meshes.length} mesh network{meshes.length === 1 ? "" : "s"}</p>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-ink/45">
+              Trays
+            </p>
+            <p className="mt-2 text-2xl font-bold tracking-tight text-ink">
+              {trays.length}
+            </p>
+            <p className="mt-0.5 text-xs text-ink/45">
+              {meshes.length > 0
+                ? `${meshes.length} group${meshes.length === 1 ? "" : "s"}`
+                : "Ready to grow"}
+            </p>
           </Card>
 
           <Card className="animate-fade-in stagger-3 p-4">
-            <div className="flex items-center gap-2">
-              <span className={`flex h-8 w-8 items-center justify-center rounded-xl ${alertCount > 0 ? "bg-rose-100 text-rose-600" : watchCount > 0 ? "bg-amber-100 text-amber-600" : "bg-emerald-100 text-emerald-600"}`}>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" /><line x1="12" y1="9" x2="12" y2="13" /><line x1="12" y1="17" x2="12.01" y2="17" /></svg>
-              </span>
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-ink/45">Alerts</p>
-            </div>
-            <p className="mt-2 text-2xl font-bold tracking-tight text-ink">{alertCount + watchCount}</p>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-ink/45">
+              Alerts
+            </p>
+            <p className="mt-2 text-2xl font-bold tracking-tight text-ink">
+              {alertCount + watchCount}
+            </p>
             <p className="mt-0.5 text-xs text-ink/45">
-              {alertCount > 0 ? `${alertCount} critical` : "All clear"}
+              {alertCount > 0
+                ? `${alertCount} need care`
+                : watchCount > 0
+                  ? "On watch"
+                  : "All clear"}
             </p>
           </Card>
 
           <Card className="animate-fade-in stagger-4 p-4">
-            <div className="flex items-center gap-2">
-              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-blue-100 text-blue-600">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2.69l5.66 5.66a8 8 0 11-11.31 0z" /></svg>
-              </span>
-              <p className="text-[11px] font-semibold uppercase tracking-wider text-ink/45">Watering</p>
-            </div>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-ink/45">
+              Watering
+            </p>
             <p className="mt-2 text-2xl font-bold tracking-tight text-ink">
               {lastWatering ? formatRelativeTimestamp(lastWatering) : "—"}
             </p>
             <p className="mt-0.5 text-xs text-ink/45">
-              {activeSchedules.length} active schedule{activeSchedules.length === 1 ? "" : "s"}
+              {activeSchedules.length === 0
+                ? "No schedule yet"
+                : `${activeSchedules.length} active`}
             </p>
           </Card>
         </div>
       </section>
 
-      {/* Health chart */}
       {trays.length > 0 && (
         <section className="animate-fade-in stagger-2">
-          <SectionTitle>Tray Health</SectionTitle>
+          <SectionTitle>Tray health</SectionTitle>
           <Card className="p-4">
             <ClientChartFrame
               skeleton={
@@ -144,10 +209,9 @@ export default async function HomePage() {
         </section>
       )}
 
-      {/* Live camera preview */}
       {capture?.imageUrl && (
         <section className="animate-fade-in stagger-3">
-          <SectionTitle>Live Camera</SectionTitle>
+          <SectionTitle>Latest photo</SectionTitle>
           <Link href={`/trays/${capture.trayId}`} className="block">
             <Card interactive className="overflow-hidden p-0">
               <div className="relative aspect-[16/10] w-full bg-mist">
@@ -168,7 +232,9 @@ export default async function HomePage() {
                         {formatRelativeTimestamp(capture.capturedAt)}
                       </p>
                     </div>
-                    <Badge tone="success" live>Live</Badge>
+                    <Badge tone="success" live>
+                      Recent
+                    </Badge>
                   </div>
                 </div>
               </div>
@@ -177,12 +243,14 @@ export default async function HomePage() {
         </section>
       )}
 
-      {/* Trays list */}
       <section className="animate-fade-in stagger-4">
         <div className="flex items-center justify-between">
-          <SectionTitle>Trays</SectionTitle>
+          <SectionTitle>Your trays</SectionTitle>
           {trays.length > 4 && (
-            <Link href="/trays" className="text-xs font-semibold text-leaf hover:text-leaf/80 transition-colors">
+            <Link
+              href="/trays"
+              className="text-xs font-semibold text-leaf transition-colors hover:text-leaf/80"
+            >
               View all
             </Link>
           )}
@@ -191,19 +259,32 @@ export default async function HomePage() {
           {trays.slice(0, 4).map((tray) => (
             <li key={tray.id}>
               <Link href={`/trays/${tray.id}`}>
-                <Card interactive className="flex items-center justify-between gap-3 p-4">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <StatusDot status={trayStatusLabel(tray.status)} pulse={tray.status === "alert"} size="md" />
+                <Card
+                  interactive
+                  className="flex items-center justify-between gap-3 p-4"
+                >
+                  <div className="flex min-w-0 items-center gap-3">
+                    <StatusDot
+                      status={trayDotStatus(tray.status)}
+                      pulse={tray.status === "alert"}
+                      size="md"
+                    />
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-ink">{tray.name}</p>
+                      <p className="truncate text-sm font-semibold text-ink">
+                        {tray.name}
+                      </p>
                       <p className="truncate text-xs text-ink/45">
                         {tray.crop} · {tray.zone}
                       </p>
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-2.5">
-                    <span className="text-lg font-bold tabular-nums text-ink">{tray.healthScore}%</span>
-                    <Badge tone={trayTone(tray.status)}>{tray.status}</Badge>
+                    <span className="text-lg font-bold tabular-nums text-ink">
+                      {tray.healthScore}%
+                    </span>
+                    <Badge tone={trayTone(tray.status)}>
+                      {trayStatusLabel(tray.status)}
+                    </Badge>
                   </div>
                 </Card>
               </Link>
@@ -213,43 +294,72 @@ export default async function HomePage() {
 
         {trays.length === 0 && (
           <Card className="p-8 text-center">
-            <p className="text-sm text-ink/50">No trays configured yet.</p>
-            <Link href="/plants/new" className="mt-2 inline-block text-sm font-semibold text-leaf">
+            <p className="text-sm text-ink/50">No trays yet.</p>
+            <Link
+              href="/plants/new"
+              className="mt-2 inline-block text-sm font-semibold text-leaf"
+            >
               Add your first plant
             </Link>
           </Card>
         )}
 
         {trays.length > 0 && trays.length <= 4 && (
-          <Link href="/trays" className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-leaf transition-colors hover:text-leaf/80">
-            Open directory
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+          <Link
+            href="/trays"
+            className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-leaf transition-colors hover:text-leaf/80"
+          >
+            See all trays
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
           </Link>
         )}
       </section>
 
-      {/* Recent activity */}
       {monitoringLog.length > 0 && (
         <section className="animate-fade-in stagger-5">
-          <SectionTitle>Recent Activity</SectionTitle>
+          <SectionTitle>Recent activity</SectionTitle>
           <Card className="divide-y divide-ink/5 p-0">
             {monitoringLog.map((event, i) => (
-              <div key={event.id} className={`flex items-start gap-3 px-5 py-3.5 ${i === 0 ? "rounded-t-3xl" : ""} ${i === monitoringLog.length - 1 ? "rounded-b-3xl" : ""}`}>
-                <span className={`mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-xs ${
-                  event.level === "critical"
-                    ? "bg-rose-100 text-rose-600"
-                    : event.level === "warning"
-                      ? "bg-amber-100 text-amber-600"
-                      : "bg-emerald-100 text-emerald-600"
-                }`}>
-                  {event.level === "critical" ? "!" : event.level === "warning" ? "!" : "i"}
+              <div
+                key={event.id}
+                className={`flex items-start gap-3 px-5 py-3.5 ${i === 0 ? "rounded-t-3xl" : ""} ${i === monitoringLog.length - 1 ? "rounded-b-3xl" : ""}`}
+              >
+                <span
+                  className={`mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-xs ${
+                    event.level === "critical"
+                      ? "bg-rose-100 text-rose-600"
+                      : event.level === "warning"
+                        ? "bg-amber-100 text-amber-600"
+                        : "bg-emerald-100 text-emerald-600"
+                  }`}
+                >
+                  {event.level === "critical" || event.level === "warning"
+                    ? "!"
+                    : "i"}
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="truncate text-sm font-medium text-ink">{event.title}</p>
-                    <p className="shrink-0 text-[11px] text-ink/40">{formatDateTime(event.createdAt)}</p>
+                    <p className="truncate text-sm font-medium text-ink">
+                      {event.title}
+                    </p>
+                    <p className="shrink-0 text-[11px] text-ink/40">
+                      {formatDateTime(event.createdAt)}
+                    </p>
                   </div>
-                  <p className="mt-0.5 text-xs text-ink/50 line-clamp-1">{event.message}</p>
+                  <p className="mt-0.5 line-clamp-1 text-xs text-ink/50">
+                    {event.message}
+                  </p>
                 </div>
               </div>
             ))}

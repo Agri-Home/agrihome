@@ -14,6 +14,31 @@
 #   mkdir -p /mnt/mainpool/apps/agrihome/uploads/{originals,processed,temp,models,backups}
 
 services:
+  # Applies db/migrations/*.sql against an existing Postgres volume.
+  # schema.sql only runs on first empty data dir; upgrades need this step.
+  db-migrate:
+    image: postgres:16
+    container_name: agrihome-db-migrate
+    volumes:
+      - ./db/migrations:/migrations:ro
+    environment:
+      PGPASSWORD: password
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        until pg_isready -h postgres -U agrihome -d agrihome >/dev/null 2>&1; do sleep 1; done
+        for f in /migrations/*.sql; do
+          echo "Applying $$f"
+          psql -v ON_ERROR_STOP=1 -h postgres -U agrihome -d agrihome -f "$$f"
+        done
+    depends_on:
+      - postgres
+    restart: "no"
+    networks:
+      - agrihome_net
+
   agrihome:
     image: ghcr.io/bhusallaxman22/agrihome:latest
     container_name: agrihome
@@ -21,6 +46,7 @@ services:
     depends_on:
       - postgres
       - qdrant
+      - db-migrate
     ports:
       - "3000:3000"
     environment:

@@ -110,10 +110,10 @@ export function NewPlantClient({
       setPhotoUrl(json.data.imageUrl);
       if (json.data.trainingFeedbackWarning) {
         setTrainingNote(
-          `Plant saved, but training feedback was not stored: ${json.data.trainingFeedbackWarning}`
+          `Plant saved, but your correction note was not stored: ${json.data.trainingFeedbackWarning}`
         );
       } else if (json.data.trainingFeedback?.id) {
-        setTrainingNote("Training feedback saved with this photo.");
+        setTrainingNote("Saved — thanks for the correction note.");
       }
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Error");
@@ -126,10 +126,11 @@ export function NewPlantClient({
     <div className="space-y-6">
       <div className="animate-fade-in">
         <h1 className="text-2xl font-bold tracking-tight text-ink">
-          Add a Plant
+          Add a plant
         </h1>
         <p className="mt-1 text-sm text-ink/50">
-          Take or upload a clear photo. The model identifies the species, creates the plant, and scores health in one step. Optionally note corrections below to improve future models.
+          Take a clear leaf or plant photo. We&apos;ll identify it, save it to a
+          tray, and estimate health in one step.
         </p>
       </div>
 
@@ -152,10 +153,11 @@ export function NewPlantClient({
         </div>
       )}
 
-      {/* Tray selector */}
       <Card className="animate-fade-in stagger-1 p-5">
         <label className="block">
-          <span className="text-xs font-semibold uppercase tracking-wider text-ink/40">Target Tray</span>
+          <span className="text-xs font-semibold uppercase tracking-wider text-ink/40">
+            Which tray?
+          </span>
           <select
             className="mt-2 w-full rounded-xl border border-ink/10 bg-white/80 px-3.5 py-2.5 text-sm transition-colors focus:border-leaf focus:outline-none"
             value={trayId}
@@ -165,7 +167,7 @@ export function NewPlantClient({
             {sorted.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.name}
-                {t.id === MANUAL_TRAY_ID ? " — default for new plants" : ""}
+                {t.id === MANUAL_TRAY_ID ? " — default" : ""}
               </option>
             ))}
           </select>
@@ -173,77 +175,78 @@ export function NewPlantClient({
       </Card>
 
       {showTrainingFeedback ? (
-      <Card className="animate-fade-in stagger-2 border-ink/5 bg-ink/[0.02] p-5">
-        <p className="text-xs font-semibold uppercase tracking-wider text-ink/40">
-          Optional — training feedback (same photo)
-        </p>
-        <p className="mt-1 text-[11px] text-ink/35">
-          If the species or health assessment might be wrong, add crop, condition, tags, or a short note. Submitted with your plant photo automatically. With a dataset directory configured, images are stored as Name___Condition (e.g. Tomato___Early_blight).
-        </p>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <div className="text-sm sm:col-span-2">
-            <label
-              htmlFor="new-plant-training-crop"
-              className="text-xs font-medium text-ink/50"
-            >
-              Name (crop or plant)
+        <details className="animate-fade-in stagger-2 rounded-3xl border border-ink/5 bg-ink/[0.02] px-5 py-4">
+          <summary className="cursor-pointer text-sm font-medium text-ink/70 hover:text-ink">
+            Optional: correct the answer (helps future detection)
+          </summary>
+          <p className="mt-2 text-xs text-ink/45">
+            If the name or health looks wrong, add a short correction before you
+            take the photo. It is saved with the same image.
+          </p>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <div className="text-sm sm:col-span-2">
+              <label
+                htmlFor="new-plant-training-crop"
+                className="text-xs font-medium text-ink/50"
+              >
+                Plant name
+              </label>
+              <input
+                id="new-plant-training-crop"
+                value={trainingCrop}
+                onChange={(e) => setTrainingCrop(e.target.value)}
+                disabled={busy}
+                list="new-plant-crop-suggestions"
+                maxLength={120}
+                autoComplete="off"
+                placeholder="e.g. Tomato"
+                className="mt-1 w-full rounded-xl border border-ink/10 bg-white/80 px-3.5 py-2.5 text-sm focus:border-leaf focus:outline-none"
+              />
+              <datalist id="new-plant-crop-suggestions">
+                {TRAINING_FEEDBACK_CROP_EXAMPLES.map((c) => (
+                  <option key={c} value={c} />
+                ))}
+              </datalist>
+            </div>
+            <label className="block text-sm sm:col-span-2">
+              <span className="text-xs font-medium text-ink/50">Condition</span>
+              <select
+                value={trainingCategory}
+                onChange={(e) => setTrainingCategory(e.target.value)}
+                disabled={busy}
+                className="mt-1 w-full rounded-xl border border-ink/10 bg-white/80 px-3.5 py-2.5 text-sm focus:border-leaf focus:outline-none"
+              >
+                {TRAINING_FEEDBACK_CATEGORIES.map((c) => (
+                  <option key={c || "empty"} value={c}>
+                    {c || "— None —"}
+                  </option>
+                ))}
+              </select>
             </label>
-            <input
-              id="new-plant-training-crop"
-              value={trainingCrop}
-              onChange={(e) => setTrainingCrop(e.target.value)}
-              disabled={busy}
-              list="new-plant-crop-suggestions"
-              maxLength={120}
-              autoComplete="off"
-              placeholder="e.g. Tomato (defaults to species if left empty on save)"
-              className="mt-1 w-full rounded-xl border border-ink/10 bg-white/80 px-3.5 py-2.5 text-sm focus:border-leaf focus:outline-none"
-            />
-            <datalist id="new-plant-crop-suggestions">
-              {TRAINING_FEEDBACK_CROP_EXAMPLES.map((c) => (
-                <option key={c} value={c} />
-              ))}
-            </datalist>
+            <label className="block text-sm sm:col-span-2">
+              <span className="text-xs font-medium text-ink/50">Tags</span>
+              <input
+                value={trainingTags}
+                onChange={(e) => setTrainingTags(e.target.value)}
+                disabled={busy}
+                placeholder="Optional, comma-separated"
+                className="mt-1 w-full rounded-xl border border-ink/10 bg-white/80 px-3.5 py-2.5 text-sm focus:border-leaf focus:outline-none"
+              />
+            </label>
+            <label className="block text-sm sm:col-span-2">
+              <span className="text-xs font-medium text-ink/50">Note</span>
+              <textarea
+                value={trainingComment}
+                onChange={(e) => setTrainingComment(e.target.value)}
+                disabled={busy}
+                rows={2}
+                maxLength={4000}
+                placeholder="What should we learn from this photo?"
+                className="mt-1 w-full rounded-xl border border-ink/10 bg-white/80 px-3.5 py-2.5 text-sm focus:border-leaf focus:outline-none"
+              />
+            </label>
           </div>
-          <label className="block text-sm sm:col-span-2">
-            <span className="text-xs font-medium text-ink/50">Condition</span>
-            <select
-              value={trainingCategory}
-              onChange={(e) => setTrainingCategory(e.target.value)}
-              disabled={busy}
-              className="mt-1 w-full rounded-xl border border-ink/10 bg-white/80 px-3.5 py-2.5 text-sm focus:border-leaf focus:outline-none"
-            >
-              {TRAINING_FEEDBACK_CATEGORIES.map((c) => (
-                <option key={c || "empty"} value={c}>
-                  {c || "— None —"}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="block text-sm sm:col-span-2">
-            <span className="text-xs font-medium text-ink/50">Tags</span>
-            <input
-              value={trainingTags}
-              onChange={(e) => setTrainingTags(e.target.value)}
-              disabled={busy}
-              placeholder="Comma-separated"
-              className="mt-1 w-full rounded-xl border border-ink/10 bg-white/80 px-3.5 py-2.5 text-sm focus:border-leaf focus:outline-none"
-            />
-          </label>
-          <label className="block text-sm sm:col-span-2">
-            <span className="text-xs font-medium text-ink/50">Comment</span>
-            <textarea
-              value={trainingComment}
-              onChange={(e) => setTrainingComment(e.target.value)}
-              disabled={busy}
-              rows={2}
-              maxLength={4000}
-              placeholder="What should the model learn from this image?"
-              className="mt-1 w-full rounded-xl border border-ink/10 bg-white/80 px-3.5 py-2.5 text-sm focus:border-leaf focus:outline-none"
-            />
-          </label>
-        </div>
-      </Card>
+        </details>
       ) : null}
 
       {/* Upload area */}
@@ -265,14 +268,14 @@ export function NewPlantClient({
               </span>
               <div className="text-center">
                 <p className="text-sm font-semibold text-ink/60">
-                  {busy ? "Detecting species and analyzing health..." : "Tap to add plant photo"}
+                  {busy ? "Identifying your plant…" : "Tap to take or upload a photo"}
                 </p>
                 <p className="mt-1 text-xs text-ink/30">JPEG, PNG, or WebP</p>
               </div>
               {busy && (
                 <div className="flex items-center gap-2 text-xs text-leaf">
                   <span className="h-2 w-2 rounded-full bg-leaf animate-live-pulse" />
-                  Processing...
+                  Almost done…
                 </div>
               )}
             </button>
@@ -294,10 +297,9 @@ export function NewPlantClient({
         }}
       />
 
-      {/* Identification result */}
       {detection && plant && (
         <section className="animate-scale-in space-y-4">
-          <SectionTitle>Identification</SectionTitle>
+          <SectionTitle>What we found</SectionTitle>
           <Card className="p-5">
             <div className="flex items-center gap-3">
               <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-lime/25 text-leaf">
@@ -313,29 +315,33 @@ export function NewPlantClient({
 
             <div className="mt-4 flex flex-wrap items-center gap-2">
               {detection.isHealthy === true && <Badge tone="success">Healthy</Badge>}
-              {detection.isHealthy === false && <Badge tone="warning">Condition flagged</Badge>}
+              {detection.isHealthy === false && <Badge tone="warning">Needs a look</Badge>}
               <span className="rounded-full bg-ink/5 px-2.5 py-0.5 text-[11px] font-semibold tabular-nums text-ink/50">
-                {(detection.identificationConfidence * 100).toFixed(1)}% confidence
+                {(detection.identificationConfidence * 100).toFixed(0)}% sure
               </span>
             </div>
-
-            {detection.rawLabel && (
-              <p className="mt-3 rounded-lg bg-ink/5 px-3 py-1.5 font-mono text-[11px] text-ink/40">
-                {detection.rawLabel}
-              </p>
-            )}
 
             <p className="mt-3 text-xs text-ink/45">
               Saved as <span className="font-semibold text-ink/65">{plant.name}</span>
             </p>
+
+            {detection.rawLabel && (
+              <details className="mt-3">
+                <summary className="cursor-pointer text-xs text-ink/40 hover:text-ink/55">
+                  Model label
+                </summary>
+                <p className="mt-1 break-all rounded-lg bg-ink/5 px-3 py-1.5 font-mono text-[11px] text-ink/40">
+                  {detection.rawLabel}
+                </p>
+              </details>
+            )}
           </Card>
         </section>
       )}
 
-      {/* Health report */}
       {report && photoUrl && plant && (
         <section className="animate-scale-in space-y-4">
-          <SectionTitle>Health Report</SectionTitle>
+          <SectionTitle>Health check</SectionTitle>
           <Card className="overflow-hidden p-0">
             <div className="relative aspect-[4/3] w-full bg-mist">
               <PlantImage src={photoUrl} alt="" fill className="object-cover" sizes="100vw" />
@@ -349,7 +355,11 @@ export function NewPlantClient({
                         : "success"
                   }
                 >
-                  {report.severity} severity
+                  {report.severity === "high"
+                    ? "Needs care"
+                    : report.severity === "medium"
+                      ? "Watch"
+                      : "Looking good"}
                 </Badge>
               </div>
             </div>

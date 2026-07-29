@@ -3,7 +3,13 @@ export const dynamic = "force-dynamic";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { LandingAbout } from "@/components/marketing/LandingAbout";
 import { getSessionUser } from "@/lib/auth/session";
+import {
+  DETECTION_CLASSES,
+  DETECTION_DATASET_SOURCES,
+  getDetectionClassesByPlant
+} from "@/lib/constants/detection-classes";
 
 export default async function LandingPage() {
   const user = await getSessionUser();
@@ -12,12 +18,16 @@ export default async function LandingPage() {
     redirect("/dashboard");
   }
 
+  const detectionGroups = getDetectionClassesByPlant();
+  const classCount = DETECTION_CLASSES.length;
+  const datasetBlurb = `Trained on ${DETECTION_DATASET_SOURCES.map((s) => s.name).join(", ")} (${classCount} classes). PlantDoc maps onto PlantVillage labels; plant-leaf adds potato leafroll virus and tomato powdery mildew.`;
+
   return (
-    <main className="relative flex min-h-[100dvh] flex-col overflow-hidden">
+    <main className="relative flex min-h-[100dvh] flex-col overflow-x-hidden">
       <div className="pointer-events-none absolute inset-0 -z-10">
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_90%_70%_at_50%_-10%,rgba(200,251,128,0.45),transparent_55%),radial-gradient(ellipse_70%_50%_at_100%_40%,rgba(61,159,108,0.22),transparent_50%),radial-gradient(ellipse_60%_45%_at_0%_80%,rgba(232,140,74,0.12),transparent_45%)]" />
         <div
-          className="absolute inset-x-0 bottom-0 h-[55vh] opacity-[0.14]"
+          className="absolute inset-x-0 top-[40vh] h-[60vh] opacity-[0.14] sm:top-[35vh]"
           aria-hidden
         >
           <svg
@@ -47,8 +57,8 @@ export default async function LandingPage() {
         </div>
       </div>
 
-      <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-6 pb-16 pt-10 sm:px-8 sm:pb-20 sm:pt-14">
-        <header className="flex items-center justify-between">
+      <div className="mx-auto flex w-full max-w-3xl flex-col px-6 sm:px-8">
+        <header className="flex items-center justify-between pt-10 sm:pt-14">
           <p className="text-sm font-bold tracking-tight text-ink">AgriHome</p>
           <Link
             href="/login"
@@ -58,7 +68,7 @@ export default async function LandingPage() {
           </Link>
         </header>
 
-        <section className="flex flex-1 flex-col items-center justify-center text-center">
+        <section className="flex min-h-[calc(100dvh-5.5rem)] flex-col items-center justify-center pb-16 text-center sm:pb-20">
           <p className="animate-fade-in text-5xl font-bold tracking-tight text-ink sm:text-6xl md:text-7xl">
             AgriHome
           </p>
@@ -84,6 +94,12 @@ export default async function LandingPage() {
             </Link>
           </div>
         </section>
+
+        <LandingAbout
+          groups={detectionGroups}
+          classCount={classCount}
+          datasetBlurb={datasetBlurb}
+        />
       </div>
     </main>
   );

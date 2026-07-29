@@ -44,7 +44,7 @@ export function TrayVisionAnalyzeClient({ trayId }: { trayId: string }) {
         data?: { vision: VisionPayload };
       };
       if (!res.ok) {
-        setError(json.error ?? "Request failed");
+        setError(json.error ?? "Could not analyze that photo");
         return;
       }
       if (json.data?.vision) {
@@ -54,7 +54,7 @@ export function TrayVisionAnalyzeClient({ trayId }: { trayId: string }) {
       setFileName(null);
       router.refresh();
     } catch {
-      setError("Network error");
+      setError("Network error — try again in a moment");
     } finally {
       setBusy(false);
     }
@@ -65,9 +65,10 @@ export function TrayVisionAnalyzeClient({ trayId }: { trayId: string }) {
       <Card className="p-5">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-sm font-semibold text-ink">Tray Analysis</p>
+            <p className="text-sm font-semibold text-ink">Count plants from a photo</p>
             <p className="mt-1 text-xs text-ink/45">
-              Upload a top-down tray photo to detect and count plant instances.
+              Upload a top-down tray photo. We&apos;ll find plants and save the count
+              for this tray.
             </p>
           </div>
           <button
@@ -75,6 +76,7 @@ export function TrayVisionAnalyzeClient({ trayId }: { trayId: string }) {
             onClick={() => fileRef.current?.click()}
             disabled={busy}
             className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-leaf to-moss text-white shadow-fab transition-all duration-200 hover:scale-105 active:scale-95 disabled:opacity-50"
+            aria-label="Upload tray photo"
           >
             {busy ? (
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="animate-spin"><path d="M21 12a9 9 0 11-6.219-8.56" /></svg>
@@ -110,7 +112,7 @@ export function TrayVisionAnalyzeClient({ trayId }: { trayId: string }) {
         {busy && (
           <div className="mt-3 flex items-center gap-2 text-sm text-ink/50">
             <span className="h-2 w-2 rounded-full bg-leaf animate-live-pulse" />
-            Detecting plant instances...
+            Looking for plants…
           </div>
         )}
 
@@ -119,38 +121,52 @@ export function TrayVisionAnalyzeClient({ trayId }: { trayId: string }) {
         )}
       </Card>
 
-      {/* Detection results */}
       {last && (
-        <Card className="p-5 animate-scale-in">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-semibold text-ink">Detection Results</p>
-            <Badge tone={last.source === "remote" ? "success" : "default"}>
-              {last.source}
+        <Card className="animate-scale-in space-y-4 p-5">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <p className="text-sm font-semibold text-ink">What we found</p>
+              <p className="mt-0.5 text-xs text-ink/45">
+                Saved to this tray — refresh anytime with a new photo.
+              </p>
+            </div>
+            <Badge tone={last.count > 0 ? "success" : "default"}>
+              {last.count > 0 ? "Complete" : "No plants"}
             </Badge>
           </div>
 
-          <div className="mt-4 grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             <div className="rounded-2xl bg-gradient-to-br from-lime/20 to-leaf/10 p-4 text-center">
               <p className="text-3xl font-bold text-ink">{last.count}</p>
-              <p className="mt-1 text-[10px] font-semibold uppercase tracking-wider text-ink/45">Plants Found</p>
+              <p className="mt-1 text-[10px] font-semibold uppercase tracking-wider text-ink/45">
+                Plants found
+              </p>
             </div>
             <div className="rounded-2xl bg-gradient-to-br from-emerald-50 to-emerald-100/50 p-4 text-center">
-              <p className="text-3xl font-bold text-ink">{(last.countConfidence * 100).toFixed(0)}%</p>
-              <p className="mt-1 text-[10px] font-semibold uppercase tracking-wider text-ink/45">Confidence</p>
+              <p className="text-3xl font-bold text-ink">
+                {(last.countConfidence * 100).toFixed(0)}%
+              </p>
+              <p className="mt-1 text-[10px] font-semibold uppercase tracking-wider text-ink/45">
+                Confidence
+              </p>
             </div>
           </div>
 
           {last.instances.length > 0 && (
-            <div className="mt-4">
-              <p className="text-xs font-medium text-ink/40">{last.instances.length} bounding boxes detected</p>
+            <details className="rounded-xl bg-ink/[0.03] px-3 py-2">
+              <summary className="cursor-pointer text-xs font-medium text-ink/50 hover:text-ink/70">
+                Spot details ({last.instances.length})
+              </summary>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {last.instances.slice(0, 12).map((inst, i) => (
                   <span
                     key={i}
                     className="inline-flex items-center gap-1 rounded-lg bg-white/80 px-2 py-1 text-[10px] font-medium text-ink/60 ring-1 ring-ink/5"
                   >
-                    {inst.label ?? `#${i + 1}`}
-                    <span className="text-leaf">{(inst.score * 100).toFixed(0)}%</span>
+                    {inst.label ?? `Plant ${i + 1}`}
+                    <span className="text-leaf">
+                      {(inst.score * 100).toFixed(0)}%
+                    </span>
                   </span>
                 ))}
                 {last.instances.length > 12 && (
@@ -159,7 +175,10 @@ export function TrayVisionAnalyzeClient({ trayId }: { trayId: string }) {
                   </span>
                 )}
               </div>
-            </div>
+              <p className="mt-2 text-[10px] text-ink/35">
+                Source: {last.source === "remote" ? "live model" : "demo mode"}
+              </p>
+            </details>
           )}
         </Card>
       )}
