@@ -27,12 +27,14 @@ to register or run the agent.
    capture and upserts the plant's pose sequence entry.
 4. **Get position** — Vision Console queues `get_position`; the agent queries
    local Moonraker (`http://127.0.0.1:7125` by default, or
-   `AGRIHOME_MOONRAKER_URL`) and maps **`toolhead.position` X/Y** to
-   `{ hingeDeg, motorMm }` (fallbacks: `gcode_move`, then optional
-   `manual_stepper HINGE`/`MOTOR`). With a plant selected, the UI also saves
-   that pose for the plant. The Vision Console **Streamer URL** (`klipper_url`)
-   is an optional HTTP webcam still endpoint — it is **not** used for Moonraker
-   `/printer/objects/query`.
+   `AGRIHOME_MOONRAKER_URL`) and maps **`toolhead.position`** axes (default
+   X/Y via `AGRIHOME_POSITION_AXES=x,y`) to `{ hingeDeg, motorMm }`
+   (fallbacks: `gcode_move.gcode_position` / `position`, then optional
+   `manual_stepper`). Moves must use single-letter G-code (`G0 X=… Y=…`);
+   `G0 HINGE=/MOTOR=` does not update toolhead X/Y. With a plant selected,
+   the UI also saves that pose for the plant. The Vision Console **Streamer
+   URL** (`klipper_url`) is an optional HTTP webcam still endpoint — it is
+   **not** used for Moonraker `/printer/objects/query`.
 5. **Poses / schedules** — pose walks and `destination: raspberry-pi-edge`
    schedules still enqueue commands the agent executes.
 
@@ -201,6 +203,7 @@ Agent env:
 | `AGRIHOME_OWNER_EMAIL` | — | Tray owner if server has no default |
 | `KLIPPER_URL` | — | Optional LAN HTTP streamer stored as `klipper_url` (not Moonraker) |
 | `AGRIHOME_MOONRAKER_URL` | `http://127.0.0.1:7125` | Moonraker control API for Get position / G-code |
+| `AGRIHOME_POSITION_AXES` | `x,y` | Hinge/motor axis letters or indices in `toolhead.position` |
 | `AGRIHOME_SNAPSHOT_CMD` | — | Path to `save_image.sh` (preferred) |
 | `AGRIHOME_SNAPSHOT_PATH` | — | Fallback HTTP still path/URL |
 | `AGRIHOME_HEARTBEAT_SECONDS` | `5` | Poll / claim interval |
@@ -219,7 +222,14 @@ Agent env:
 Update optional streamer URL via UI (`action: updateKlipperUrl`) or SQL.
 This field is for HTTP stills only — Get position uses Moonraker on the Pi
 (`AGRIHOME_MOONRAKER_URL` / `http://127.0.0.1:7125`), reading
-`toolhead.position` X→`hingeDeg` / Y→`motorMm`, not `klipper_url`.
+`toolhead.position` (default X→`hingeDeg` / Y→`motorMm`; override with
+`AGRIHOME_POSITION_AXES`), not `klipper_url`. After a move, confirm with:
+
+```bash
+curl -s http://127.0.0.1:7125/printer/objects/query \
+  -H 'Content-Type: application/json' \
+  -d '{"objects":{"toolhead":null,"gcode_move":null}}' | python3 -m json.tool
+```
 
 ```sql
 UPDATE edge_devices

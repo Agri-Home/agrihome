@@ -74,6 +74,7 @@ export function TrayEdgeDevicePanel({
     hingeDeg: number;
     motorMm: number;
     source?: string;
+    rawXy?: string;
   } | null>(null);
 
   const load = useCallback(async () => {
@@ -143,9 +144,27 @@ export function TrayEdgeDevicePanel({
     return null;
   }
 
+  function formatRawXy(result: Record<string, unknown>): string | undefined {
+    const raw = result.raw;
+    if (!raw || typeof raw !== "object") return undefined;
+    const toolhead = (raw as { toolhead?: unknown }).toolhead;
+    if (!toolhead || typeof toolhead !== "object") return undefined;
+    const position = (toolhead as { position?: unknown }).position;
+    if (!Array.isArray(position) || position.length < 2) return undefined;
+    const x = Number(position[0]);
+    const y = Number(position[1]);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return undefined;
+    return `raw x=${x}, y=${y}`;
+  }
+
   function readPoseFromResult(
     result: Record<string, unknown> | null | undefined
-  ): { hingeDeg: number; motorMm: number; source?: string } | null {
+  ): {
+    hingeDeg: number;
+    motorMm: number;
+    source?: string;
+    rawXy?: string;
+  } | null {
     if (!result) return null;
     const hingeDeg = Number(result.hingeDeg);
     const motorMm = Number(result.motorMm);
@@ -154,7 +173,8 @@ export function TrayEdgeDevicePanel({
       hingeDeg,
       motorMm,
       source:
-        typeof result.source === "string" ? result.source : undefined
+        typeof result.source === "string" ? result.source : undefined,
+      rawXy: formatRawXy(result)
     };
   }
 
@@ -454,6 +474,7 @@ export function TrayEdgeDevicePanel({
       setMessage(
         `Hinge ${pose.hingeDeg}° · motor ${pose.motorMm} mm` +
           (pose.source ? ` (${pose.source})` : "") +
+          (pose.rawXy ? ` · ${pose.rawXy}` : "") +
           savedNote
       );
     } catch (e) {
@@ -805,6 +826,9 @@ export function TrayEdgeDevicePanel({
           <span className="font-mono text-ink">{lastPosition.motorMm}</span> mm
           {lastPosition.source ? (
             <span className="text-ink/45"> ({lastPosition.source})</span>
+          ) : null}
+          {lastPosition.rawXy ? (
+            <span className="text-ink/45"> · {lastPosition.rawXy}</span>
           ) : null}
           {plantId ? (
             <span className="text-ink/45">
