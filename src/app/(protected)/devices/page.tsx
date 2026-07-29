@@ -16,10 +16,36 @@ import { formatRelativeTimestamp } from "@/lib/utils";
 
 import { UnregisterDeviceButton } from "./UnregisterDeviceButton";
 
+function statusLabel(status: string, revokedAt: string | null) {
+  if (revokedAt) return "Removed";
+  if (status === "online") return "Online";
+  if (status === "error") return "Needs attention";
+  return "Offline";
+}
+
+function isMissingKlipperColumn(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error);
+  return /klipper_url|moonraker_url/i.test(msg) && /does not exist|undefined column/i.test(msg);
+}
+
 export default async function DevicesPage() {
   const user = await requireSessionAccountUser();
-  await markStaleDevicesOffline(env.device.heartbeatStaleMinutes);
-  const devices = await listEdgeDevicesForOwner(user.email);
+
+  let devices: Awaited<ReturnType<typeof listEdgeDevicesForOwner>> = [];
+  let loadError: string | null = null;
+  let needsMigrate = false;
+
+  try {
+    await markStaleDevicesOffline(env.device.heartbeatStaleMinutes);
+    devices = await listEdgeDevicesForOwner(user.email);
+  } catch (error) {
+    needsMigrate = isMissingKlipperColumn(error);
+    loadError = needsMigrate
+      ? "Device storage needs a quick update. On the server, run npm run db:migrate (migration 012_klipper_url), then refresh."
+      : error instanceof Error
+        ? error.message
+        : "Could not load devices.";
+  }
 
   const trayLinks =
     devices.length === 0
@@ -39,25 +65,35 @@ export default async function DevicesPage() {
     <div className="space-y-6">
       <div>
         <BackLink href="/dashboard">Dashboard</BackLink>
-        <h1 className="text-2xl font-bold tracking-tight text-ink">
-          Edge devices
-        </h1>
+        <h1 className="text-2xl font-bold tracking-tight text-ink">Devices</h1>
         <p className="mt-1 text-sm text-ink/55">
-          Raspberry Pi / Klipper benches linked to your trays. Heartbeats older
-          than {env.device.heartbeatStaleMinutes} minutes are shown as offline.
+          Raspberry Pi benches linked to your trays. A device goes offline if it
+          has not checked in for {env.device.heartbeatStaleMinutes} minutes.
         </p>
       </div>
 
-      {devices.length === 0 ? (
-        <Card className="p-6">
+      {loadError ? (
+        <Card className="space-y-2 p-6">
+          <p className="text-sm font-medium text-rose-800">Could not load devices</p>
+          <p className="text-sm text-ink/65">{loadError}</p>
+          {needsMigrate ? (
+            <p className="text-xs text-ink/45">
+              This usually happens right after a Klipper update if the database
+              migration has not been applied yet.
+            </p>
+          ) : null}
+        </Card>
+      ) : devices.length === 0 ? (
+        <Card className="space-y-3 p-6">
+          <p className="text-sm font-medium text-ink">No devices yet</p>
           <p className="text-sm text-ink/65">
-            No devices yet. On the Pi, clone Agri-Home/klipper (includes{" "}
-            <code className="rounded bg-ink/5 px-1">agrihome_agent</code>
-            ), then register-once with{" "}
-            <code className="rounded bg-ink/5 px-1">DEVICE_PROVISIONING_SECRET</code>
-            . A tray is created automatically on first registration. See{" "}
-            <code className="rounded bg-ink/5 px-1">docs/ops/RASPBERRY_PI_KLIPPER.md</code>
-            .
+            On your Pi, clone{" "}
+            <span className="font-medium text-ink">Agri-Home/klipper</span> (includes
+            the agrihome agent), then run register-once with your provisioning
+            secret. A tray is created automatically on first registration.
+          </p>
+          <p className="text-xs text-ink/45">
+            Setup guide: docs/ops/RASPBERRY_PI_KLIPPER.md
           </p>
         </Card>
       ) : (
@@ -71,23 +107,19 @@ export default async function DevicesPage() {
                 : d.status === "error"
                   ? ("warning" as const)
                   : ("default" as const);
+            const title = d.hostname || d.model || "Raspberry Pi";
             return (
               <li key={d.id}>
                 <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
-                      <p className="font-semibold text-ink">
-                        {d.hostname || d.model || d.cpuSerial}
-                      </p>
+                      <p className="font-semibold text-ink">{title}</p>
                       <Badge tone={tone}>
-                        {d.revokedAt ? "revoked" : d.status}
+                        {statusLabel(d.status, d.revokedAt)}
                       </Badge>
                     </div>
-                    <p className="mt-1 font-mono text-xs text-ink/50">
-                      {d.cpuSerial}
-                    </p>
                     <p className="mt-1 text-sm text-ink/55">
-                      Heartbeat{" "}
+                      Last check-in{" "}
                       {d.lastHeartbeatAt
                         ? formatRelativeTimestamp(d.lastHeartbeatAt)
                         : "never"}
@@ -102,9 +134,18 @@ export default async function DevicesPage() {
                           </Link>
                         </>
                       ) : (
-                        " · no tray linked"
+                        " · not linked to a tray"
                       )}
                     </p>
+                    <details className="mt-1">
+                      <summary className="cursor-pointer text-xs text-ink/40 hover:text-ink/55">
+                        Technical details
+                      </summary>
+                      <p className="mt-1 break-all font-mono text-[11px] text-ink/45">
+                        Serial {d.cpuSerial}
+                        {d.klipperUrl ? ` · ${d.klipperUrl}` : ""}
+                      </p>
+                    </details>
                   </div>
                   <div className="flex flex-wrap items-center gap-3">
                     {tray && (
@@ -117,7 +158,7 @@ export default async function DevicesPage() {
                     )}
                     <UnregisterDeviceButton
                       deviceId={d.id}
-                      label={d.hostname || d.model || d.cpuSerial}
+                      label={title}
                     />
                   </div>
                 </Card>

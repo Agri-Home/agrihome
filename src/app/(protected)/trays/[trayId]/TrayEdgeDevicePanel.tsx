@@ -757,11 +757,8 @@ export function TrayEdgeDevicePanel({
         </div>
         <p className="text-xs text-ink/45">
           Optional HTTP still for server-side Take Picture. Primary capture uses
-          the Pi agent with Klipper + fswebcam (
-          <code className="rounded bg-ink/5 px-1">camera-macros/save_image.sh</code>
-          ). Get position uses Moonraker on the Pi (
-          <code className="rounded bg-ink/5 px-1">http://127.0.0.1:7125</code>
-          ), not this streamer URL.
+          the Pi agent camera script. Get position reads the bench controller on
+          the Pi (localhost:7125), not this streamer URL.
         </p>
       </div>
 
@@ -847,23 +844,23 @@ export function TrayEdgeDevicePanel({
       )}
 
       {activeSeq ? (
-        <div className="rounded-md bg-ink/[0.03] p-3 text-sm">
-          <p className="font-medium text-ink">
-            Active poses · {activeSeq.name} ({activeSeq.poses.length})
-          </p>
+        <details className="rounded-md bg-ink/[0.03] p-3 text-sm">
+          <summary className="cursor-pointer font-medium text-ink hover:text-ink/80">
+            Camera stops · {activeSeq.name} ({activeSeq.poses.length})
+          </summary>
           <ul className="mt-2 max-h-36 space-y-1 overflow-y-auto text-ink/70">
             {activeSeq.poses.map((p) => (
               <li key={`${activeSeq.id}-${p.poseOrder}`}>
-                #{p.poseOrder} {p.slotLabel || "slot"} · hinge {p.hingeDeg}° ·
-                motor {p.motorMm} mm · dwell {p.dwellMs} ms
+                Stop {p.poseOrder}: {p.slotLabel || "slot"} · hinge {p.hingeDeg}° ·
+                motor {p.motorMm} mm
               </li>
             ))}
           </ul>
-        </div>
+        </details>
       ) : (
         <p className="text-sm text-ink/50">
-          No capture pose sequence yet. Add plants, then generate poses, or
-          configure hinge/motor angles via the poses API.
+          No camera stops yet. Add plants, then generate a pose sequence from
+          the plant layout.
         </p>
       )}
 

@@ -18,7 +18,7 @@ export function UnregisterDeviceButton({
 
   async function unregister() {
     const ok = window.confirm(
-      `Unregister “${label}”? This permanently removes the device from your account. The same Pi can register again afterward. This cannot be undone.`
+      `Remove “${label}” from your account? You can register the same Pi again later. This cannot be undone.`
     );
     if (!ok) return;
 
@@ -54,7 +54,7 @@ export function UnregisterDeviceButton({
         disabled={busy}
         onClick={() => void unregister()}
       >
-        {busy ? "Unregistering…" : "Unregister"}
+        {busy ? "Removing…" : "Remove"}
       </Button>
       {error && <p className="max-w-[14rem] text-right text-xs text-red-700">{error}</p>}
     </div>

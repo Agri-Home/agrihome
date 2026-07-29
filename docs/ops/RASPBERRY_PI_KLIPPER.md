@@ -83,6 +83,11 @@ DEVICE_HEARTBEAT_STALE_MINUTES=5
 # DEVICE_SNAPSHOT_TIMEOUT_MS=8000
 
 npm run db:migrate   # includes 012_klipper_url (moonraker_url → klipper_url)
+
+> **Deploy note:** after shipping the Klipper rename, existing databases must run
+> this migration or `/devices` and `/api/devices` fail with
+> `column "klipper_url" does not exist`. Fresh volumes that load `db/schema.sql`
+> already have `klipper_url`. Docker Compose includes a `db-migrate` one-shot.
 npm run dev
 ```
 
