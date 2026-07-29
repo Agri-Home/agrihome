@@ -212,7 +212,10 @@ export async function POST(request: Request) {
       absolutePath: saved.absolutePath,
       plantId,
       poseOrder: poseOrderInt,
-      slotLabel
+      slotLabel,
+      deviceId: auth.id,
+      hingeDeg: hingeDeg ?? null,
+      motorMm: motorMm ?? null
     });
 
     if (commandId) {
@@ -224,6 +227,9 @@ export async function POST(request: Request) {
           captureId: capture.id,
           imageUrl: saved.imageUrl,
           plantId: attached.plantId,
+          hingeDeg: hingeDeg ?? null,
+          motorMm: motorMm ?? null,
+          poseUpdated: attached.poseUpdated,
           sha256: createHash("sha256").update(buffer).digest("hex")
         }
       });
@@ -240,6 +246,7 @@ export async function POST(request: Request) {
         capturedAt: capture.capturedAt,
         plantId: attached.plantId,
         plantCreated: attached.plantCreated,
+        poseUpdated: attached.poseUpdated,
         hingeDeg: hingeDeg ?? null,
         motorMm: motorMm ?? null,
         poseOrder: poseOrderInt ?? null

@@ -270,3 +270,115 @@ export async function updateDeviceActuatorLimits(input: {
   );
   return (result.rowCount ?? 0) > 0;
 }
+
+/**
+ * Upsert hinge/motor for a plant on the tray's active pose sequence.
+ * Creates an active sequence when none exists. Updates an existing pose
+ * for the plant, or appends a new pose when the plant is new.
+ */
+export async function upsertPlantPosePosition(input: {
+  ownerEmail: string;
+  trayId: string;
+  plantId: string;
+  hingeDeg: number;
+  motorMm: number;
+  deviceId?: string | null;
+  dwellMs?: number;
+}): Promise<CapturePoseSequence> {
+  const owner = input.ownerEmail.toLowerCase();
+  const plantRows = await queryRows<{
+    id: string;
+    slot_label: string;
+    row_index: number;
+    column_index: number;
+  }>(
+    `SELECT id, slot_label, row_index, column_index
+     FROM plants
+     WHERE id = $1 AND tray_id = $2 AND owner_email = $3
+     LIMIT 1`,
+    [input.plantId, input.trayId, owner]
+  );
+  const plant = plantRows[0];
+  if (!plant) {
+    throw new Error("Plant not found on this tray");
+  }
+
+  const sequences = await listPoseSequencesForTray(owner, input.trayId);
+  const active = sequences.find((s) => s.active) ?? sequences[0] ?? null;
+
+  const nextPose = {
+    poseOrder: 1,
+    slotLabel: plant.slot_label || "",
+    row: Number(plant.row_index),
+    column: Number(plant.column_index),
+    plantId: plant.id,
+    hingeDeg: input.hingeDeg,
+    motorMm: input.motorMm,
+    dwellMs: input.dwellMs ?? 800
+  };
+
+  if (!active) {
+    return upsertPoseSequence({
+      ownerEmail: owner,
+      trayId: input.trayId,
+      deviceId: input.deviceId,
+      name: "Plant capture poses",
+      active: true,
+      poses: [nextPose]
+    });
+  }
+
+  const existingIdx = active.poses.findIndex((p) => p.plantId === plant.id);
+  const poses =
+    existingIdx >= 0
+      ? active.poses.map((p, i) =>
+          i === existingIdx
+            ? {
+                poseOrder: p.poseOrder,
+                slotLabel: p.slotLabel || nextPose.slotLabel,
+                row: p.row,
+                column: p.column,
+                plantId: plant.id,
+                hingeDeg: input.hingeDeg,
+                motorMm: input.motorMm,
+                dwellMs: p.dwellMs
+              }
+            : {
+                poseOrder: p.poseOrder,
+                slotLabel: p.slotLabel,
+                row: p.row,
+                column: p.column,
+                plantId: p.plantId,
+                hingeDeg: p.hingeDeg,
+                motorMm: p.motorMm,
+                dwellMs: p.dwellMs
+              }
+        )
+      : [
+          ...active.poses.map((p) => ({
+            poseOrder: p.poseOrder,
+            slotLabel: p.slotLabel,
+            row: p.row,
+            column: p.column,
+            plantId: p.plantId,
+            hingeDeg: p.hingeDeg,
+            motorMm: p.motorMm,
+            dwellMs: p.dwellMs
+          })),
+          {
+            ...nextPose,
+            poseOrder:
+              active.poses.reduce((max, p) => Math.max(max, p.poseOrder), 0) + 1
+          }
+        ];
+
+  return upsertPoseSequence({
+    ownerEmail: owner,
+    trayId: input.trayId,
+    deviceId: input.deviceId ?? active.deviceId,
+    name: active.name,
+    sequenceId: active.id,
+    active: true,
+    poses
+  });
+}

@@ -1,6 +1,10 @@
 import { requirePostgresPool, queryRows } from "@/lib/db/postgres";
 
-export type EdgeCommandType = "capture_now" | "sync_poses" | "reboot_agent";
+export type EdgeCommandType =
+  | "capture_now"
+  | "get_position"
+  | "sync_poses"
+  | "reboot_agent";
 export type EdgeCommandStatus =
   | "pending"
   | "claimed"

@@ -70,6 +70,11 @@ export function TrayEdgeDevicePanel({
   const [linkDeviceId, setLinkDeviceId] = useState("");
   const [allDevices, setAllDevices] = useState<DeviceSummary[]>([]);
   const [klipperUrlDraft, setKlipperUrlDraft] = useState("");
+  const [lastPosition, setLastPosition] = useState<{
+    hingeDeg: number;
+    motorMm: number;
+    source?: string;
+  } | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -138,12 +143,76 @@ export function TrayEdgeDevicePanel({
     return null;
   }
 
-  /** Poll queued command; return image URL, agent failure text, or null if still waiting. */
+  function readPoseFromResult(
+    result: Record<string, unknown> | null | undefined
+  ): { hingeDeg: number; motorMm: number; source?: string } | null {
+    if (!result) return null;
+    const hingeDeg = Number(result.hingeDeg);
+    const motorMm = Number(result.motorMm);
+    if (!Number.isFinite(hingeDeg) || !Number.isFinite(motorMm)) return null;
+    return {
+      hingeDeg,
+      motorMm,
+      source:
+        typeof result.source === "string" ? result.source : undefined
+    };
+  }
+
+  /** Poll a queued edge command until completed/failed or timeout. */
+  async function pollQueuedCommand(input: {
+    deviceId: string;
+    commandId: string;
+  }): Promise<{
+    status: "completed" | "failed" | "timeout";
+    result?: Record<string, unknown> | null;
+    errorMessage?: string;
+  }> {
+    for (let i = 0; i < 10; i++) {
+      await new Promise((r) => setTimeout(r, i === 0 ? 800 : 1500));
+      try {
+        const cmdRes = await fetch(
+          `/api/devices/${encodeURIComponent(input.deviceId)}?commandId=${encodeURIComponent(input.commandId)}`
+        );
+        if (!cmdRes.ok) continue;
+        const cmdJson = (await cmdRes.json()) as {
+          command?: {
+            status?: string;
+            errorMessage?: string | null;
+            result?: Record<string, unknown> | null;
+          };
+        };
+        const status = cmdJson.command?.status;
+        if (status === "failed") {
+          return {
+            status: "failed",
+            errorMessage:
+              cmdJson.command?.errorMessage?.trim() ||
+              "Pi agent command failed"
+          };
+        }
+        if (status === "completed") {
+          return {
+            status: "completed",
+            result: cmdJson.command?.result ?? null
+          };
+        }
+      } catch {
+        // keep polling
+      }
+    }
+    return { status: "timeout" };
+  }
+
+  /** Poll queued capture; return image URL, agent failure text, or null if still waiting. */
   async function pollQueuedCapture(input: {
     deviceId: string;
     commandId: string;
     sinceMs: number;
-  }): Promise<{ imageUrl?: string; agentError?: string } | null> {
+  }): Promise<{
+    imageUrl?: string;
+    agentError?: string;
+    pose?: { hingeDeg: number; motorMm: number; source?: string } | null;
+  } | null> {
     for (let i = 0; i < 8; i++) {
       await new Promise((r) => setTimeout(r, i === 0 ? 800 : 1500));
       try {
@@ -155,9 +224,11 @@ export function TrayEdgeDevicePanel({
             command?: {
               status?: string;
               errorMessage?: string | null;
+              result?: Record<string, unknown> | null;
             };
           };
           const status = cmdJson.command?.status;
+          const pose = readPoseFromResult(cmdJson.command?.result);
           if (status === "failed") {
             return {
               agentError:
@@ -167,7 +238,7 @@ export function TrayEdgeDevicePanel({
           }
           if (status === "completed") {
             const url = await pollLatestCaptureOnce(input.sinceMs);
-            if (url) return { imageUrl: url };
+            if (url) return { imageUrl: url, pose };
             // ingest may lag a beat behind command completion
           }
         }
@@ -197,7 +268,9 @@ export function TrayEdgeDevicePanel({
             action: "capture",
             trayId,
             plantId: plantId || undefined,
-            runPoses: false
+            runPoses: false,
+            hingeDeg: lastPosition?.hingeDeg,
+            motorMm: lastPosition?.motorMm
           })
         }
       );
@@ -212,6 +285,8 @@ export function TrayEdgeDevicePanel({
           captureId?: string;
           plantId?: string | null;
           plantCreated?: boolean;
+          hingeDeg?: number | null;
+          motorMm?: number | null;
         };
       };
       if (!res.ok) {
@@ -223,6 +298,13 @@ export function TrayEdgeDevicePanel({
         setPlantId(resolvedPlantId);
       }
 
+      const directPose = readPoseFromResult(
+        json.data as Record<string, unknown> | undefined
+      );
+      if (directPose) {
+        setLastPosition(directPose);
+      }
+
       if (json.data?.imageUrl && json.queued !== true) {
         setPreviewUrl(json.data.imageUrl);
         const plantNote = resolvedPlantId
@@ -230,7 +312,13 @@ export function TrayEdgeDevicePanel({
             ? " New plant added to this tray."
             : " Plant image updated."
           : "";
-        setMessage((json.message ?? "Picture captured") + plantNote);
+        const poseNote = directPose
+          ? ` Pose saved: hinge ${directPose.hingeDeg}° · motor ${directPose.motorMm} mm.`
+          : lastPosition
+            ? ` Pose stamped: hinge ${lastPosition.hingeDeg}° · motor ${lastPosition.motorMm} mm.`
+            : "";
+        setMessage((json.message ?? "Picture captured") + plantNote + poseNote);
+        await load();
         router.refresh();
         return;
       }
@@ -246,9 +334,17 @@ export function TrayEdgeDevicePanel({
           commandId,
           sinceMs: startedAt
         });
+        if (polled?.pose) {
+          setLastPosition(polled.pose);
+        }
         if (polled?.imageUrl) {
+          const pose = polled.pose;
           setPreviewUrl(polled.imageUrl);
-          setMessage("Picture arrived from the Pi agent");
+          setMessage(
+            pose
+              ? `Picture arrived · hinge ${pose.hingeDeg}° · motor ${pose.motorMm} mm (saved to plant pose)`
+              : "Picture arrived from the Pi agent"
+          );
         } else if (polled?.agentError) {
           setError(
             `Pi agent capture failed: ${polled.agentError}` +
@@ -275,9 +371,94 @@ export function TrayEdgeDevicePanel({
           );
         }
       }
+      await load();
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Capture failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function getPosition() {
+    if (!device) return;
+    setBusy(true);
+    setMessage(null);
+    setError(null);
+    try {
+      const res = await fetch(
+        `/api/devices/${encodeURIComponent(device.id)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "getPosition",
+            trayId,
+            plantId: plantId || undefined
+          })
+        }
+      );
+      const json = (await res.json()) as {
+        message?: string;
+        error?: { message?: string };
+        data?: { id?: string };
+      };
+      if (!res.ok) {
+        throw new Error(json.error?.message ?? "Could not query position");
+      }
+      const commandId = json.data?.id?.trim();
+      if (!commandId) {
+        throw new Error("Position command was not queued");
+      }
+      setMessage("Reading hinge/motor from the Pi…");
+      const polled = await pollQueuedCommand({
+        deviceId: device.id,
+        commandId
+      });
+      if (polled.status === "failed") {
+        throw new Error(polled.errorMessage || "Position query failed");
+      }
+      if (polled.status === "timeout") {
+        throw new Error(
+          "Timed out waiting for the Pi agent. Check that it is online."
+        );
+      }
+      const pose = readPoseFromResult(polled.result);
+      if (!pose) {
+        throw new Error("Agent returned no hinge/motor values");
+      }
+      setLastPosition(pose);
+
+      let savedNote = "";
+      if (plantId) {
+        const saveRes = await fetch(
+          `/api/trays/${encodeURIComponent(trayId)}/poses`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              upsertPlantPose: true,
+              plantId,
+              hingeDeg: pose.hingeDeg,
+              motorMm: pose.motorMm,
+              deviceId: device.id
+            })
+          }
+        );
+        if (saveRes.ok) {
+          savedNote = " Saved to selected plant pose.";
+          await load();
+        }
+      }
+
+      setMessage(
+        `Hinge ${pose.hingeDeg}° · motor ${pose.motorMm} mm` +
+          (pose.source ? ` (${pose.source})` : "") +
+          savedNote
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Position query failed");
+      setMessage(null);
     } finally {
       setBusy(false);
     }
@@ -557,7 +738,9 @@ export function TrayEdgeDevicePanel({
           Optional HTTP still for server-side Take Picture. Primary capture uses
           the Pi agent with Klipper + fswebcam (
           <code className="rounded bg-ink/5 px-1">camera-macros/save_image.sh</code>
-          ).
+          ). Get position uses Moonraker on the Pi (
+          <code className="rounded bg-ink/5 px-1">http://127.0.0.1:7125</code>
+          ), not this streamer URL.
         </p>
       </div>
 
@@ -585,7 +768,15 @@ export function TrayEdgeDevicePanel({
           disabled={busy || Boolean(device.revokedAt) || device.status === "offline"}
           onClick={() => void takePicture()}
         >
-          {busy ? "Capturing…" : "Take picture"}
+          {busy ? "Working…" : "Take picture"}
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={busy || Boolean(device.revokedAt) || device.status === "offline"}
+          onClick={() => void getPosition()}
+        >
+          Get position
         </Button>
         <Button
           type="button"
@@ -605,6 +796,24 @@ export function TrayEdgeDevicePanel({
           Unregister device
         </Button>
       </div>
+
+      {lastPosition && (
+        <p className="text-sm text-ink/70">
+          Current position: hinge{" "}
+          <span className="font-mono text-ink">{lastPosition.hingeDeg}</span>° ·
+          motor{" "}
+          <span className="font-mono text-ink">{lastPosition.motorMm}</span> mm
+          {lastPosition.source ? (
+            <span className="text-ink/45"> ({lastPosition.source})</span>
+          ) : null}
+          {plantId ? (
+            <span className="text-ink/45">
+              {" "}
+              — associated with selected plant on capture / Get position
+            </span>
+          ) : null}
+        </p>
+      )}
 
       {device.status === "offline" && !device.revokedAt && (
         <p className="text-sm text-amber-800">

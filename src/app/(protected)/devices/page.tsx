@@ -51,8 +51,9 @@ export default async function DevicesPage() {
       {devices.length === 0 ? (
         <Card className="p-6">
           <p className="text-sm text-ink/65">
-            No devices yet. On the Pi (Agri-Home/klipper + agrihome agent), run
-            register-once with{" "}
+            No devices yet. On the Pi, clone Agri-Home/klipper (includes{" "}
+            <code className="rounded bg-ink/5 px-1">agrihome_agent</code>
+            ), then register-once with{" "}
             <code className="rounded bg-ink/5 px-1">DEVICE_PROVISIONING_SECRET</code>
             . A tray is created automatically on first registration. See{" "}
             <code className="rounded bg-ink/5 px-1">docs/ops/RASPBERRY_PI_KLIPPER.md</code>

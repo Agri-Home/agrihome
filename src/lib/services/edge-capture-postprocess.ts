@@ -1,15 +1,18 @@
 import { env } from "@/lib/config/env";
+import { upsertPlantPosePosition } from "@/lib/services/capture-pose-service";
 import { ensurePlantForEdgeCapture } from "@/lib/services/edge-plant-attach-service";
 import type { CameraCapture } from "@/lib/types/domain";
 
 export type EdgeCapturePostprocessResult = {
   plantId: string;
   plantCreated: boolean;
+  poseUpdated: boolean;
 };
 
 /**
  * After a Pi/Klipper frame is on disk and ingested: attach/create a tray
  * plant, then best-effort async tray vision + disease classification.
+ * When hinge/motor are present, upsert that pose for the plant.
  */
 export async function postprocessEdgeCapture(input: {
   ownerEmail: string;
@@ -20,6 +23,9 @@ export async function postprocessEdgeCapture(input: {
   plantId?: string;
   poseOrder?: number;
   slotLabel?: string;
+  deviceId?: string | null;
+  hingeDeg?: number | null;
+  motorMm?: number | null;
 }): Promise<EdgeCapturePostprocessResult> {
   const attached = await ensurePlantForEdgeCapture({
     ownerEmail: input.ownerEmail,
@@ -39,6 +45,37 @@ export async function postprocessEdgeCapture(input: {
       [attached.plant.id, input.capture.id]
     );
     input.capture.plantId = attached.plant.id;
+  }
+
+  let poseUpdated = false;
+  const hingeDeg =
+    input.hingeDeg ??
+    (input.capture.hingeDeg != null ? Number(input.capture.hingeDeg) : null);
+  const motorMm =
+    input.motorMm ??
+    (input.capture.motorMm != null ? Number(input.capture.motorMm) : null);
+  if (
+    hingeDeg != null &&
+    Number.isFinite(hingeDeg) &&
+    motorMm != null &&
+    Number.isFinite(motorMm)
+  ) {
+    try {
+      await upsertPlantPosePosition({
+        ownerEmail: input.ownerEmail,
+        trayId: input.trayId,
+        plantId: attached.plant.id,
+        hingeDeg,
+        motorMm,
+        deviceId: input.deviceId ?? input.capture.deviceId
+      });
+      poseUpdated = true;
+    } catch (error) {
+      console.warn(
+        "[edge-capture] pose upsert failed:",
+        error instanceof Error ? error.message : error
+      );
+    }
   }
 
   if (env.device.autoVisionOnIngest) {
@@ -68,6 +105,7 @@ export async function postprocessEdgeCapture(input: {
 
   return {
     plantId: attached.plant.id,
-    plantCreated: attached.created
+    plantCreated: attached.created,
+    poseUpdated
   };
 }
