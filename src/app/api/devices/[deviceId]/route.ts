@@ -13,12 +13,16 @@ import {
   linkDeviceToTray,
   revokeEdgeDevice,
   rotateEdgeDeviceKey,
+  updateEdgeDeviceCameraServerUrl,
   updateEdgeDeviceKlipperUrl
 } from "@/lib/services/edge-device-service";
 import {
-  captureFromKlipperStreamerDirect,
-  summarizeStreamerReachabilityError
+  captureFromCameraServerDirect
 } from "@/lib/services/edge-capture-service";
+import {
+  setCameraServerLed,
+  setCameraServerServo
+} from "@/lib/services/camera-server-client";
 import {
   enqueueEdgeCommand,
   getEdgeCommandForOwner
@@ -78,7 +82,8 @@ export async function GET(request: Request, context: RouteContext) {
 /**
  * POST /api/devices/[deviceId]
  * Actions: capture | getPosition | linkTray | revoke | delete | rotateKey |
- *          updateLimits | updateKlipperUrl
+ *          updateLimits | updateKlipperUrl | updateCameraServerUrl |
+ *          cameraServo | cameraLed | cameraPhoto
  */
 export async function POST(request: Request, context: RouteContext) {
   const auth = await requireApiAccountUser();
@@ -101,6 +106,12 @@ export async function POST(request: Request, context: RouteContext) {
       klipperUrl?: string;
       /** @deprecated Prefer klipperUrl / updateKlipperUrl. */
       moonrakerUrl?: string;
+      cameraServerUrl?: string;
+      angle?: number;
+      rgb?: [number, number, number] | number[];
+      width?: number;
+      height?: number;
+      rotation?: number;
       actuatorLimits?: {
         hingeMinDeg?: number;
         hingeMaxDeg?: number;
@@ -138,19 +149,19 @@ export async function POST(request: Request, context: RouteContext) {
 
       const runPoses = Boolean(body.runPoses);
 
-      // Optional fast path: HTTP streamer still (crowsnest/nginx) when a LAN URL
-      // is stored. Primary path for Agri-Home/klipper is the Pi agent + fswebcam
-      // (camera-macros/save_image.sh). Pose walks always queue for the agent.
+      // Primary Take Picture path: Pi Zero camera_server.py GET /photo
+      // (rpicam-still). Do not use Moonraker/webcam streamer here — that URL is
+      // for optional legacy stills only. Pose walks still queue for the agent.
       let reachabilityError: string | null = null;
-      if (!runPoses && device.klipperUrl?.trim()) {
+      if (!runPoses && device.cameraServerUrl?.trim()) {
         try {
-          const direct = await captureFromKlipperStreamerDirect({
+          const direct = await captureFromCameraServerDirect({
             ownerEmail: auth.email,
             deviceId,
             trayId,
             plantId: body.plantId,
-            klipperUrl: device.klipperUrl.trim(),
-            notes: "take_picture_server_direct",
+            cameraServerUrl: device.cameraServerUrl.trim(),
+            notes: "take_picture_pi0_camera_server",
             hingeDeg:
               body.hingeDeg != null && Number.isFinite(body.hingeDeg)
                 ? body.hingeDeg
@@ -161,7 +172,7 @@ export async function POST(request: Request, context: RouteContext) {
                 : undefined
           });
           return NextResponse.json({
-            message: "Picture captured",
+            message: "Picture captured from Pi0 camera_server.py",
             queued: false,
             data: {
               captureId: direct.capture.id,
@@ -177,10 +188,13 @@ export async function POST(request: Request, context: RouteContext) {
             }
           });
         } catch (directError) {
-          reachabilityError = summarizeStreamerReachabilityError(directError);
+          reachabilityError =
+            directError instanceof Error
+              ? directError.message
+              : String(directError);
           console.warn(
-            "[devices/capture] optional HTTP streamer failed; queueing agent fswebcam capture:",
-            directError instanceof Error ? directError.message : directError
+            "[devices/capture] Pi0 camera_server.py failed; queueing agent capture:",
+            reachabilityError
           );
         }
       }
@@ -199,18 +213,13 @@ export async function POST(request: Request, context: RouteContext) {
         message: runPoses
           ? "Pose capture queued. The Pi agent will claim it on the next heartbeat."
           : (() => {
-              const url = device.klipperUrl?.trim() ?? "";
-              const loopback =
-                /:\/\/(127\.0\.0\.1|localhost)(:|\/|$)/i.test(url);
-              if (loopback) {
-                return "Streamer URL is loopback (127.0.0.1); update it to the Pi LAN IP, or wait for the Pi agent (fswebcam).";
+              if (!device.cameraServerUrl?.trim()) {
+                return "Set the Pi0 camera server URL (camera_server.py :5000), or wait for the Pi agent capture queue.";
               }
               if (reachabilityError) {
-                return `HTTP streamer not reachable (${reachabilityError}); capture queued for the Pi agent (fswebcam / Klipper).`;
+                return `Pi0 camera_server.py not reachable (${reachabilityError}); capture queued for the Pi agent.`;
               }
-              return url
-                ? "HTTP streamer not reachable from the server; capture queued for the Pi agent."
-                : "Capture queued for the Pi agent (fswebcam via Agri-Home/klipper camera-macros).";
+              return "Capture queued for the Pi agent.";
             })(),
         queued: true,
         reachabilityError,
@@ -358,9 +367,157 @@ export async function POST(request: Request, context: RouteContext) {
       }
     }
 
+    if (body.action === "updateCameraServerUrl") {
+      try {
+        const updated = await updateEdgeDeviceCameraServerUrl({
+          ownerEmail: auth.email,
+          deviceId,
+          cameraServerUrl: body.cameraServerUrl ?? ""
+        });
+        if (!updated) {
+          return apiErrorResponse(
+            API_ERROR_CODES.NOT_FOUND,
+            "Device not found",
+            404
+          );
+        }
+        return NextResponse.json({
+          data: updated,
+          message: updated.cameraServerUrl
+            ? "Pi0 camera server URL updated"
+            : "Pi0 camera server URL cleared"
+        });
+      } catch (err) {
+        return apiErrorResponse(
+          API_ERROR_CODES.BAD_REQUEST,
+          err instanceof Error ? err.message : "Invalid cameraServerUrl",
+          400
+        );
+      }
+    }
+
+    if (
+      body.action === "cameraServo" ||
+      body.action === "cameraLed" ||
+      body.action === "cameraPhoto"
+    ) {
+      if (device.revokedAt) {
+        return apiErrorResponse(
+          API_ERROR_CODES.FORBIDDEN,
+          "Device is revoked",
+          403
+        );
+      }
+      const cameraServerUrl = device.cameraServerUrl?.trim();
+      if (!cameraServerUrl) {
+        return apiErrorResponse(
+          API_ERROR_CODES.BAD_REQUEST,
+          "Set the Pi0 camera server URL first (camera_server.py on :5000)",
+          400
+        );
+      }
+
+      if (body.action === "cameraServo") {
+        try {
+          const result = await setCameraServerServo({
+            cameraServerUrl,
+            angle: Number(body.angle)
+          });
+          return NextResponse.json({
+            message: `Servo moved to ${result.angle}°`,
+            data: result
+          });
+        } catch (err) {
+          return apiErrorResponse(
+            API_ERROR_CODES.BAD_GATEWAY,
+            err instanceof Error ? err.message : "Servo move failed",
+            502
+          );
+        }
+      }
+
+      if (body.action === "cameraLed") {
+        const rgb = body.rgb;
+        if (!Array.isArray(rgb) || rgb.length !== 3) {
+          return apiErrorResponse(
+            API_ERROR_CODES.BAD_REQUEST,
+            "rgb must be [R,G,B] with three 0–255 values",
+            400
+          );
+        }
+        try {
+          const result = await setCameraServerLed({
+            cameraServerUrl,
+            rgb: [Number(rgb[0]), Number(rgb[1]), Number(rgb[2])]
+          });
+          return NextResponse.json({
+            message: "LED color updated",
+            data: result
+          });
+        } catch (err) {
+          return apiErrorResponse(
+            API_ERROR_CODES.BAD_GATEWAY,
+            err instanceof Error ? err.message : "LED update failed",
+            502
+          );
+        }
+      }
+
+      // cameraPhoto
+      const trayId = await resolveLinkedTrayId(
+        deviceId,
+        auth.email,
+        body.trayId
+      );
+      if (!trayId) {
+        return apiErrorResponse(
+          API_ERROR_CODES.BAD_REQUEST,
+          "Device is not linked to a tray",
+          400
+        );
+      }
+      try {
+        const result = await captureFromCameraServerDirect({
+          ownerEmail: auth.email,
+          deviceId,
+          trayId,
+          plantId: body.plantId,
+          cameraServerUrl,
+          hingeDeg:
+            body.hingeDeg != null && Number.isFinite(Number(body.hingeDeg))
+              ? Number(body.hingeDeg)
+              : undefined,
+          motorMm:
+            body.motorMm != null && Number.isFinite(Number(body.motorMm))
+              ? Number(body.motorMm)
+              : undefined,
+          width: body.width,
+          height: body.height,
+          rotation: body.rotation
+        });
+        return NextResponse.json({
+          message: "Photo captured from Pi0 camera server",
+          queued: false,
+          data: {
+            capture: result.capture,
+            imageUrl: result.imageUrl,
+            plantId: result.plantId,
+            plantCreated: result.plantCreated,
+            snapshotUrl: result.snapshotUrl
+          }
+        });
+      } catch (err) {
+        return apiErrorResponse(
+          API_ERROR_CODES.BAD_GATEWAY,
+          err instanceof Error ? err.message : "Pi0 photo capture failed",
+          502
+        );
+      }
+    }
+
     return apiErrorResponse(
       API_ERROR_CODES.BAD_REQUEST,
-      "Unknown action. Use capture, getPosition, linkTray, revoke, delete, rotateKey, updateLimits, or updateKlipperUrl.",
+      "Unknown action. Use capture, getPosition, linkTray, revoke, delete, rotateKey, updateLimits, updateKlipperUrl, updateCameraServerUrl, cameraServo, cameraLed, or cameraPhoto.",
       400
     );
   } catch (error) {

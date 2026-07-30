@@ -16,6 +16,7 @@ type DeviceSummary = {
   apiKeyPrefix: string;
   revokedAt: string | null;
   klipperUrl?: string | null;
+  cameraServerUrl?: string | null;
   actuatorLimits: {
     hingeMinDeg: number | null;
     hingeMaxDeg: number | null;
@@ -70,6 +71,9 @@ export function TrayEdgeDevicePanel({
   const [linkDeviceId, setLinkDeviceId] = useState("");
   const [allDevices, setAllDevices] = useState<DeviceSummary[]>([]);
   const [klipperUrlDraft, setKlipperUrlDraft] = useState("");
+  const [cameraServerUrlDraft, setCameraServerUrlDraft] = useState("");
+  const [servoAngle, setServoAngle] = useState(45);
+  const [ledRgb, setLedRgb] = useState({ r: 0, g: 255, b: 0 });
   const [lastPosition, setLastPosition] = useState<{
     hingeDeg: number;
     motorMm: number;
@@ -101,6 +105,7 @@ export function TrayEdgeDevicePanel({
         : null;
       setDevice(linked);
       setKlipperUrlDraft(linked?.klipperUrl?.trim() ?? "");
+      setCameraServerUrlDraft(linked?.cameraServerUrl?.trim() ?? "");
       setSequences(posesJson.data ?? []);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load device panel");
@@ -599,6 +604,170 @@ export function TrayEdgeDevicePanel({
     }
   }
 
+  async function saveCameraServerUrl() {
+    if (!device) return;
+    const next = cameraServerUrlDraft.trim();
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const res = await fetch(
+        `/api/devices/${encodeURIComponent(device.id)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "updateCameraServerUrl",
+            cameraServerUrl: next
+          })
+        }
+      );
+      const json = (await res.json()) as {
+        message?: string;
+        error?: { message?: string };
+        data?: DeviceSummary;
+      };
+      if (!res.ok) {
+        throw new Error(
+          json.error?.message ?? "Could not update Pi0 camera server URL"
+        );
+      }
+      setMessage(json.message ?? "Pi0 camera server URL updated");
+      const saved =
+        (json.data as { cameraServerUrl?: string | null } | undefined)
+          ?.cameraServerUrl ?? next;
+      setDevice({
+        ...device,
+        ...(json.data ?? {}),
+        cameraServerUrl: saved || null
+      });
+      setCameraServerUrlDraft(saved?.trim() ?? "");
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Update failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function moveServo() {
+    if (!device) return;
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const res = await fetch(
+        `/api/devices/${encodeURIComponent(device.id)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "cameraServo",
+            angle: servoAngle
+          })
+        }
+      );
+      const json = (await res.json()) as {
+        message?: string;
+        error?: { message?: string };
+      };
+      if (!res.ok) {
+        throw new Error(json.error?.message ?? "Servo move failed");
+      }
+      setMessage(json.message ?? `Servo at ${servoAngle}°`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Servo move failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function setLed() {
+    if (!device) return;
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const res = await fetch(
+        `/api/devices/${encodeURIComponent(device.id)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "cameraLed",
+            rgb: [ledRgb.r, ledRgb.g, ledRgb.b]
+          })
+        }
+      );
+      const json = (await res.json()) as {
+        message?: string;
+        error?: { message?: string };
+      };
+      if (!res.ok) {
+        throw new Error(json.error?.message ?? "LED update failed");
+      }
+      setMessage(json.message ?? "LED updated");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "LED update failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function takePi0Photo() {
+    if (!device) return;
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    setPreviewUrl(null);
+    const sinceMs = Date.now();
+    try {
+      const res = await fetch(
+        `/api/devices/${encodeURIComponent(device.id)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "cameraPhoto",
+            trayId,
+            plantId: plantId || undefined,
+            hingeDeg: lastPosition?.hingeDeg,
+            motorMm: lastPosition?.motorMm
+          })
+        }
+      );
+      const json = (await res.json()) as {
+        message?: string;
+        error?: { message?: string };
+        data?: {
+          imageUrl?: string;
+          plantId?: string;
+          plantCreated?: boolean;
+        };
+      };
+      if (!res.ok) {
+        throw new Error(json.error?.message ?? "Pi0 photo failed");
+      }
+      if (json.data?.plantId) {
+        setPlantId(json.data.plantId);
+      }
+      setMessage(
+        json.message ??
+          (json.data?.plantCreated
+            ? "Pi0 photo saved; new plant created"
+            : "Pi0 photo saved")
+      );
+      const url =
+        json.data?.imageUrl ?? (await pollLatestCapture(sinceMs));
+      if (url) setPreviewUrl(url);
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Pi0 photo failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function unregisterDevice() {
     if (!device) return;
     const label = device.hostname || device.model || device.cpuSerial;
@@ -756,10 +925,139 @@ export function TrayEdgeDevicePanel({
           </Button>
         </div>
         <p className="text-xs text-ink/45">
-          Optional HTTP still for server-side Take Picture. Primary capture uses
-          the Pi agent camera script. Get position reads the bench controller on
-          the Pi (localhost:7125), not this streamer URL.
+          Optional legacy HTTP still base (not used by Take Picture). Take
+          Picture uses the Pi0 <span className="font-mono">camera_server.py</span>{" "}
+          URL below. Get position still uses Moonraker on the bench Pi
+          (localhost:7125).
         </p>
+      </div>
+
+      <div className="space-y-3 border-t border-ink/10 pt-4">
+        <div>
+          <h3 className="text-sm font-semibold text-ink">
+            Pi Zero camera server
+          </h3>
+          <p className="mt-0.5 text-xs text-ink/45">
+            Wireless Pi0 running{" "}
+            <span className="font-mono">camera_server.py</span> (Flask :5000) —
+            servo angle, NeoPixel LEDs, and{" "}
+            <span className="font-mono">rpicam-still</span> photos. AgriHome
+            must be able to reach this LAN/tunnel URL.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="block min-w-[16rem] flex-1 text-sm">
+            <span className="text-ink/60">Camera server URL</span>
+            <input
+              type="url"
+              className="mt-1 w-full rounded-md border border-ink/15 bg-white px-2 py-1.5 font-mono text-xs"
+              placeholder="http://192.168.1.x:5000"
+              value={cameraServerUrlDraft}
+              onChange={(e) => setCameraServerUrlDraft(e.target.value)}
+              disabled={busy || Boolean(device.revokedAt)}
+            />
+          </label>
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={
+              busy ||
+              Boolean(device.revokedAt) ||
+              cameraServerUrlDraft.trim() ===
+                (device.cameraServerUrl?.trim() ?? "")
+            }
+            onClick={() => void saveCameraServerUrl()}
+          >
+            Save Pi0 URL
+          </Button>
+        </div>
+
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="block min-w-[12rem] flex-1 text-sm">
+            <span className="text-ink/60">Servo angle (0–90°)</span>
+            <div className="mt-1 flex items-center gap-2">
+              <input
+                type="range"
+                min={0}
+                max={90}
+                step={1}
+                className="w-full"
+                value={servoAngle}
+                onChange={(e) => setServoAngle(Number(e.target.value))}
+                disabled={
+                  busy ||
+                  Boolean(device.revokedAt) ||
+                  !device.cameraServerUrl?.trim()
+                }
+              />
+              <span className="w-8 font-mono text-xs text-ink">{servoAngle}</span>
+            </div>
+          </label>
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={
+              busy ||
+              Boolean(device.revokedAt) ||
+              !device.cameraServerUrl?.trim()
+            }
+            onClick={() => void moveServo()}
+          >
+            Move servo
+          </Button>
+        </div>
+
+        <div className="flex flex-wrap items-end gap-2">
+          {(["r", "g", "b"] as const).map((ch) => (
+            <label key={ch} className="block w-20 text-sm">
+              <span className="uppercase text-ink/60">{ch}</span>
+              <input
+                type="number"
+                min={0}
+                max={255}
+                className="mt-1 w-full rounded-md border border-ink/15 bg-white px-2 py-1.5 font-mono text-xs"
+                value={ledRgb[ch]}
+                onChange={(e) =>
+                  setLedRgb((prev) => ({
+                    ...prev,
+                    [ch]: Math.min(
+                      255,
+                      Math.max(0, Number(e.target.value) || 0)
+                    )
+                  }))
+                }
+                disabled={
+                  busy ||
+                  Boolean(device.revokedAt) ||
+                  !device.cameraServerUrl?.trim()
+                }
+              />
+            </label>
+          ))}
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={
+              busy ||
+              Boolean(device.revokedAt) ||
+              !device.cameraServerUrl?.trim()
+            }
+            onClick={() => void setLed()}
+          >
+            Set LED
+          </Button>
+          <Button
+            type="button"
+            disabled={
+              busy ||
+              Boolean(device.revokedAt) ||
+              !device.cameraServerUrl?.trim()
+            }
+            onClick={() => void takePi0Photo()}
+          >
+            Take Pi0 photo
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-wrap items-end gap-2 border-t border-ink/10 pt-4">

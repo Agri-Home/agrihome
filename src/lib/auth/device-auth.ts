@@ -14,6 +14,8 @@ export interface AuthenticatedEdgeDevice {
   hostname: string | null;
   model: string | null;
   klipperUrl: string | null;
+  /** Pi Zero Flask camera_server.py base (servo / LED / photo), e.g. http://pi0:5000 */
+  cameraServerUrl: string | null;
   status: EdgeDeviceStatus;
   lastHeartbeatAt: string | null;
   hingeMinDeg: number | null;
@@ -32,6 +34,7 @@ interface EdgeDeviceRow {
   hostname: string | null;
   model: string | null;
   klipper_url: string | null;
+  camera_server_url: string | null;
   api_key_hash: string;
   api_key_prefix: string;
   status: string;
@@ -56,6 +59,7 @@ export const mapEdgeDeviceRow = (
   hostname: row.hostname,
   model: row.model,
   klipperUrl: row.klipper_url,
+  cameraServerUrl: row.camera_server_url ?? null,
   status: (row.status as EdgeDeviceStatus) || "offline",
   lastHeartbeatAt: row.last_heartbeat_at
     ? new Date(row.last_heartbeat_at).toISOString()
@@ -102,7 +106,7 @@ export async function findDeviceByApiKey(
   const hash = hashDeviceApiKey(plaintext);
   const rows = await queryRows<EdgeDeviceRow>(
     `SELECT id, owner_email, cpu_serial, mac_address, hostname, model,
-            klipper_url, api_key_hash, api_key_prefix, status,
+            klipper_url, camera_server_url, api_key_hash, api_key_prefix, status,
             last_heartbeat_at, hinge_min_deg, hinge_max_deg,
             motor_min_mm, motor_max_mm, revoked_at
      FROM edge_devices

@@ -25,7 +25,10 @@ function statusLabel(status: string, revokedAt: string | null) {
 
 function isMissingKlipperColumn(error: unknown): boolean {
   const msg = error instanceof Error ? error.message : String(error);
-  return /klipper_url|moonraker_url/i.test(msg) && /does not exist|undefined column/i.test(msg);
+  return (
+    /klipper_url|moonraker_url|camera_server_url/i.test(msg) &&
+    /does not exist|undefined column/i.test(msg)
+  );
 }
 
 export default async function DevicesPage() {
@@ -41,7 +44,7 @@ export default async function DevicesPage() {
   } catch (error) {
     needsMigrate = isMissingKlipperColumn(error);
     loadError = needsMigrate
-      ? "Device storage needs a quick update. On the server, run npm run db:migrate (migration 012_klipper_url), then refresh."
+      ? "Device storage needs a quick update. On the server, run npm run db:migrate (migrations 012_klipper_url / 013_camera_server_url), then refresh."
       : error instanceof Error
         ? error.message
         : "Could not load devices.";
@@ -144,6 +147,7 @@ export default async function DevicesPage() {
                       <p className="mt-1 break-all font-mono text-[11px] text-ink/45">
                         Serial {d.cpuSerial}
                         {d.klipperUrl ? ` · ${d.klipperUrl}` : ""}
+                        {d.cameraServerUrl ? ` · pi0 ${d.cameraServerUrl}` : ""}
                       </p>
                     </details>
                   </div>
