@@ -81,6 +81,15 @@ export async function POST(request: Request) {
         403
       );
     }
+    if (status === 503) {
+      return apiErrorResponse(
+        API_ERROR_CODES.INTERNAL_ERROR,
+        error instanceof Error
+          ? error.message
+          : "DEVICE_PROVISIONING_SECRET is not configured on the server",
+        503
+      );
+    }
     if (status === 409) {
       return apiErrorResponse(
         API_ERROR_CODES.BAD_REQUEST,

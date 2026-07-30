@@ -54,9 +54,11 @@ export interface RegisterEdgeDeviceResult {
 function assertProvisioningCode(code: string) {
   const expected = env.device.provisioningSecret;
   if (!expected) {
-    throw new Error(
+    const err = new Error(
       "DEVICE_PROVISIONING_SECRET is not configured on the server"
     );
+    (err as Error & { status: number }).status = 503;
+    throw err;
   }
   if (code.trim() !== expected) {
     const err = new Error("Invalid provisioning code");
