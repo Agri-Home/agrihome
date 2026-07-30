@@ -3,6 +3,8 @@ import { requirePostgresPool, queryRows } from "@/lib/db/postgres";
 export type EdgeCommandType =
   | "capture_now"
   | "get_position"
+  | "move_actuators"
+  | "run_gcode"
   | "camera_servo"
   | "camera_led"
   | "camera_photo"

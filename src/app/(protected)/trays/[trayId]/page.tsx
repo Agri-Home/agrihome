@@ -9,7 +9,7 @@ import { StatusDot } from "@/components/atoms/StatusDot";
 import { BackLink } from "@/components/app/BackLink";
 import { SectionTitle } from "@/components/app/Section";
 import { requireSessionAccountUser } from "@/lib/auth/session";
-import { getParticipateMlFeedback } from "@/lib/services/user-preferences-service";
+import { getUserPreferences } from "@/lib/services/user-preferences-service";
 import { ClientChartFrame } from "@/components/charts/ClientChartFrame";
 import { PlantImage } from "@/components/media/PlantImage";
 import { MonitoringAreaChart } from "@/components/charts/MonitoringAreaChart";
@@ -57,15 +57,15 @@ export default async function TrayDetailPage({
   const tray = await getTrayById(currentUser.email, trayId);
   if (!tray) notFound();
 
-  const [plants, events, capture, showTrainingFeedback] = await Promise.all([
+  const [plants, events, capture, prefs] = await Promise.all([
     listPlantsByTray(currentUser.email, trayId),
     getMonitoringLog({ ownerEmail: currentUser.email, limit: 15, trayId }),
     getLatestCameraCapture(currentUser.email, trayId),
     currentUser.email
-      ? getParticipateMlFeedback(currentUser.email)
-      : Promise.resolve(true)
+      ? getUserPreferences(currentUser.email)
+      : Promise.resolve({ participateMlFeedback: true, developerMode: false })
   ]);
-
+  const showTrainingFeedback = prefs.participateMlFeedback;
   return (
     <div className="space-y-6">
       <div className="animate-fade-in">
@@ -110,6 +110,7 @@ export default async function TrayDetailPage({
             name: p.name,
             slotLabel: p.slotLabel
           }))}
+          developerMode={prefs.developerMode}
         />
       </section>
 

@@ -20,6 +20,7 @@ import {
   enqueueEdgeCommand,
   getEdgeCommandForOwner
 } from "@/lib/services/edge-command-service";
+import { getDeveloperMode } from "@/lib/services/user-preferences-service";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -74,9 +75,9 @@ export async function GET(request: Request, context: RouteContext) {
 
 /**
  * POST /api/devices/[deviceId]
- * Actions: capture | getPosition | linkTray | revoke | delete | rotateKey |
- *          updateLimits | updateKlipperUrl | updateCameraServerUrl |
- *          cameraServo | cameraLed | cameraPhoto
+ * Actions: capture | getPosition | moveActuators | runGcode | linkTray |
+ *          revoke | delete | rotateKey | updateLimits | updateKlipperUrl |
+ *          updateCameraServerUrl | cameraServo | cameraLed | cameraPhoto
  */
 export async function POST(request: Request, context: RouteContext) {
   const auth = await requireApiAccountUser();
@@ -105,6 +106,11 @@ export async function POST(request: Request, context: RouteContext) {
       width?: number;
       height?: number;
       rotation?: number;
+      /** Freeform Klipper G-code / macro script for runGcode. */
+      gcode?: string;
+      /** When true, agent skips Moonraker POST (log only). */
+      dryRun?: boolean;
+      feedrate?: number;
       actuatorLimits?: {
         hingeMinDeg?: number;
         hingeMaxDeg?: number;
@@ -117,6 +123,26 @@ export async function POST(request: Request, context: RouteContext) {
     if (body.action === "updateMoonrakerUrl") {
       body.action = "updateKlipperUrl";
       body.klipperUrl = body.klipperUrl ?? body.moonrakerUrl;
+    }
+
+    const developerActions = new Set([
+      "capture",
+      "getPosition",
+      "moveActuators",
+      "runGcode",
+      "cameraServo",
+      "cameraLed",
+      "cameraPhoto"
+    ]);
+    if (body.action && developerActions.has(body.action)) {
+      const allowed = await getDeveloperMode(auth.email);
+      if (!allowed) {
+        return apiErrorResponse(
+          API_ERROR_CODES.FORBIDDEN,
+          "Enable Developer tools in Settings to use manual Pi / Klipper controls",
+          403
+        );
+      }
     }
 
     if (body.action === "capture") {
@@ -213,6 +239,99 @@ export async function POST(request: Request, context: RouteContext) {
       return NextResponse.json({
         message:
           "Position query queued. The Pi agent will report hinge/motor on the next heartbeat.",
+        queued: true,
+        data: cmd
+      });
+    }
+
+    if (body.action === "moveActuators") {
+      if (device.revokedAt) {
+        return apiErrorResponse(
+          API_ERROR_CODES.FORBIDDEN,
+          "Device is revoked",
+          403
+        );
+      }
+      const hingeDeg = Number(body.hingeDeg);
+      const motorMm = Number(body.motorMm);
+      if (!Number.isFinite(hingeDeg) || !Number.isFinite(motorMm)) {
+        return apiErrorResponse(
+          API_ERROR_CODES.BAD_REQUEST,
+          "hingeDeg and motorMm are required numbers",
+          400
+        );
+      }
+      const trayId = await resolveLinkedTrayId(
+        deviceId,
+        auth.email,
+        body.trayId
+      );
+      const cmd = await enqueueEdgeCommand({
+        deviceId,
+        trayId,
+        commandType: "move_actuators",
+        payload: {
+          hingeDeg,
+          motorMm,
+          feedrate:
+            body.feedrate != null && Number.isFinite(Number(body.feedrate))
+              ? Number(body.feedrate)
+              : 1200,
+          dryRun: body.dryRun === true,
+          requestedBy: auth.email
+        }
+      });
+      return NextResponse.json({
+        message: body.dryRun
+          ? `Dry-run move queued (hinge ${hingeDeg}° · motor ${motorMm} mm).`
+          : `Stepper move queued (hinge ${hingeDeg}° · motor ${motorMm} mm).`,
+        queued: true,
+        data: cmd
+      });
+    }
+
+    if (body.action === "runGcode") {
+      if (device.revokedAt) {
+        return apiErrorResponse(
+          API_ERROR_CODES.FORBIDDEN,
+          "Device is revoked",
+          403
+        );
+      }
+      const gcode = (body.gcode ?? "").trim();
+      if (!gcode) {
+        return apiErrorResponse(
+          API_ERROR_CODES.BAD_REQUEST,
+          "gcode script is required",
+          400
+        );
+      }
+      if (gcode.length > 4000) {
+        return apiErrorResponse(
+          API_ERROR_CODES.BAD_REQUEST,
+          "gcode script is too long (max 4000 chars)",
+          400
+        );
+      }
+      const trayId = await resolveLinkedTrayId(
+        deviceId,
+        auth.email,
+        body.trayId
+      );
+      const cmd = await enqueueEdgeCommand({
+        deviceId,
+        trayId,
+        commandType: "run_gcode",
+        payload: {
+          gcode,
+          dryRun: body.dryRun === true,
+          requestedBy: auth.email
+        }
+      });
+      return NextResponse.json({
+        message: body.dryRun
+          ? "Dry-run G-code queued for the edge agent."
+          : "G-code queued for the edge agent (Moonraker).",
         queued: true,
         data: cmd
       });
@@ -477,7 +596,7 @@ export async function POST(request: Request, context: RouteContext) {
 
     return apiErrorResponse(
       API_ERROR_CODES.BAD_REQUEST,
-      "Unknown action. Use capture, getPosition, linkTray, revoke, delete, rotateKey, updateLimits, updateKlipperUrl, updateCameraServerUrl, cameraServo, cameraLed, or cameraPhoto.",
+      "Unknown action. Use capture, getPosition, moveActuators, runGcode, linkTray, revoke, delete, rotateKey, updateLimits, updateKlipperUrl, updateCameraServerUrl, cameraServo, cameraLed, or cameraPhoto.",
       400
     );
   } catch (error) {

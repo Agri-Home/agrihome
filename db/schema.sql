@@ -239,5 +239,6 @@ CREATE INDEX IF NOT EXISTS idx_feedback_ingest_pending_export
 CREATE TABLE IF NOT EXISTS user_preferences (
   owner_email VARCHAR(320) PRIMARY KEY,
   participate_ml_feedback BOOLEAN NOT NULL DEFAULT TRUE,
+  developer_mode BOOLEAN NOT NULL DEFAULT FALSE,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
