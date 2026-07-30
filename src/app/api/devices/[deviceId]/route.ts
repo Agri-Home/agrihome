@@ -17,13 +17,6 @@ import {
   updateEdgeDeviceKlipperUrl
 } from "@/lib/services/edge-device-service";
 import {
-  captureFromCameraServerDirect
-} from "@/lib/services/edge-capture-service";
-import {
-  setCameraServerLed,
-  setCameraServerServo
-} from "@/lib/services/camera-server-client";
-import {
   enqueueEdgeCommand,
   getEdgeCommandForOwner
 } from "@/lib/services/edge-command-service";
@@ -149,19 +142,17 @@ export async function POST(request: Request, context: RouteContext) {
 
       const runPoses = Boolean(body.runPoses);
 
-      // Primary Take Picture path: Pi Zero camera_server.py GET /photo
-      // (rpicam-still). Do not use Moonraker/webcam streamer here — that URL is
-      // for optional legacy stills only. Pose walks still queue for the agent.
-      let reachabilityError: string | null = null;
+      // Pi0 Take Picture: queue camera_photo for the LAN agent (agrihome.tech
+      // cannot reach 192.168.x camera_server URLs). Pose walks use capture_now.
       if (!runPoses && device.cameraServerUrl?.trim()) {
-        try {
-          const direct = await captureFromCameraServerDirect({
-            ownerEmail: auth.email,
-            deviceId,
-            trayId,
-            plantId: body.plantId,
+        const cmd = await enqueueEdgeCommand({
+          deviceId,
+          trayId,
+          plantId: body.plantId,
+          commandType: "camera_photo",
+          payload: {
             cameraServerUrl: device.cameraServerUrl.trim(),
-            notes: "take_picture_pi0_camera_server",
+            requestedBy: auth.email,
             hingeDeg:
               body.hingeDeg != null && Number.isFinite(body.hingeDeg)
                 ? body.hingeDeg
@@ -170,33 +161,14 @@ export async function POST(request: Request, context: RouteContext) {
               body.motorMm != null && Number.isFinite(body.motorMm)
                 ? body.motorMm
                 : undefined
-          });
-          return NextResponse.json({
-            message: "Picture captured from Pi0 camera_server.py",
-            queued: false,
-            data: {
-              captureId: direct.capture.id,
-              imageUrl: direct.imageUrl,
-              bytes: direct.bytes,
-              capturedAt: direct.capture.capturedAt,
-              snapshotUrl: direct.snapshotUrl,
-              trayId,
-              plantId: direct.plantId,
-              plantCreated: direct.plantCreated,
-              hingeDeg: direct.capture.hingeDeg ?? null,
-              motorMm: direct.capture.motorMm ?? null
-            }
-          });
-        } catch (directError) {
-          reachabilityError =
-            directError instanceof Error
-              ? directError.message
-              : String(directError);
-          console.warn(
-            "[devices/capture] Pi0 camera_server.py failed; queueing agent capture:",
-            reachabilityError
-          );
-        }
+          }
+        });
+        return NextResponse.json({
+          message:
+            "Pi0 photo queued. The edge agent will call camera_server.py /photo on the next heartbeat.",
+          queued: true,
+          data: cmd
+        });
       }
 
       const cmd = await enqueueEdgeCommand({
@@ -212,17 +184,8 @@ export async function POST(request: Request, context: RouteContext) {
       return NextResponse.json({
         message: runPoses
           ? "Pose capture queued. The Pi agent will claim it on the next heartbeat."
-          : (() => {
-              if (!device.cameraServerUrl?.trim()) {
-                return "Set the Pi0 camera server URL (camera_server.py :5000), or wait for the Pi agent capture queue.";
-              }
-              if (reachabilityError) {
-                return `Pi0 camera_server.py not reachable (${reachabilityError}); capture queued for the Pi agent.`;
-              }
-              return "Capture queued for the Pi agent.";
-            })(),
+          : "Capture queued for the Pi agent (fswebcam / camera-macros).",
         queued: true,
-        reachabilityError,
         data: cmd
       });
     }
@@ -417,23 +380,36 @@ export async function POST(request: Request, context: RouteContext) {
         );
       }
 
+      const trayId = await resolveLinkedTrayId(
+        deviceId,
+        auth.email,
+        body.trayId
+      );
+
       if (body.action === "cameraServo") {
-        try {
-          const result = await setCameraServerServo({
-            cameraServerUrl,
-            angle: Number(body.angle)
-          });
-          return NextResponse.json({
-            message: `Servo moved to ${result.angle}°`,
-            data: result
-          });
-        } catch (err) {
+        const angle = Number(body.angle);
+        if (!Number.isFinite(angle) || angle < 0 || angle > 90) {
           return apiErrorResponse(
-            API_ERROR_CODES.BAD_GATEWAY,
-            err instanceof Error ? err.message : "Servo move failed",
-            502
+            API_ERROR_CODES.BAD_REQUEST,
+            "Servo angle must be 0–90",
+            400
           );
         }
+        const cmd = await enqueueEdgeCommand({
+          deviceId,
+          trayId,
+          commandType: "camera_servo",
+          payload: {
+            cameraServerUrl,
+            angle,
+            requestedBy: auth.email
+          }
+        });
+        return NextResponse.json({
+          message: `Servo ${angle}° queued for the edge agent (camera_server.py).`,
+          queued: true,
+          data: cmd
+        });
       }
 
       if (body.action === "cameraLed") {
@@ -445,30 +421,24 @@ export async function POST(request: Request, context: RouteContext) {
             400
           );
         }
-        try {
-          const result = await setCameraServerLed({
+        const cmd = await enqueueEdgeCommand({
+          deviceId,
+          trayId,
+          commandType: "camera_led",
+          payload: {
             cameraServerUrl,
-            rgb: [Number(rgb[0]), Number(rgb[1]), Number(rgb[2])]
-          });
-          return NextResponse.json({
-            message: "LED color updated",
-            data: result
-          });
-        } catch (err) {
-          return apiErrorResponse(
-            API_ERROR_CODES.BAD_GATEWAY,
-            err instanceof Error ? err.message : "LED update failed",
-            502
-          );
-        }
+            rgb: [Number(rgb[0]), Number(rgb[1]), Number(rgb[2])],
+            requestedBy: auth.email
+          }
+        });
+        return NextResponse.json({
+          message: "LED update queued for the edge agent (camera_server.py).",
+          queued: true,
+          data: cmd
+        });
       }
 
       // cameraPhoto
-      const trayId = await resolveLinkedTrayId(
-        deviceId,
-        auth.email,
-        body.trayId
-      );
       if (!trayId) {
         return apiErrorResponse(
           API_ERROR_CODES.BAD_REQUEST,
@@ -476,13 +446,14 @@ export async function POST(request: Request, context: RouteContext) {
           400
         );
       }
-      try {
-        const result = await captureFromCameraServerDirect({
-          ownerEmail: auth.email,
-          deviceId,
-          trayId,
-          plantId: body.plantId,
+      const cmd = await enqueueEdgeCommand({
+        deviceId,
+        trayId,
+        plantId: body.plantId,
+        commandType: "camera_photo",
+        payload: {
           cameraServerUrl,
+          requestedBy: auth.email,
           hingeDeg:
             body.hingeDeg != null && Number.isFinite(Number(body.hingeDeg))
               ? Number(body.hingeDeg)
@@ -494,25 +465,14 @@ export async function POST(request: Request, context: RouteContext) {
           width: body.width,
           height: body.height,
           rotation: body.rotation
-        });
-        return NextResponse.json({
-          message: "Photo captured from Pi0 camera server",
-          queued: false,
-          data: {
-            capture: result.capture,
-            imageUrl: result.imageUrl,
-            plantId: result.plantId,
-            plantCreated: result.plantCreated,
-            snapshotUrl: result.snapshotUrl
-          }
-        });
-      } catch (err) {
-        return apiErrorResponse(
-          API_ERROR_CODES.BAD_GATEWAY,
-          err instanceof Error ? err.message : "Pi0 photo capture failed",
-          502
-        );
-      }
+        }
+      });
+      return NextResponse.json({
+        message:
+          "Pi0 photo queued. The edge agent will call camera_server.py /photo on the next heartbeat.",
+        queued: true,
+        data: cmd
+      });
     }
 
     return apiErrorResponse(

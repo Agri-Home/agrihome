@@ -669,10 +669,32 @@ export function TrayEdgeDevicePanel({
       );
       const json = (await res.json()) as {
         message?: string;
+        queued?: boolean;
         error?: { message?: string };
+        data?: { id?: string };
       };
       if (!res.ok) {
         throw new Error(json.error?.message ?? "Servo move failed");
+      }
+      if (json.queued && json.data?.id) {
+        const polled = await pollQueuedCommand({
+          deviceId: device.id,
+          commandId: json.data.id
+        });
+        if (polled.status === "failed") {
+          throw new Error(polled.errorMessage ?? "Servo move failed on Pi");
+        }
+        if (polled.status === "timeout") {
+          setMessage(
+            (json.message ?? "Servo queued") +
+              " Waiting for the edge agent — keep the agent online."
+          );
+          return;
+        }
+        setMessage(
+          `Servo moved to ${Number((polled.result as { angle?: number } | undefined)?.angle ?? servoAngle)}°`
+        );
+        return;
       }
       setMessage(json.message ?? `Servo at ${servoAngle}°`);
     } catch (e) {
@@ -701,10 +723,30 @@ export function TrayEdgeDevicePanel({
       );
       const json = (await res.json()) as {
         message?: string;
+        queued?: boolean;
         error?: { message?: string };
+        data?: { id?: string };
       };
       if (!res.ok) {
         throw new Error(json.error?.message ?? "LED update failed");
+      }
+      if (json.queued && json.data?.id) {
+        const polled = await pollQueuedCommand({
+          deviceId: device.id,
+          commandId: json.data.id
+        });
+        if (polled.status === "failed") {
+          throw new Error(polled.errorMessage ?? "LED update failed on Pi");
+        }
+        if (polled.status === "timeout") {
+          setMessage(
+            (json.message ?? "LED queued") +
+              " Waiting for the edge agent — keep the agent online."
+          );
+          return;
+        }
+        setMessage("LED updated");
+        return;
       }
       setMessage(json.message ?? "LED updated");
     } catch (e) {
@@ -738,8 +780,10 @@ export function TrayEdgeDevicePanel({
       );
       const json = (await res.json()) as {
         message?: string;
+        queued?: boolean;
         error?: { message?: string };
         data?: {
+          id?: string;
           imageUrl?: string;
           plantId?: string;
           plantCreated?: boolean;
@@ -747,6 +791,30 @@ export function TrayEdgeDevicePanel({
       };
       if (!res.ok) {
         throw new Error(json.error?.message ?? "Pi0 photo failed");
+      }
+      if (json.queued && json.data?.id) {
+        const polled = await pollQueuedCommand({
+          deviceId: device.id,
+          commandId: json.data.id
+        });
+        if (polled.status === "failed") {
+          throw new Error(polled.errorMessage ?? "Pi0 photo failed on agent");
+        }
+        if (polled.status === "timeout") {
+          setMessage(
+            (json.message ?? "Pi0 photo queued") +
+              " Waiting for the edge agent…"
+          );
+          return;
+        }
+        const url =
+          (typeof polled.result?.imageUrl === "string"
+            ? polled.result.imageUrl
+            : null) ?? (await pollLatestCapture(sinceMs));
+        if (url) setPreviewUrl(url);
+        setMessage("Pi0 photo captured");
+        router.refresh();
+        return;
       }
       if (json.data?.plantId) {
         setPlantId(json.data.plantId);
@@ -938,12 +1006,11 @@ export function TrayEdgeDevicePanel({
             Pi Zero camera server
           </h3>
           <p className="mt-0.5 text-xs text-ink/45">
-            Wireless Pi0 running{" "}
-            <span className="font-mono">camera_server.py</span> (Flask :5000) —
-            servo angle, NeoPixel LEDs, and{" "}
-            <span className="font-mono">rpicam-still</span> photos. AgriHome
-            must be able to reach this LAN/tunnel URL.
-          </p>
+            Optional LAN base for Pi0 <span className="font-mono">camera_server.py</span>{" "}
+          (e.g. <span className="font-mono">http://192.168.1.154:5000</span>).
+          Vision Console queues servo / LED / photo to the edge agent, which
+          calls this URL on the LAN — agrihome.tech cannot reach it directly.
+        </p>
         </div>
         <div className="flex flex-wrap items-end gap-2">
           <label className="block min-w-[16rem] flex-1 text-sm">
