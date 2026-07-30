@@ -291,3 +291,81 @@ export async function captureFromKlipperStreamerDirect(input: {
     plantCreated: attached.plantCreated
   };
 }
+
+/**
+ * Capture via Pi Zero camera_server.py GET /photo and persist as a tray capture.
+ */
+export async function captureFromCameraServerDirect(input: {
+  ownerEmail: string;
+  deviceId: string;
+  trayId: string;
+  plantId?: string;
+  cameraServerUrl: string;
+  notes?: string;
+  hingeDeg?: number;
+  motorMm?: number;
+  width?: number;
+  height?: number;
+  rotation?: number;
+}): Promise<DirectCaptureResult> {
+  const { fetchCameraServerPhoto } = await import(
+    "@/lib/services/camera-server-client"
+  );
+  const ownerEmail = input.ownerEmail.toLowerCase();
+  const tray = await getTrayById(ownerEmail, input.trayId);
+  if (!tray) {
+    throw new Error("Tray not found");
+  }
+
+  const { buffer, contentType, photoUrl } = await fetchCameraServerPhoto({
+    cameraServerUrl: input.cameraServerUrl,
+    width: input.width,
+    height: input.height,
+    rotation: input.rotation
+  });
+  const ext: LeafImageExt =
+    extFromMime(contentType) ?? extFromBuffer(buffer) ?? "jpg";
+  const saved = await savePlantLeafOriginal(buffer, ext);
+  const capturedAt = new Date().toISOString();
+
+  const capture = await ingestCameraCapture({
+    trayId: tray.id,
+    trayName: tray.name,
+    deviceId: input.deviceId,
+    imageUrl: saved.imageUrl,
+    capturedAt,
+    notes: input.notes ?? "pi0_camera_server_photo",
+    source: "hardware",
+    plantId: input.plantId,
+    hingeDeg: input.hingeDeg,
+    motorMm: input.motorMm
+  });
+
+  const pool = requirePostgresPool();
+  await pool.query(
+    `UPDATE tray_systems SET last_capture_at = $1 WHERE id = $2`,
+    [capture.capturedAt, tray.id]
+  );
+
+  const attached = await postprocessEdgeCapture({
+    ownerEmail,
+    trayId: tray.id,
+    capture,
+    imageUrl: saved.imageUrl,
+    absolutePath: saved.absolutePath,
+    plantId: input.plantId,
+    deviceId: input.deviceId,
+    hingeDeg: input.hingeDeg ?? null,
+    motorMm: input.motorMm ?? null
+  });
+
+  return {
+    capture,
+    imageUrl: saved.imageUrl,
+    bytes: saved.bytes,
+    sha256: createHash("sha256").update(buffer).digest("hex"),
+    snapshotUrl: photoUrl,
+    plantId: attached.plantId,
+    plantCreated: attached.plantCreated
+  };
+}

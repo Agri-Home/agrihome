@@ -20,11 +20,13 @@ to register or run the agent.
    `edge_devices` row, hashed API key, and a linked tray.
 2. **Heartbeat** — agent reports online; Vision Console shows status and claims
    pending commands.
-3. **Take picture** — Vision Console queues `capture_now` (or optionally pulls
-   an HTTP streamer still if `klipper_url` is set and reachable). The agent
-   reads the live hinge/motor pose, runs `save_image.sh` / fswebcam, and
-   `POST`s multipart ingest with that pose. AgriHome stores the values on the
-   capture and upserts the plant's pose sequence entry.
+3. **Take picture** — Vision Console calls the linked Pi Zero
+   `camera_server.py` (`GET /photo`, rpicam-still) when
+   `camera_server_url` is set and reachable. If that fails (or no URL is set),
+   it queues `capture_now` for the Klipper Pi agent (`save_image.sh` /
+   fswebcam). It does **not** pull Moonraker webcam snapshots for Take Picture.
+   On agent ingest, AgriHome stores hinge/motor pose and upserts the plant's
+   pose sequence entry.
 4. **Get position** — Vision Console queues `get_position`; the agent queries
    local Moonraker (`http://127.0.0.1:7125` by default, or
    `AGRIHOME_MOONRAKER_URL`) and maps **`toolhead.position`** axes (default
@@ -136,6 +138,24 @@ Re-provision (rotate key, same CPU serial):
 ```bash
 python3 -m agrihome_agent register --re-provision
 ```
+
+## Pi Zero wireless camera (`camera_server.py`)
+
+A companion **Pi Zero** can run Flask `camera_server.py` from Agri-Home/klipper
+(`host 0.0.0.0`, **port 5000**) for wireless servo / LED / photo control:
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /servo?angle=0..90` | Camera hinge servo |
+| `GET /led?rgb=R,G,B` | NeoPixel fill (device swaps R/G) |
+| `GET /photo` | `rpicam-still` JPEG |
+
+On the Vision Console tray panel, set **Camera server URL** to the Pi0 LAN (or
+tunnel) base, e.g. `http://192.168.1.60:5000`. The AgriHome server must be able
+to reach that host. Then use **Move servo**, **Set LED**, and **Take Pi0 photo**
+(server pulls `/photo` and ingests like other hardware captures).
+
+Requires DB migration `013_camera_server_url` (`npm run db:migrate`).
 
 ### Option B — raw HTTP register
 

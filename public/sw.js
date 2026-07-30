@@ -1,4 +1,4 @@
-const CACHE_NAME = "agrihome-shell-v1";
+const CACHE_NAME = "agrihome-shell-v2";
 const APP_SHELL = ["/", "/manifest.webmanifest", "/pwa-icon.svg", "/pwa-maskable.svg"];
 
 self.addEventListener("install", (event) => {
@@ -21,7 +21,14 @@ self.addEventListener("fetch", (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
-  if (request.method !== "GET" || url.pathname.startsWith("/api/")) {
+  // Let the network handle APIs, auth return navigations, and non-GET.
+  // Intercepting /login can break Firebase redirect completion in installed PWAs.
+  if (
+    request.method !== "GET" ||
+    url.pathname.startsWith("/api/") ||
+    url.pathname.startsWith("/login") ||
+    url.pathname.includes("/__/auth")
+  ) {
     return;
   }
 

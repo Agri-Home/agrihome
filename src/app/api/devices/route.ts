@@ -31,6 +31,7 @@ export async function GET() {
         hostname: d.hostname,
         model: d.model,
         klipperUrl: d.klipperUrl,
+        cameraServerUrl: d.cameraServerUrl,
         status: d.status,
         lastHeartbeatAt: d.lastHeartbeatAt,
         apiKeyPrefix: d.apiKeyPrefix,

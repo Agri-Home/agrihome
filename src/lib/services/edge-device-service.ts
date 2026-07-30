@@ -18,6 +18,7 @@ interface EdgeDeviceRow {
   hostname: string | null;
   model: string | null;
   klipper_url: string | null;
+  camera_server_url: string | null;
   api_key_prefix: string;
   status: string;
   last_heartbeat_at: Date | string | null;
@@ -69,7 +70,7 @@ export async function getEdgeDeviceById(
 ): Promise<AuthenticatedEdgeDevice | null> {
   const rows = await queryRows<EdgeDeviceRow>(
     `SELECT id, owner_email, cpu_serial, mac_address, hostname, model,
-            klipper_url, api_key_prefix, status, last_heartbeat_at,
+            klipper_url, camera_server_url, api_key_prefix, status, last_heartbeat_at,
             hinge_min_deg, hinge_max_deg, motor_min_mm, motor_max_mm, revoked_at
      FROM edge_devices
      WHERE id = $1
@@ -84,7 +85,7 @@ export async function listEdgeDevicesForOwner(
 ): Promise<AuthenticatedEdgeDevice[]> {
   const rows = await queryRows<EdgeDeviceRow>(
     `SELECT id, owner_email, cpu_serial, mac_address, hostname, model,
-            klipper_url, api_key_prefix, status, last_heartbeat_at,
+            klipper_url, camera_server_url, api_key_prefix, status, last_heartbeat_at,
             hinge_min_deg, hinge_max_deg, motor_min_mm, motor_max_mm, revoked_at
      FROM edge_devices
      WHERE owner_email = $1
@@ -100,7 +101,7 @@ export async function getEdgeDeviceForTray(
 ): Promise<AuthenticatedEdgeDevice | null> {
   const rows = await queryRows<EdgeDeviceRow>(
     `SELECT d.id, d.owner_email, d.cpu_serial, d.mac_address, d.hostname, d.model,
-            d.klipper_url, d.api_key_prefix, d.status, d.last_heartbeat_at,
+            d.klipper_url, d.camera_server_url, d.api_key_prefix, d.status, d.last_heartbeat_at,
             d.hinge_min_deg, d.hinge_max_deg, d.motor_min_mm, d.motor_max_mm,
             d.revoked_at
      FROM edge_devices d
@@ -392,6 +393,35 @@ export async function updateEdgeDeviceKlipperUrl(input: {
      SET klipper_url = $1, updated_at = NOW()
      WHERE id = $2 AND owner_email = $3`,
     [url.replace(/\/+$/, ""), input.deviceId, input.ownerEmail.toLowerCase()]
+  );
+  return getEdgeDeviceById(input.deviceId);
+}
+
+/** Operator-facing update of the Pi Zero camera_server.py base URL. */
+export async function updateEdgeDeviceCameraServerUrl(input: {
+  ownerEmail: string;
+  deviceId: string;
+  /** Empty string clears the URL. */
+  cameraServerUrl: string;
+}): Promise<AuthenticatedEdgeDevice | null> {
+  const device = await getEdgeDeviceById(input.deviceId);
+  if (!device || device.ownerEmail !== input.ownerEmail.toLowerCase()) {
+    return null;
+  }
+  const raw = input.cameraServerUrl.trim();
+  let stored: string | null = null;
+  if (raw) {
+    const { assertCameraServerHttpUrl, normalizeCameraServerBase } =
+      await import("@/lib/services/camera-server-client");
+    assertCameraServerHttpUrl(raw);
+    stored = normalizeCameraServerBase(raw);
+  }
+  const pool = requirePostgresPool();
+  await pool.query(
+    `UPDATE edge_devices
+     SET camera_server_url = $1, updated_at = NOW()
+     WHERE id = $2 AND owner_email = $3`,
+    [stored, input.deviceId, input.ownerEmail.toLowerCase()]
   );
   return getEdgeDeviceById(input.deviceId);
 }

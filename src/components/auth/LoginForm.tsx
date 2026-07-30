@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  browserSessionPersistence,
+  browserLocalPersistence,
   createUserWithEmailAndPassword,
   getRedirectResult,
   inMemoryPersistence,
@@ -22,6 +22,10 @@ import {
 import { Button } from "@/components/atoms/Button";
 import { Card } from "@/components/atoms/Card";
 import { useSnackbar } from "@/components/providers/SnackbarProvider";
+import {
+  isGooglePopupFailure,
+  shouldUseRedirectForGoogle
+} from "@/lib/auth/web-sign-in";
 import {
   createGoogleProvider,
   getFirebaseClientAuth,
@@ -82,7 +86,7 @@ const mapAuthError = (error: unknown) => {
       case "auth/operation-not-supported-in-this-environment":
         return "Google sign-in is not supported in this browser context.";
       case "auth/unauthorized-domain":
-        return "This domain is not authorized for Google sign-in in Firebase Authentication.";
+        return "This domain is not authorized in Firebase Authentication. Add the current hostname under Authentication → Settings → Authorized domains (e.g. localhost, your production host, or the Cloudflare tunnel host).";
       default:
         return "Authentication failed. Check your Firebase Auth setup.";
     }
@@ -101,6 +105,7 @@ const createServerSession = async (idToken: string) => {
     headers: {
       "Content-Type": "application/json"
     },
+    credentials: "same-origin",
     body: JSON.stringify({ idToken })
   });
   const json = (await response.json()) as { error?: string };
@@ -179,6 +184,9 @@ export function LoginForm({
     const consumeRedirectResult = async () => {
       try {
         const auth = getFirebaseClientAuth(firebaseConfig);
+        // Redirect state is stored in local/indexedDB persistence across the
+        // OAuth round-trip; session persistence often loses it in PWAs.
+        await setPersistence(auth, browserLocalPersistence);
         const result = await getRedirectResult(auth);
 
         if (!active || !result?.user) {
@@ -272,18 +280,27 @@ export function LoginForm({
     try {
       const auth = getFirebaseClientAuth(firebaseConfig);
       const provider = createGoogleProvider();
-      const prefersRedirect =
-        typeof window !== "undefined" &&
-        window.matchMedia("(pointer: coarse)").matches;
+      const prefersRedirect = shouldUseRedirectForGoogle();
 
-      await setPersistence(auth, browserSessionPersistence);
+      await setPersistence(auth, browserLocalPersistence);
 
       if (prefersRedirect) {
         await signInWithRedirect(auth, provider);
         return;
       }
 
-      await signInWithPopup(auth, provider);
+      try {
+        await signInWithPopup(auth, provider);
+      } catch (popupError) {
+        if (!isGooglePopupFailure(popupError)) {
+          throw popupError;
+        }
+
+        // Standalone / restricted browsers often block popups; fall back.
+        await signInWithRedirect(auth, provider);
+        return;
+      }
+
       await syncCurrentFirebaseUserToServerSession(firebaseConfig);
       show("Signed in with Google.");
       startTransition(() => {
