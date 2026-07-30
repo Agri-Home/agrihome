@@ -54,11 +54,14 @@ function statusColor(status: string, revokedAt: string | null) {
 export function TrayEdgeDevicePanel({
   trayId,
   edgeDeviceId,
-  plants
+  plants,
+  developerMode = false
 }: {
   trayId: string;
   edgeDeviceId?: string | null;
   plants: Array<{ id: string; name: string; slotLabel: string }>;
+  /** When false, hide manual Pi / Klipper controls (Settings → Developer tools). */
+  developerMode?: boolean;
 }) {
   const router = useRouter();
   const [device, setDevice] = useState<DeviceSummary | null>(null);
@@ -74,6 +77,10 @@ export function TrayEdgeDevicePanel({
   const [cameraServerUrlDraft, setCameraServerUrlDraft] = useState("");
   const [servoAngle, setServoAngle] = useState(45);
   const [ledRgb, setLedRgb] = useState({ r: 0, g: 255, b: 0 });
+  const [hingeDegDraft, setHingeDegDraft] = useState("0");
+  const [motorMmDraft, setMotorMmDraft] = useState("0");
+  const [gcodeDraft, setGcodeDraft] = useState("G0 X0 Y0 F1200");
+  const [actuatorDryRun, setActuatorDryRun] = useState(false);
   const [lastPosition, setLastPosition] = useState<{
     hingeDeg: number;
     motorMm: number;
@@ -836,6 +843,148 @@ export function TrayEdgeDevicePanel({
     }
   }
 
+  async function moveSteppers() {
+    if (!device) return;
+    const hingeDeg = Number(hingeDegDraft);
+    const motorMm = Number(motorMmDraft);
+    if (!Number.isFinite(hingeDeg) || !Number.isFinite(motorMm)) {
+      setError("Enter valid hinge (°) and motor (mm) numbers");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const res = await fetch(
+        `/api/devices/${encodeURIComponent(device.id)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "moveActuators",
+            trayId,
+            hingeDeg,
+            motorMm,
+            dryRun: actuatorDryRun
+          })
+        }
+      );
+      const json = (await res.json()) as {
+        message?: string;
+        queued?: boolean;
+        error?: { message?: string };
+        data?: { id?: string };
+      };
+      if (!res.ok) {
+        throw new Error(json.error?.message ?? "Stepper move failed");
+      }
+      const commandId = json.data?.id?.trim();
+      if (!commandId) {
+        throw new Error("Move command was not queued");
+      }
+      setMessage(
+        actuatorDryRun
+          ? "Dry-run move queued…"
+          : `Moving steppers (hinge ${hingeDeg}° · motor ${motorMm} mm)…`
+      );
+      const polled = await pollQueuedCommand({
+        deviceId: device.id,
+        commandId
+      });
+      if (polled.status === "failed") {
+        throw new Error(polled.errorMessage ?? "Stepper move failed on Pi");
+      }
+      if (polled.status === "timeout") {
+        setMessage(
+          (json.message ?? "Move queued") +
+            " Waiting for the edge agent — keep the agent online."
+        );
+        return;
+      }
+      const script =
+        typeof polled.result?.script === "string"
+          ? polled.result.script
+          : `G0 X${hingeDeg} Y${motorMm}`;
+      setLastPosition({ hingeDeg, motorMm, source: "move_actuators" });
+      setMessage(
+        (actuatorDryRun ? "Dry-run OK · " : "Moved · ") +
+          script +
+          (typeof polled.result?.dryRun === "boolean" && polled.result.dryRun
+            ? " (no motion)"
+            : "")
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Stepper move failed");
+      setMessage(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runGcode() {
+    if (!device) return;
+    const gcode = gcodeDraft.trim();
+    if (!gcode) {
+      setError("Enter a G-code / macro script");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const res = await fetch(
+        `/api/devices/${encodeURIComponent(device.id)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "runGcode",
+            trayId,
+            gcode,
+            dryRun: actuatorDryRun
+          })
+        }
+      );
+      const json = (await res.json()) as {
+        message?: string;
+        error?: { message?: string };
+        data?: { id?: string };
+      };
+      if (!res.ok) {
+        throw new Error(json.error?.message ?? "G-code failed");
+      }
+      const commandId = json.data?.id?.trim();
+      if (!commandId) {
+        throw new Error("G-code command was not queued");
+      }
+      setMessage(actuatorDryRun ? "Dry-run G-code queued…" : "Running G-code…");
+      const polled = await pollQueuedCommand({
+        deviceId: device.id,
+        commandId
+      });
+      if (polled.status === "failed") {
+        throw new Error(polled.errorMessage ?? "G-code failed on Pi");
+      }
+      if (polled.status === "timeout") {
+        setMessage(
+          (json.message ?? "G-code queued") +
+            " Waiting for the edge agent — keep the agent online."
+        );
+        return;
+      }
+      setMessage(
+        actuatorDryRun
+          ? "Dry-run G-code OK (not sent to Klipper)"
+          : "G-code completed on Moonraker"
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "G-code failed");
+      setMessage(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function unregisterDevice() {
     if (!device) return;
     const label = device.hostname || device.model || device.cpuSerial;
@@ -1006,11 +1155,12 @@ export function TrayEdgeDevicePanel({
             Pi Zero camera server
           </h3>
           <p className="mt-0.5 text-xs text-ink/45">
-            Optional LAN base for Pi0 <span className="font-mono">camera_server.py</span>{" "}
-          (e.g. <span className="font-mono">http://192.168.1.154:5000</span>).
-          Vision Console queues servo / LED / photo to the edge agent, which
-          calls this URL on the LAN — agrihome.tech cannot reach it directly.
-        </p>
+            Optional LAN base for Pi0{" "}
+            <span className="font-mono">camera_server.py</span> (e.g.{" "}
+            <span className="font-mono">http://192.168.1.154:5000</span>).
+            Vision Console queues servo / LED / photo to the edge agent, which
+            calls this URL on the LAN — agrihome.tech cannot reach it directly.
+          </p>
         </div>
         <div className="flex flex-wrap items-end gap-2">
           <label className="block min-w-[16rem] flex-1 text-sm">
@@ -1039,128 +1189,289 @@ export function TrayEdgeDevicePanel({
           </Button>
         </div>
 
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="block min-w-[12rem] flex-1 text-sm">
-            <span className="text-ink/60">Servo angle (0–90°)</span>
-            <div className="mt-1 flex items-center gap-2">
-              <input
-                type="range"
-                min={0}
-                max={90}
-                step={1}
-                className="w-full"
-                value={servoAngle}
-                onChange={(e) => setServoAngle(Number(e.target.value))}
+        {developerMode ? (
+          <>
+            <div className="flex flex-wrap items-end gap-3">
+              <label className="block min-w-[12rem] flex-1 text-sm">
+                <span className="text-ink/60">Servo angle (0–90°)</span>
+                <div className="mt-1 flex items-center gap-2">
+                  <input
+                    type="range"
+                    min={0}
+                    max={90}
+                    step={1}
+                    className="w-full"
+                    value={servoAngle}
+                    onChange={(e) => setServoAngle(Number(e.target.value))}
+                    disabled={
+                      busy ||
+                      Boolean(device.revokedAt) ||
+                      !device.cameraServerUrl?.trim()
+                    }
+                  />
+                  <span className="w-8 font-mono text-xs text-ink">
+                    {servoAngle}
+                  </span>
+                </div>
+              </label>
+              <Button
+                type="button"
+                variant="secondary"
                 disabled={
                   busy ||
                   Boolean(device.revokedAt) ||
                   !device.cameraServerUrl?.trim()
                 }
-              />
-              <span className="w-8 font-mono text-xs text-ink">{servoAngle}</span>
+                onClick={() => void moveServo()}
+              >
+                Move servo
+              </Button>
             </div>
-          </label>
-          <Button
-            type="button"
-            variant="secondary"
-            disabled={
-              busy ||
-              Boolean(device.revokedAt) ||
-              !device.cameraServerUrl?.trim()
-            }
-            onClick={() => void moveServo()}
-          >
-            Move servo
-          </Button>
-        </div>
 
-        <div className="flex flex-wrap items-end gap-2">
-          {(["r", "g", "b"] as const).map((ch) => (
-            <label key={ch} className="block w-20 text-sm">
-              <span className="uppercase text-ink/60">{ch}</span>
-              <input
-                type="number"
-                min={0}
-                max={255}
-                className="mt-1 w-full rounded-md border border-ink/15 bg-white px-2 py-1.5 font-mono text-xs"
-                value={ledRgb[ch]}
-                onChange={(e) =>
-                  setLedRgb((prev) => ({
-                    ...prev,
-                    [ch]: Math.min(
-                      255,
-                      Math.max(0, Number(e.target.value) || 0)
-                    )
-                  }))
-                }
+            <div className="flex flex-wrap items-end gap-2">
+              {(["r", "g", "b"] as const).map((ch) => (
+                <label key={ch} className="block w-20 text-sm">
+                  <span className="uppercase text-ink/60">{ch}</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={255}
+                    className="mt-1 w-full rounded-md border border-ink/15 bg-white px-2 py-1.5 font-mono text-xs"
+                    value={ledRgb[ch]}
+                    onChange={(e) =>
+                      setLedRgb((prev) => ({
+                        ...prev,
+                        [ch]: Math.min(
+                          255,
+                          Math.max(0, Number(e.target.value) || 0)
+                        )
+                      }))
+                    }
+                    disabled={
+                      busy ||
+                      Boolean(device.revokedAt) ||
+                      !device.cameraServerUrl?.trim()
+                    }
+                  />
+                </label>
+              ))}
+              <Button
+                type="button"
+                variant="secondary"
                 disabled={
                   busy ||
                   Boolean(device.revokedAt) ||
                   !device.cameraServerUrl?.trim()
                 }
-              />
-            </label>
-          ))}
-          <Button
-            type="button"
-            variant="secondary"
-            disabled={
-              busy ||
-              Boolean(device.revokedAt) ||
-              !device.cameraServerUrl?.trim()
-            }
-            onClick={() => void setLed()}
-          >
-            Set LED
-          </Button>
-          <Button
-            type="button"
-            disabled={
-              busy ||
-              Boolean(device.revokedAt) ||
-              !device.cameraServerUrl?.trim()
-            }
-            onClick={() => void takePi0Photo()}
-          >
-            Take Pi0 photo
-          </Button>
-        </div>
+                onClick={() => void setLed()}
+              >
+                Set LED
+              </Button>
+              <Button
+                type="button"
+                disabled={
+                  busy ||
+                  Boolean(device.revokedAt) ||
+                  !device.cameraServerUrl?.trim()
+                }
+                onClick={() => void takePi0Photo()}
+              >
+                Take Pi0 photo
+              </Button>
+            </div>
+          </>
+        ) : (
+          <p className="text-xs text-ink/45">
+            Manual servo / LED / photo controls are in{" "}
+            <a href="/settings" className="underline underline-offset-2">
+              Settings → Developer tools
+            </a>
+            .
+          </p>
+        )}
       </div>
 
+      {developerMode ? (
+        <div className="space-y-3 border-t border-ink/10 pt-4">
+          <div>
+            <h3 className="text-sm font-semibold text-ink">
+              Developer tools
+            </h3>
+            <p className="mt-0.5 text-xs text-ink/45">
+              Manual capture, position, and Klipper stepper / G-code tests.
+              Moves use Moonraker{" "}
+              <span className="font-mono">G0 X=hinge Y=motor</span> (same
+              mapping as Get position).
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="block min-w-[10rem] flex-1 text-sm">
+              <span className="text-ink/60">Plant (optional)</span>
+              <select
+                className="mt-1 w-full rounded-md border border-ink/15 bg-white px-2 py-1.5"
+                value={plantId}
+                onChange={(e) => setPlantId(e.target.value)}
+              >
+                <option value="">Auto-create / attach plant</option>
+                {plantId && !plants.some((p) => p.id === plantId) ? (
+                  <option value={plantId}>New plant (just captured)</option>
+                ) : null}
+                {plants.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.slotLabel || p.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Button
+              type="button"
+              disabled={
+                busy ||
+                Boolean(device.revokedAt) ||
+                device.status === "offline"
+              }
+              onClick={() => void takePicture()}
+            >
+              {busy ? "Working…" : "Take picture"}
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={
+                busy ||
+                Boolean(device.revokedAt) ||
+                device.status === "offline"
+              }
+              onClick={() => void getPosition()}
+            >
+              Get position
+            </Button>
+          </div>
+
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="block w-28 text-sm">
+              <span className="text-ink/60">Hinge (°)</span>
+              <input
+                type="number"
+                step="any"
+                className="mt-1 w-full rounded-md border border-ink/15 bg-white px-2 py-1.5 font-mono text-xs"
+                value={hingeDegDraft}
+                onChange={(e) => setHingeDegDraft(e.target.value)}
+                disabled={busy || Boolean(device.revokedAt)}
+              />
+            </label>
+            <label className="block w-28 text-sm">
+              <span className="text-ink/60">Motor (mm)</span>
+              <input
+                type="number"
+                step="any"
+                className="mt-1 w-full rounded-md border border-ink/15 bg-white px-2 py-1.5 font-mono text-xs"
+                value={motorMmDraft}
+                onChange={(e) => setMotorMmDraft(e.target.value)}
+                disabled={busy || Boolean(device.revokedAt)}
+              />
+            </label>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={
+                busy ||
+                Boolean(device.revokedAt) ||
+                device.status === "offline"
+              }
+              onClick={() => {
+                if (lastPosition) {
+                  setHingeDegDraft(String(lastPosition.hingeDeg));
+                  setMotorMmDraft(String(lastPosition.motorMm));
+                }
+              }}
+            >
+              Use last pose
+            </Button>
+            <Button
+              type="button"
+              disabled={
+                busy ||
+                Boolean(device.revokedAt) ||
+                device.status === "offline"
+              }
+              onClick={() => void moveSteppers()}
+            >
+              Move steppers
+            </Button>
+          </div>
+
+          <label className="block text-sm">
+            <span className="text-ink/60">G-code / macro</span>
+            <textarea
+              className="mt-1 w-full rounded-md border border-ink/15 bg-white px-2 py-1.5 font-mono text-xs"
+              rows={3}
+              spellCheck={false}
+              value={gcodeDraft}
+              onChange={(e) => setGcodeDraft(e.target.value)}
+              disabled={busy || Boolean(device.revokedAt)}
+              placeholder={"G0 X0 Y0 F1200\n; or a Klipper macro name"}
+            />
+          </label>
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-ink/70">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-ink/20 text-leaf focus:ring-leaf"
+                checked={actuatorDryRun}
+                onChange={(e) => setActuatorDryRun(e.target.checked)}
+                disabled={busy}
+              />
+              Dry run (log only, no motion)
+            </label>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={
+                busy ||
+                Boolean(device.revokedAt) ||
+                device.status === "offline" ||
+                !gcodeDraft.trim()
+              }
+              onClick={() => void runGcode()}
+            >
+              Run G-code
+            </Button>
+          </div>
+
+          {lastPosition && (
+            <p className="text-sm text-ink/70">
+              Current position: hinge{" "}
+              <span className="font-mono text-ink">
+                {lastPosition.hingeDeg}
+              </span>
+              ° · motor{" "}
+              <span className="font-mono text-ink">
+                {lastPosition.motorMm}
+              </span>{" "}
+              mm
+              {lastPosition.source ? (
+                <span className="text-ink/45"> ({lastPosition.source})</span>
+              ) : null}
+              {lastPosition.rawXy ? (
+                <span className="text-ink/45"> · {lastPosition.rawXy}</span>
+              ) : null}
+            </p>
+          )}
+        </div>
+      ) : null}
+
       <div className="flex flex-wrap items-end gap-2 border-t border-ink/10 pt-4">
-        <label className="block min-w-[10rem] flex-1 text-sm">
-          <span className="text-ink/60">Plant (optional)</span>
-          <select
-            className="mt-1 w-full rounded-md border border-ink/15 bg-white px-2 py-1.5"
-            value={plantId}
-            onChange={(e) => setPlantId(e.target.value)}
-          >
-            <option value="">Auto-create / attach plant</option>
-            {plantId && !plants.some((p) => p.id === plantId) ? (
-              <option value={plantId}>New plant (just captured)</option>
-            ) : null}
-            {plants.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.slotLabel || p.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <Button
-          type="button"
-          disabled={busy || Boolean(device.revokedAt) || device.status === "offline"}
-          onClick={() => void takePicture()}
-        >
-          {busy ? "Working…" : "Take picture"}
-        </Button>
-        <Button
-          type="button"
-          variant="secondary"
-          disabled={busy || Boolean(device.revokedAt) || device.status === "offline"}
-          onClick={() => void getPosition()}
-        >
-          Get position
-        </Button>
+        {!developerMode ? (
+          <p className="mb-1 w-full text-xs text-ink/45">
+            Take picture, Get position, and stepper / G-code controls are under{" "}
+            <a href="/settings" className="underline underline-offset-2">
+              Settings → Developer tools
+            </a>
+            .
+          </p>
+        ) : null}
         <Button
           type="button"
           variant="secondary"
@@ -1179,27 +1490,6 @@ export function TrayEdgeDevicePanel({
           Unregister device
         </Button>
       </div>
-
-      {lastPosition && (
-        <p className="text-sm text-ink/70">
-          Current position: hinge{" "}
-          <span className="font-mono text-ink">{lastPosition.hingeDeg}</span>° ·
-          motor{" "}
-          <span className="font-mono text-ink">{lastPosition.motorMm}</span> mm
-          {lastPosition.source ? (
-            <span className="text-ink/45"> ({lastPosition.source})</span>
-          ) : null}
-          {lastPosition.rawXy ? (
-            <span className="text-ink/45"> · {lastPosition.rawXy}</span>
-          ) : null}
-          {plantId ? (
-            <span className="text-ink/45">
-              {" "}
-              — associated with selected plant on capture / Get position
-            </span>
-          ) : null}
-        </p>
-      )}
 
       {device.status === "offline" && !device.revokedAt && (
         <p className="text-sm text-amber-800">
