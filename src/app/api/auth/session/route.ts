@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { createSessionResponse } from "@/lib/auth/session";
+import { shouldUseSecureSessionCookie } from "@/lib/auth/web-sign-in";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -22,7 +23,9 @@ export async function POST(request: Request) {
   }
 
   try {
-    return await createSessionResponse(idToken);
+    return await createSessionResponse(idToken, {
+      secure: shouldUseSecureSessionCookie(request)
+    });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Could not create session.";

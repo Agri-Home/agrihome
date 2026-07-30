@@ -24,19 +24,25 @@ const mapUser = (
   picture: token.picture ?? null
 });
 
-export const clearSessionCookie = (response: NextResponse) => {
+export const clearSessionCookie = (
+  response: NextResponse,
+  options?: { secure?: boolean }
+) => {
   response.cookies.set(env.firebase.sessionCookieName, "", {
     httpOnly: true,
     maxAge: 0,
     path: "/",
     sameSite: "lax",
-    secure: env.isProduction
+    secure: options?.secure ?? env.isProduction
   });
 
   return response;
 };
 
-export const createSessionResponse = async (idToken: string) => {
+export const createSessionResponse = async (
+  idToken: string,
+  options?: { secure?: boolean }
+) => {
   if (!hasFirebaseAdminConfig) {
     throw new Error(
       "Firebase Admin is not configured. Add the admin service account variables before signing in."
@@ -58,13 +64,14 @@ export const createSessionResponse = async (idToken: string) => {
   });
 
   const response = NextResponse.json({ data: mapUser(decodedIdToken) });
+  const secure = options?.secure ?? env.isProduction;
 
   response.cookies.set(env.firebase.sessionCookieName, sessionCookie, {
     httpOnly: true,
     maxAge: SESSION_MAX_AGE_MS / 1000,
     path: "/",
     sameSite: "lax",
-    secure: env.isProduction
+    secure
   });
 
   return response;
