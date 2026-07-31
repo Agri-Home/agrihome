@@ -730,10 +730,12 @@ export function TrayEdgeDevicePanel({
         throw new Error("Scan command was not queued");
       }
 
-      // ~1.5s per tick; allow ~8s per plant + heartbeat slack
+      // ~1.5s/tick after first. Pose walk: G28 + STORE_DOCK + N×(G0+M400≤180s
+      // + ≥2s settle + LED blink + photo). Complete is reported before dock/home,
+      // but long moves still need a generous window (~45s/pose + preamble slack).
       const maxTicks = Math.min(
-        120,
-        Math.max(40, seq.poses.length * 6)
+        360,
+        Math.max(120, seq.poses.length * 45)
       );
       const polled = await pollQueuedCommand({
         deviceId: device.id,
