@@ -9,7 +9,6 @@ import {
   type ReactNode
 } from "react";
 
-import { LogoutButton } from "@/components/auth/LogoutButton";
 import type {
   AuthenticatedUser,
   FirebaseClientConfig
@@ -226,30 +225,23 @@ const APP_NAV: NavItem[] = [
 
 export function AppShell({
   children,
-  currentUser,
-  firebaseConfig
+  participateMlFeedback = true
 }: {
   children: React.ReactNode;
   currentUser: AuthenticatedUser;
   firebaseConfig: FirebaseClientConfig;
-  /**
-   * Accepted for layout compatibility. Feedback/training opt-out is enforced on
-   * those pages; nav keeps a fixed item list so SSR and client markup match.
-   */
   participateMlFeedback?: boolean;
 }) {
   const pathname = usePathname();
-  const navItems = APP_NAV;
-  const moreNavItems = MORE_NAV;
+  const navItems = participateMlFeedback
+    ? APP_NAV
+    : APP_NAV.filter((item) => item !== NAV_FEEDBACK);
+  const moreNavItems = participateMlFeedback
+    ? MORE_NAV
+    : MORE_NAV.filter((item) => item !== NAV_FEEDBACK);
   const moreActive = moreNavItems.some((item) => item.match(pathname));
   const [moreOpen, setMoreOpen] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
-  const identityLabel = currentUser.name ?? currentUser.email ?? "Operator";
-  const identityInitial = identityLabel.charAt(0).toUpperCase();
-
-  useEffect(() => {
-    setMoreOpen(false);
-  }, [pathname]);
 
   useEffect(() => {
     if (!moreOpen) return;
@@ -317,25 +309,7 @@ export function AppShell({
           </nav>
         </aside>
 
-        <main className="min-h-0 flex-1 px-4 pb-28 pt-3 safe-top lg:px-8 lg:pb-10 lg:pt-8">
-          <div className="mb-5 flex items-center justify-end">
-            <div className="flex items-center gap-3 rounded-2xl border border-ink/[0.08] bg-white/[0.78] px-3 py-2 shadow-sm backdrop-blur-xl">
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-lime to-[#a7e45f] text-sm font-bold text-ink">
-                {identityInitial}
-              </div>
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold text-ink">
-                  {identityLabel}
-                </p>
-                {currentUser.email && (
-                  <p className="truncate text-xs text-ink/45">
-                    {currentUser.email}
-                  </p>
-                )}
-              </div>
-              <LogoutButton firebaseConfig={firebaseConfig} />
-            </div>
-          </div>
+        <main className="min-h-0 flex-1 px-4 pb-28 pt-6 safe-top lg:px-8 lg:pb-10 lg:pt-8">
           {children}
         </main>
       </div>

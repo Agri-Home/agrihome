@@ -43,6 +43,10 @@ export function ScheduleClient({
     useState<CaptureSchedule["destination"]>("raspberry-pi-edge");
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<CaptureSchedule | null>(
+    null
+  );
 
   useEffect(() => {
     setSchedules(initialSchedules);
@@ -130,7 +134,35 @@ export function ScheduleClient({
     }
   };
 
+  const remove = async (schedule: CaptureSchedule) => {
+    setDeletingId(schedule.id);
+    setMsg(null);
+    try {
+      const res = await fetch(
+        `/api/schedules?id=${encodeURIComponent(schedule.id)}`,
+        { method: "DELETE" }
+      );
+      const json = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        setMsg(json.error ?? "Delete failed.");
+        return;
+      }
+      setSchedules((cur) => cur.filter((s) => s.id !== schedule.id));
+      if (selectedId === schedule.id) {
+        setSelectedId(null);
+      }
+      setPendingDelete(null);
+      setMsg("Deleted.");
+      router.refresh();
+    } catch {
+      setMsg("Delete failed.");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   const targets = scopeType === "tray" ? trays : meshes;
+  const selectedSchedule = schedules.find((s) => s.id === selectedId) ?? null;
   const edgeTraySchedules = schedules.filter(
     (s) =>
       s.scopeType === "tray" && s.destination === "raspberry-pi-edge"
@@ -191,37 +223,46 @@ export function ScheduleClient({
           <ul className="flex flex-col gap-2">
             {schedules.map((s) => (
               <li key={s.id}>
-                <button
-                  type="button"
-                  onClick={() => setSelectedId(s.id === selectedId ? null : s.id)}
-                  className="w-full text-left"
+                <Card
+                  interactive
+                  className={`flex items-center justify-between gap-3 p-4 ${
+                    selectedId === s.id ? "ring-2 ring-leaf/30" : ""
+                  }`}
                 >
-                  <Card
-                    interactive
-                    className={`flex items-center justify-between p-4 ${
-                      selectedId === s.id ? "ring-2 ring-leaf/30" : ""
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <StatusDot status={s.active ? "healthy" : "offline"} pulse={s.active} size="md" />
-                      <div>
-                        <p className="text-sm font-semibold text-ink">{s.name}</p>
-                        <p className="mt-0.5 text-xs text-ink/40">
-                          Every {s.intervalMinutes} min · {s.destination} · next{" "}
-                          {formatRelativeTimestamp(s.nextRunAt)}
-                        </p>
-                      </div>
+                  <div className="flex min-w-0 items-center gap-3">
+                    <StatusDot status={s.active ? "healthy" : "offline"} pulse={s.active} size="md" />
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-semibold text-ink">{s.name}</p>
+                      <p className="mt-0.5 text-xs text-ink/40">
+                        Every {s.intervalMinutes} min · {s.destination} · next{" "}
+                        {formatRelativeTimestamp(s.nextRunAt)}
+                      </p>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Badge tone={s.active ? "success" : "default"}>
-                        {s.active ? "Active" : "Paused"}
-                      </Badge>
-                      {selectedId === s.id && (
-                        <span className="text-[10px] font-semibold text-leaf">editing</span>
-                      )}
-                    </div>
-                  </Card>
-                </button>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Badge tone={s.active ? "success" : "default"}>
+                      {s.active ? "Active" : "Paused"}
+                    </Badge>
+                    {selectedId === s.id && (
+                      <span className="text-[10px] font-semibold text-leaf">editing</span>
+                    )}
+                    <button
+                      type="button"
+                      className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-ink/50 transition-colors hover:bg-ink/[0.05] hover:text-ink"
+                      onClick={() => setSelectedId(s.id === selectedId ? null : s.id)}
+                    >
+                      {selectedId === s.id ? "Close" : "Edit"}
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-lg px-2.5 py-1.5 text-xs font-semibold text-rose-600 transition-colors hover:bg-rose-50 disabled:opacity-50"
+                      disabled={deletingId === s.id || busy}
+                      onClick={() => setPendingDelete(s)}
+                    >
+                      {deletingId === s.id ? "Deleting..." : "Delete"}
+                    </button>
+                  </div>
+                </Card>
               </li>
             ))}
           </ul>
@@ -356,7 +397,7 @@ export function ScheduleClient({
           </label>
 
           {msg && (
-            <p className={`text-sm ${msg === "Saved." ? "text-emerald-600" : "text-rose-600"}`}>
+            <p className={`text-sm ${msg === "Saved." || msg === "Deleted." ? "text-emerald-600" : "text-rose-600"}`}>
               {msg}
             </p>
           )}
@@ -365,18 +406,30 @@ export function ScheduleClient({
             {busy ? "Saving..." : selectedId ? "Update Schedule" : "Create Schedule"}
           </Button>
 
-          {selectedId && (
-            <button
-              type="button"
-              className="w-full rounded-xl py-2 text-sm font-medium text-ink/40 transition-colors hover:text-ink/60"
-              onClick={() => {
-                setSelectedId(null);
-                setMsg(null);
-              }}
-            >
-              Clear selection
-            </button>
-          )}
+          {selectedSchedule ? (
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="flex-1 rounded-xl py-2 text-sm font-medium text-ink/40 transition-colors hover:text-ink/60"
+                onClick={() => {
+                  setSelectedId(null);
+                  setMsg(null);
+                }}
+              >
+                Clear selection
+              </button>
+              <button
+                type="button"
+                className="flex-1 rounded-xl py-2 text-sm font-medium text-rose-600 transition-colors hover:bg-rose-50 disabled:opacity-50"
+                disabled={deletingId === selectedSchedule.id || busy}
+                onClick={() => setPendingDelete(selectedSchedule)}
+              >
+                {deletingId === selectedSchedule.id
+                  ? "Deleting..."
+                  : "Delete schedule"}
+              </button>
+            </div>
+          ) : null}
         </Card>
       </section>
 
@@ -387,6 +440,58 @@ export function ScheduleClient({
         </span>
         . See docs/ops/RASPBERRY_PI_KLIPPER.md.
       </p>
+
+      {pendingDelete ? (
+        <div
+          className="fixed inset-0 z-[100] flex items-end justify-center bg-ink/40 p-4 sm:items-center"
+          role="presentation"
+          onClick={() => {
+            if (!deletingId) setPendingDelete(null);
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-schedule-dialog-title"
+            className="w-full max-w-md rounded-3xl border border-ink/10 bg-white p-5 shadow-lift"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <p
+              id="delete-schedule-dialog-title"
+              className="text-sm font-semibold text-ink"
+            >
+              Delete this schedule?
+            </p>
+            <p className="mt-2 text-sm text-ink/60">
+              This permanently removes{" "}
+              <span className="font-semibold text-ink">
+                {pendingDelete.name}
+              </span>
+              . This cannot be undone.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button
+                type="button"
+                className="bg-rose-600 hover:bg-rose-700"
+                disabled={deletingId === pendingDelete.id || busy}
+                onClick={() => void remove(pendingDelete)}
+              >
+                {deletingId === pendingDelete.id
+                  ? "Deleting..."
+                  : "Delete schedule"}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={deletingId === pendingDelete.id}
+                onClick={() => setPendingDelete(null)}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

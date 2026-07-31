@@ -157,3 +157,20 @@ export const upsertSchedule = async (payload: {
 
   return schedule;
 };
+
+export const deleteSchedule = async ({
+  ownerEmail,
+  id
+}: {
+  ownerEmail: string;
+  id: string;
+}): Promise<boolean> => {
+  const pool = requirePostgresPool();
+  const res = await pool.query(
+    `DELETE FROM capture_schedules
+     WHERE id = $1 AND owner_email = $2`,
+    [id, ownerEmail]
+  );
+
+  return (res.rowCount ?? 0) > 0;
+};

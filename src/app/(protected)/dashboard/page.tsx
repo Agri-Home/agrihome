@@ -14,6 +14,7 @@ import { getLatestCameraCapture } from "@/lib/services/camera-service";
 import { getMonitoringLog } from "@/lib/services/monitoring-service";
 import { listSchedules } from "@/lib/services/schedule-service";
 import { listTraySystems, listMeshNetworks } from "@/lib/services/topology-service";
+import { getUserPreferences } from "@/lib/services/user-preferences-service";
 import { formatRelativeTimestamp, formatDateTime } from "@/lib/utils";
 
 function trayTone(status: string) {
@@ -78,8 +79,13 @@ function nextStepCopy(input: {
 
 export default async function HomePage() {
   const currentUser = await requireSessionAccountUser();
-  const trays = await listTraySystems(currentUser.email);
+  const [trays, preferences] = await Promise.all([
+    listTraySystems(currentUser.email),
+    getUserPreferences(currentUser.email)
+  ]);
   const focusTray = trays[0];
+  const greetingName =
+    preferences.displayName || currentUser.name || currentUser.email;
 
   const [capture, monitoringLog, meshes, schedules] = await Promise.all([
     focusTray
@@ -104,10 +110,10 @@ export default async function HomePage() {
         <div className="flex items-start justify-between gap-3">
           <div>
             <h1 className="text-2xl font-bold tracking-tight text-ink">
-              Home
+              Hello, {greetingName}
             </h1>
             <p className="mt-0.5 text-sm text-ink/50">
-              How your greenhouse is doing today
+              Here&apos;s how your greenhouse is doing today.
             </p>
           </div>
           <div className="flex items-center gap-2 rounded-full bg-white/80 px-3 py-1.5 text-xs font-semibold shadow-sm ring-1 ring-ink/5 backdrop-blur-sm">
