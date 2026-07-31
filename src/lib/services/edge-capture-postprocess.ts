@@ -27,6 +27,13 @@ export async function postprocessEdgeCapture(input: {
   hingeDeg?: number | null;
   motorMm?: number | null;
 }): Promise<EdgeCapturePostprocessResult> {
+  const hingeDeg =
+    input.hingeDeg ??
+    (input.capture.hingeDeg != null ? Number(input.capture.hingeDeg) : null);
+  const motorMm =
+    input.motorMm ??
+    (input.capture.motorMm != null ? Number(input.capture.motorMm) : null);
+
   const attached = await ensurePlantForEdgeCapture({
     ownerEmail: input.ownerEmail,
     trayId: input.trayId,
@@ -34,7 +41,9 @@ export async function postprocessEdgeCapture(input: {
     capturedAt: input.capture.capturedAt,
     plantId: input.plantId,
     poseOrder: input.poseOrder,
-    slotLabel: input.slotLabel
+    slotLabel: input.slotLabel,
+    hingeDeg,
+    motorMm
   });
 
   if (input.capture.plantId !== attached.plant.id) {
@@ -48,12 +57,6 @@ export async function postprocessEdgeCapture(input: {
   }
 
   let poseUpdated = false;
-  const hingeDeg =
-    input.hingeDeg ??
-    (input.capture.hingeDeg != null ? Number(input.capture.hingeDeg) : null);
-  const motorMm =
-    input.motorMm ??
-    (input.capture.motorMm != null ? Number(input.capture.motorMm) : null);
   if (
     hingeDeg != null &&
     Number.isFinite(hingeDeg) &&

@@ -18,6 +18,60 @@ const parseBoolean = (value: string | undefined, fallback: boolean) => {
   return normalized === "1" || normalized === "true" || normalized === "yes";
 };
 
+type CaptureCropMode = "center" | "leaf" | "off";
+
+const parseCaptureCropMode = (
+  value: string | undefined,
+  fallback: CaptureCropMode
+): CaptureCropMode => {
+  if (value === undefined || value.trim() === "") {
+    return fallback;
+  }
+  const mode = value.trim().toLowerCase();
+  if (
+    mode === "0" ||
+    mode === "false" ||
+    mode === "no" ||
+    mode === "off" ||
+    mode === "none" ||
+    mode === "disable" ||
+    mode === "disabled"
+  ) {
+    return "off";
+  }
+  if (mode.startsWith("leaf")) {
+    return "leaf";
+  }
+  if (mode.startsWith("center") || /^[\d.]+$/.test(mode)) {
+    return "center";
+  }
+  return fallback;
+};
+
+const parseCaptureCropFraction = (
+  value: string | undefined,
+  cropModeRaw: string | undefined,
+  fallback: number
+): number => {
+  let raw = value;
+  if ((raw === undefined || raw.trim() === "") && cropModeRaw) {
+    const crop = cropModeRaw.trim().toLowerCase();
+    if (crop.includes(":")) {
+      raw = crop.split(":", 2)[1]?.trim();
+    } else if (/^[\d.]+$/.test(crop)) {
+      raw = crop;
+    }
+  }
+  if (raw === undefined || raw.trim() === "") {
+    return fallback;
+  }
+  const frac = Number(raw);
+  if (!Number.isFinite(frac) || frac < 0.2 || frac > 1) {
+    return fallback;
+  }
+  return frac;
+};
+
 const firebaseClientConfig: FirebaseClientConfig = {
   apiKey:
     process.env.NEXT_PUBLIC_FIREBASE_API_KEY ?? process.env.FIREBASE_API_KEY ?? "",
@@ -138,6 +192,22 @@ export const env = {
     snapshotTimeoutMs: parseNumber(
       process.env.DEVICE_SNAPSHOT_TIMEOUT_MS,
       8_000
+    ),
+    /**
+     * Post-capture framing for optional server-side crop.
+     * Default off so Pi-cropped uploads are not double-cropped. Streamer-direct
+     * capture always applies center crop regardless. Set center|leaf when using
+     * older Pi agents that do not crop before ingest.
+     */
+    captureCrop: parseCaptureCropMode(
+      process.env.DEVICE_CAPTURE_CROP ?? process.env.AGRIHOME_CAPTURE_CROP,
+      "off"
+    ),
+    captureCropFraction: parseCaptureCropFraction(
+      process.env.DEVICE_CAPTURE_CROP_FRACTION ??
+        process.env.AGRIHOME_CAPTURE_CROP_FRACTION,
+      process.env.DEVICE_CAPTURE_CROP ?? process.env.AGRIHOME_CAPTURE_CROP,
+      0.6
     )
   }
 };

@@ -341,8 +341,8 @@ export function TrayEdgeDevicePanel({
         setPreviewUrl(json.data.imageUrl);
         const plantNote = resolvedPlantId
           ? json.data.plantCreated
-            ? " New plant added to this tray."
-            : " Plant image updated."
+            ? " New plant for this actuator position."
+            : " Attached to plant at this position."
           : "";
         const poseNote = directPose
           ? ` Pose saved: hinge ${directPose.hingeDeg}° · motor ${directPose.motorMm} mm.`
@@ -374,7 +374,7 @@ export function TrayEdgeDevicePanel({
           setPreviewUrl(polled.imageUrl);
           setMessage(
             pose
-              ? `Picture arrived · hinge ${pose.hingeDeg}° · motor ${pose.motorMm} mm (saved to plant pose)`
+              ? `Picture arrived · hinge ${pose.hingeDeg}° · motor ${pose.motorMm} mm (plant matched by position)`
               : "Picture arrived from the Pi agent"
           );
         } else if (polled?.agentError) {
@@ -829,7 +829,7 @@ export function TrayEdgeDevicePanel({
       setMessage(
         json.message ??
           (json.data?.plantCreated
-            ? "Pi0 photo saved; new plant created"
+            ? "Pi0 photo saved; new plant for this position"
             : "Pi0 photo saved")
       );
       const url =
@@ -1468,7 +1468,9 @@ export function TrayEdgeDevicePanel({
                 value={plantId}
                 onChange={(e) => setPlantId(e.target.value)}
               >
-                <option value="">Auto-create / attach plant</option>
+                <option value="">
+                  Auto by position (Hinge° / Motor mm)
+                </option>
                 {plantId && !plants.some((p) => p.id === plantId) ? (
                   <option value={plantId}>New plant (just captured)</option>
                 ) : null}
@@ -1503,6 +1505,11 @@ export function TrayEdgeDevicePanel({
               Get position
             </Button>
           </div>
+          <p className="text-xs text-ink/45">
+            Leave plant on Auto to match or create by rounded hinge° / motor mm
+            (same stop → same plant, health trend accumulates). Pick a plant to
+            force attach. Use Get position before Take picture when possible.
+          </p>
 
           <div className="flex flex-wrap items-end gap-2">
             <label className="block w-28 text-sm">
