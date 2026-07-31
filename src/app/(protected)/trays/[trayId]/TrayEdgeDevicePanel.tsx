@@ -892,7 +892,12 @@ export function TrayEdgeDevicePanel({
         commandId
       });
       if (polled.status === "failed") {
-        throw new Error(polled.errorMessage ?? "Stepper move failed on Pi");
+        const detail = polled.errorMessage ?? "Stepper move failed on Pi";
+        throw new Error(
+          /must home axis first/i.test(detail)
+            ? `${detail} — use Home axes (G28), then try again.`
+            : detail
+        );
       }
       if (polled.status === "timeout") {
         setMessage(
@@ -963,7 +968,12 @@ export function TrayEdgeDevicePanel({
         commandId
       });
       if (polled.status === "failed") {
-        throw new Error(polled.errorMessage ?? "G-code failed on Pi");
+        const detail = polled.errorMessage ?? "G-code failed on Pi";
+        throw new Error(
+          /must home axis first/i.test(detail)
+            ? `${detail} — use Home axes (G28), then try again.`
+            : detail
+        );
       }
       if (polled.status === "timeout") {
         setMessage(
@@ -979,6 +989,60 @@ export function TrayEdgeDevicePanel({
       );
     } catch (e) {
       setError(e instanceof Error ? e.message : "G-code failed");
+      setMessage(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Queue Klipper G28 so moves stop failing with “Must home axis first”. */
+  async function homeAxes() {
+    if (!device) return;
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const res = await fetch(
+        `/api/devices/${encodeURIComponent(device.id)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "homeAxes",
+            trayId
+          })
+        }
+      );
+      const json = (await res.json()) as {
+        message?: string;
+        error?: { message?: string };
+        data?: { id?: string };
+      };
+      if (!res.ok) {
+        throw new Error(json.error?.message ?? "Home failed");
+      }
+      const commandId = json.data?.id?.trim();
+      if (!commandId) {
+        throw new Error("Home command was not queued");
+      }
+      setMessage("Homing axes (G28)…");
+      const polled = await pollQueuedCommand({
+        deviceId: device.id,
+        commandId
+      });
+      if (polled.status === "failed") {
+        throw new Error(polled.errorMessage ?? "Home failed on Pi");
+      }
+      if (polled.status === "timeout") {
+        setMessage(
+          (json.message ?? "Home queued") +
+            " Waiting for the edge agent — keep the agent online."
+        );
+        return;
+      }
+      setMessage("Homed (G28). You can Move steppers or Run G-code now.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Home failed");
       setMessage(null);
     } finally {
       setBusy(false);
@@ -1301,8 +1365,26 @@ export function TrayEdgeDevicePanel({
               Manual capture, position, and Klipper stepper / G-code tests.
               Moves use Moonraker{" "}
               <span className="font-mono">G0 X=hinge Y=motor</span> (same
-              mapping as Get position).
+              mapping as Get position). If Klipper says “Must home axis
+              first”, use Home axes before moving.
             </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              disabled={
+                busy ||
+                Boolean(device.revokedAt) ||
+                device.status === "offline"
+              }
+              onClick={() => void homeAxes()}
+            >
+              Home axes
+            </Button>
+            <span className="text-xs text-ink/45">
+              Sends <span className="font-mono">G28</span> via Moonraker
+            </span>
           </div>
 
           <div className="flex flex-wrap items-end gap-2">

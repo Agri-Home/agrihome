@@ -75,9 +75,10 @@ export async function GET(request: Request, context: RouteContext) {
 
 /**
  * POST /api/devices/[deviceId]
- * Actions: capture | getPosition | moveActuators | runGcode | linkTray |
- *          revoke | delete | rotateKey | updateLimits | updateKlipperUrl |
- *          updateCameraServerUrl | cameraServo | cameraLed | cameraPhoto
+ * Actions: capture | getPosition | moveActuators | runGcode | homeAxes |
+ *          linkTray | revoke | delete | rotateKey | updateLimits |
+ *          updateKlipperUrl | updateCameraServerUrl | cameraServo |
+ *          cameraLed | cameraPhoto
  */
 export async function POST(request: Request, context: RouteContext) {
   const auth = await requireApiAccountUser();
@@ -130,6 +131,7 @@ export async function POST(request: Request, context: RouteContext) {
       "getPosition",
       "moveActuators",
       "runGcode",
+      "homeAxes",
       "cameraServo",
       "cameraLed",
       "cameraPhoto"
@@ -332,6 +334,46 @@ export async function POST(request: Request, context: RouteContext) {
         message: body.dryRun
           ? "Dry-run G-code queued for the edge agent."
           : "G-code queued for the edge agent (Moonraker).",
+        queued: true,
+        data: cmd
+      });
+    }
+
+    if (body.action === "homeAxes") {
+      if (device.revokedAt) {
+        return apiErrorResponse(
+          API_ERROR_CODES.FORBIDDEN,
+          "Device is revoked",
+          403
+        );
+      }
+      // Optional override (e.g. "G28 X Y"); default full home.
+      const gcode = ((body.gcode ?? "G28") as string).trim() || "G28";
+      if (gcode.length > 4000) {
+        return apiErrorResponse(
+          API_ERROR_CODES.BAD_REQUEST,
+          "gcode script is too long (max 4000 chars)",
+          400
+        );
+      }
+      const trayId = await resolveLinkedTrayId(
+        deviceId,
+        auth.email,
+        body.trayId
+      );
+      const cmd = await enqueueEdgeCommand({
+        deviceId,
+        trayId,
+        commandType: "run_gcode",
+        payload: {
+          gcode,
+          dryRun: false,
+          purpose: "home_axes",
+          requestedBy: auth.email
+        }
+      });
+      return NextResponse.json({
+        message: `Homing queued (${gcode}). Required before moves if Klipper reports “Must home axis first”.`,
         queued: true,
         data: cmd
       });
@@ -596,7 +638,7 @@ export async function POST(request: Request, context: RouteContext) {
 
     return apiErrorResponse(
       API_ERROR_CODES.BAD_REQUEST,
-      "Unknown action. Use capture, getPosition, moveActuators, runGcode, linkTray, revoke, delete, rotateKey, updateLimits, updateKlipperUrl, updateCameraServerUrl, cameraServo, cameraLed, or cameraPhoto.",
+      "Unknown action. Use capture, getPosition, moveActuators, runGcode, homeAxes, linkTray, revoke, delete, rotateKey, updateLimits, updateKlipperUrl, updateCameraServerUrl, cameraServo, cameraLed, or cameraPhoto.",
       400
     );
   } catch (error) {
