@@ -127,8 +127,9 @@ export async function POST(request: Request, context: RouteContext) {
       body.klipperUrl = body.klipperUrl ?? body.moonrakerUrl;
     }
 
+    // Manual single-shot capture + Pi/Klipper controls stay behind Developer tools.
+    // Tray-wide pose scan (`capture` + `runPoses: true`) is a primary operator action.
     const developerActions = new Set([
-      "capture",
       "getPosition",
       "moveActuators",
       "runGcode",
@@ -138,7 +139,10 @@ export async function POST(request: Request, context: RouteContext) {
       "cameraLed",
       "cameraPhoto"
     ]);
-    if (body.action && developerActions.has(body.action)) {
+    const requiresDeveloper =
+      (body.action && developerActions.has(body.action)) ||
+      (body.action === "capture" && !Boolean(body.runPoses));
+    if (requiresDeveloper) {
       const allowed = await getDeveloperMode(auth.email);
       if (!allowed) {
         return apiErrorResponse(

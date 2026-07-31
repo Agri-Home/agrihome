@@ -68,6 +68,45 @@ export const getLatestCameraCapture = async (
   return rows[0] ? mapCaptureRow(rows[0]) : null;
 };
 
+/** Recent tray captures (optionally since a timestamp). */
+export const listTrayCapturesSince = async (
+  ownerEmail: string,
+  trayId: string,
+  opts?: {
+    sinceIso?: string;
+    limit?: number;
+  }
+): Promise<CameraCapture[]> => {
+  const values: Array<string | number> = [ownerEmail, trayId];
+  const clauses = [`t.owner_email = $1`, `c.tray_id = $2`];
+
+  if (opts?.sinceIso) {
+    values.push(opts.sinceIso);
+    clauses.push(`c.captured_at >= $${values.length}::timestamptz`);
+  }
+
+  const limit = Math.min(Math.max(opts?.limit ?? 100, 1), 200);
+  values.push(limit);
+
+  const rows = await queryRows<CameraCaptureRow>(
+    `SELECT c.id AS id, c.tray_id AS tray_id, c.tray_name AS tray_name,
+            c.device_id AS device_id, c.image_url AS image_url,
+            c.captured_at AS captured_at, c.source AS source,
+            c.status AS status, c.notes AS notes,
+            c.plant_id AS plant_id, c.hinge_deg AS hinge_deg,
+            c.motor_mm AS motor_mm, c.pose_order AS pose_order,
+            c.command_id AS command_id
+     FROM camera_captures c
+     INNER JOIN tray_systems t ON t.id = c.tray_id
+     WHERE ${clauses.join(" AND ")}
+     ORDER BY c.pose_order ASC NULLS LAST, c.captured_at ASC
+     LIMIT $${values.length}`,
+    values
+  );
+
+  return rows.map(mapCaptureRow);
+};
+
 export const ingestCameraCapture = async (
   payload: Partial<CameraCapture> & {
     deviceId: string;

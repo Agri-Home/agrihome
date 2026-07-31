@@ -198,7 +198,11 @@ export async function upsertPoseSequence(input: {
   return mapSequence(rows[0]!);
 }
 
-/** Generate one pose per plant in the tray grid (default hinge/motor = 0). */
+/**
+ * Generate one pose per plant in the tray grid.
+ * Reuses hinge/motor from the active sequence or latest stamped capture when
+ * known so "Generate" / auto-scan does not wipe taught positions.
+ */
 export async function generatePosesFromPlantLayout(input: {
   ownerEmail: string;
   trayId: string;
@@ -208,6 +212,7 @@ export async function generatePosesFromPlantLayout(input: {
   motorMm?: number;
   dwellMs?: number;
 }): Promise<CapturePoseSequence> {
+  const owner = input.ownerEmail.toLowerCase();
   const plants = await queryRows<{
     id: string;
     slot_label: string;
@@ -218,25 +223,75 @@ export async function generatePosesFromPlantLayout(input: {
      FROM plants
      WHERE tray_id = $1 AND owner_email = $2
      ORDER BY row_index ASC, column_index ASC, slot_label ASC`,
-    [input.trayId, input.ownerEmail.toLowerCase()]
+    [input.trayId, owner]
   );
 
-  const poses = plants.map((p, i) => ({
-    poseOrder: i + 1,
-    slotLabel: p.slot_label,
-    row: Number(p.row_index),
-    column: Number(p.column_index),
-    plantId: p.id,
-    hingeDeg: input.hingeDeg ?? 0,
-    motorMm: input.motorMm ?? 0,
-    dwellMs: input.dwellMs ?? 800
-  }));
+  const sequences = await listPoseSequencesForTray(owner, input.trayId);
+  const active = sequences.find((s) => s.active) ?? sequences[0] ?? null;
+  const knownByPlant = new Map(
+    (active?.poses ?? [])
+      .filter((p) => p.plantId)
+      .map((p) => [p.plantId as string, p])
+  );
+
+  const capturePoses = await queryRows<{
+    plant_id: string;
+    hinge_deg: string | number | null;
+    motor_mm: string | number | null;
+  }>(
+    `SELECT DISTINCT ON (plant_id)
+        plant_id, hinge_deg, motor_mm
+     FROM camera_captures
+     WHERE tray_id = $1
+       AND plant_id IS NOT NULL
+       AND hinge_deg IS NOT NULL
+       AND motor_mm IS NOT NULL
+     ORDER BY plant_id, captured_at DESC`,
+    [input.trayId]
+  );
+  const captureByPlant = new Map(
+    capturePoses.map((r) => [
+      r.plant_id,
+      {
+        hingeDeg: Number(r.hinge_deg),
+        motorMm: Number(r.motor_mm)
+      }
+    ])
+  );
+
+  const poses = plants.map((p, i) => {
+    const known = knownByPlant.get(p.id);
+    const fromCapture = captureByPlant.get(p.id);
+    const hinge =
+      input.hingeDeg ??
+      known?.hingeDeg ??
+      (fromCapture && Number.isFinite(fromCapture.hingeDeg)
+        ? fromCapture.hingeDeg
+        : 0);
+    const motor =
+      input.motorMm ??
+      known?.motorMm ??
+      (fromCapture && Number.isFinite(fromCapture.motorMm)
+        ? fromCapture.motorMm
+        : 0);
+    return {
+      poseOrder: i + 1,
+      slotLabel: p.slot_label,
+      row: Number(p.row_index),
+      column: Number(p.column_index),
+      plantId: p.id,
+      hingeDeg: hinge,
+      motorMm: motor,
+      dwellMs: input.dwellMs ?? known?.dwellMs ?? 800
+    };
+  });
 
   return upsertPoseSequence({
-    ownerEmail: input.ownerEmail,
+    ownerEmail: owner,
     trayId: input.trayId,
-    deviceId: input.deviceId,
-    name: input.name ?? "Generated from plant layout",
+    deviceId: input.deviceId ?? active?.deviceId,
+    name: input.name ?? active?.name ?? "Generated from plant layout",
+    sequenceId: active?.id,
     active: true,
     poses
   });

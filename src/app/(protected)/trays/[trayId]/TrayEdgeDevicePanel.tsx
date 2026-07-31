@@ -39,6 +39,51 @@ type PoseSequence = {
   }>;
 };
 
+type TraySchedule = {
+  id: string;
+  scopeType: "tray" | "mesh";
+  scopeId: string;
+  name: string;
+  intervalMinutes: number;
+  active: boolean;
+  nextRunAt: string;
+  lastRunAt?: string;
+  destination: "computer-vision-backend" | "raspberry-pi-edge";
+};
+
+type ScanPlantResult = {
+  plantId: string | null;
+  plantName: string | null;
+  slotLabel: string | null;
+  poseOrder: number | null;
+  hingeDeg: number | null;
+  motorMm: number | null;
+  captureId: string | null;
+  imageUrl: string | null;
+  capturedAt: string | null;
+  status: "ok" | "failed" | "pending" | "skipped";
+  diagnosis: string | null;
+  confidence: number | null;
+  error: string | null;
+};
+
+type ScanSummary = {
+  trayId: string;
+  since: string;
+  durationMs: number | null;
+  posesTotal: number | null;
+  posesSucceeded: number | null;
+  failedPoseOrders: number[];
+  lastError: string | null;
+  plants: ScanPlantResult[];
+};
+
+const SCAN_INTERVAL_PRESETS = [
+  { label: "Every 6 hours", minutes: 360 },
+  { label: "Every 12 hours", minutes: 720 },
+  { label: "Daily", minutes: 1440 }
+] as const;
+
 function statusLabel(status: string, revokedAt: string | null) {
   if (revokedAt) return "revoked";
   return status;
@@ -87,19 +132,30 @@ export function TrayEdgeDevicePanel({
     source?: string;
     rawXy?: string;
   } | null>(null);
+  const [traySchedule, setTraySchedule] = useState<TraySchedule | null>(null);
+  const [scheduleInterval, setScheduleInterval] = useState(360);
+  const [scheduleActive, setScheduleActive] = useState(false);
+  const [scanSummary, setScanSummary] = useState<ScanSummary | null>(null);
+  const [scanning, setScanning] = useState(false);
 
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [devicesRes, posesRes] = await Promise.all([
+      const [devicesRes, posesRes, schedulesRes] = await Promise.all([
         fetch("/api/devices"),
-        fetch(`/api/trays/${encodeURIComponent(trayId)}/poses`)
+        fetch(`/api/trays/${encodeURIComponent(trayId)}/poses`),
+        fetch(
+          `/api/schedules?scopeType=tray&scopeId=${encodeURIComponent(trayId)}`
+        )
       ]);
       const devicesJson = (await devicesRes.json()) as {
         data?: DeviceSummary[];
         error?: { message?: string };
       };
       const posesJson = (await posesRes.json()) as { data?: PoseSequence[] };
+      const schedulesJson = (await schedulesRes.json()) as {
+        data?: TraySchedule[];
+      };
 
       if (!devicesRes.ok) {
         throw new Error(devicesJson.error?.message ?? "Could not load devices");
@@ -114,6 +170,16 @@ export function TrayEdgeDevicePanel({
       setKlipperUrlDraft(linked?.klipperUrl?.trim() ?? "");
       setCameraServerUrlDraft(linked?.cameraServerUrl?.trim() ?? "");
       setSequences(posesJson.data ?? []);
+
+      const edgeSchedules = (schedulesJson.data ?? []).filter(
+        (s) => s.destination === "raspberry-pi-edge"
+      );
+      const sched = edgeSchedules[0] ?? schedulesJson.data?.[0] ?? null;
+      setTraySchedule(sched);
+      if (sched) {
+        setScheduleInterval(sched.intervalMinutes);
+        setScheduleActive(sched.active);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load device panel");
     }
@@ -194,12 +260,15 @@ export function TrayEdgeDevicePanel({
   async function pollQueuedCommand(input: {
     deviceId: string;
     commandId: string;
+    /** Extra poll ticks for long pose walks (default 10 ≈ 15s). */
+    maxTicks?: number;
   }): Promise<{
     status: "completed" | "failed" | "timeout";
     result?: Record<string, unknown> | null;
     errorMessage?: string;
   }> {
-    for (let i = 0; i < 10; i++) {
+    const maxTicks = input.maxTicks ?? 10;
+    for (let i = 0; i < maxTicks; i++) {
       await new Promise((r) => setTimeout(r, i === 0 ? 800 : 1500));
       try {
         const cmdRes = await fetch(
@@ -527,6 +596,221 @@ export function TrayEdgeDevicePanel({
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Generate failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function ensurePoseSequence(): Promise<PoseSequence | null> {
+    const current = sequences.find((s) => s.active) ?? sequences[0] ?? null;
+    const plantIds = new Set(plants.map((p) => p.id));
+    const coversPlants =
+      current &&
+      current.poses.length > 0 &&
+      (plantIds.size === 0 ||
+        current.poses.some((p) => p.plantId && plantIds.has(p.plantId)));
+
+    if (coversPlants && current) {
+      return current;
+    }
+
+    const res = await fetch(`/api/trays/${encodeURIComponent(trayId)}/poses`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        generateFromLayout: true,
+        deviceId: device?.id,
+        name: "Generated from plant layout"
+      })
+    });
+    const json = (await res.json()) as {
+      error?: { message?: string };
+      data?: PoseSequence;
+    };
+    if (!res.ok) {
+      throw new Error(json.error?.message ?? "Could not generate poses");
+    }
+    await load();
+    return json.data ?? null;
+  }
+
+  async function fetchScanSummary(input: {
+    sinceIso: string;
+    startedAtMs: number;
+    commandResult?: Record<string, unknown> | null;
+  }): Promise<ScanSummary | null> {
+    // Disease hook is fire-and-forget; brief wait then one retry.
+    for (const delayMs of [1500, 4000]) {
+      await new Promise((r) => setTimeout(r, delayMs));
+      try {
+        const params = new URLSearchParams({
+          since: input.sinceIso,
+          startedAtMs: String(input.startedAtMs)
+        });
+        if (input.commandResult) {
+          params.set("commandResult", JSON.stringify(input.commandResult));
+        }
+        const res = await fetch(
+          `/api/trays/${encodeURIComponent(trayId)}/scan-summary?${params}`
+        );
+        if (!res.ok) continue;
+        const json = (await res.json()) as { data?: ScanSummary };
+        if (json.data) return json.data;
+      } catch {
+        // retry
+      }
+    }
+    return null;
+  }
+
+  async function scanAllPlants() {
+    if (!device) return;
+    if (plants.length === 0) {
+      setError("Add plants to this tray before scanning.");
+      return;
+    }
+    setScanning(true);
+    setBusy(true);
+    setMessage(null);
+    setError(null);
+    setScanSummary(null);
+    const startedAt = Date.now();
+    const sinceIso = new Date(startedAt).toISOString();
+    try {
+      const seq = await ensurePoseSequence();
+      if (!seq || seq.poses.length === 0) {
+        throw new Error(
+          "No camera stops available. Generate poses from layout first."
+        );
+      }
+      const untaught = seq.poses.filter(
+        (p) => p.hingeDeg === 0 && p.motorMm === 0
+      );
+      if (untaught.length === seq.poses.length) {
+        setMessage(
+          `Warning: all ${seq.poses.length} stops are still at hinge 0° / motor 0 mm. Teach positions with Get position first for useful motion. Queuing scan anyway…`
+        );
+      } else {
+        setMessage(
+          `Scanning ${seq.poses.length} plants… Home axes first if Klipper is not already homed. Waiting for the Pi…`
+        );
+      }
+
+      const res = await fetch(
+        `/api/devices/${encodeURIComponent(device.id)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "capture",
+            trayId,
+            runPoses: true
+          })
+        }
+      );
+      const json = (await res.json()) as {
+        message?: string;
+        error?: { message?: string };
+        data?: { id?: string };
+      };
+      if (!res.ok) {
+        throw new Error(json.error?.message ?? "Could not queue tray scan");
+      }
+      const commandId = json.data?.id?.trim();
+      if (!commandId) {
+        throw new Error("Scan command was not queued");
+      }
+
+      // ~1.5s per tick; allow ~8s per plant + heartbeat slack
+      const maxTicks = Math.min(
+        120,
+        Math.max(40, seq.poses.length * 6)
+      );
+      const polled = await pollQueuedCommand({
+        deviceId: device.id,
+        commandId,
+        maxTicks
+      });
+
+      if (polled.status === "failed") {
+        throw new Error(polled.errorMessage || "Tray scan failed on the Pi");
+      }
+      if (polled.status === "timeout") {
+        setMessage(
+          "Scan still running on the Pi. Summary will refresh from recent captures…"
+        );
+      }
+
+      const summary = await fetchScanSummary({
+        sinceIso,
+        startedAtMs: startedAt,
+        commandResult: polled.result ?? null
+      });
+      if (summary) {
+        setScanSummary(summary);
+        const ok = summary.posesSucceeded ?? 0;
+        const total = summary.posesTotal ?? seq.poses.length;
+        const secs =
+          summary.durationMs != null
+            ? Math.round(summary.durationMs / 1000)
+            : Math.round((Date.now() - startedAt) / 1000);
+        setMessage(
+          `Tray scan finished: ${ok}/${total} plants captured in ${secs}s` +
+            (summary.lastError ? ` (some failures: ${summary.lastError})` : "")
+        );
+      } else {
+        setMessage(
+          polled.status === "completed"
+            ? "Tray scan completed. Open plants to see disease results."
+            : (json.message ?? "Tray scan queued")
+        );
+      }
+      await load();
+      router.refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Tray scan failed");
+      setMessage(null);
+    } finally {
+      setScanning(false);
+      setBusy(false);
+    }
+  }
+
+  async function saveTraySchedule() {
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/schedules", {
+        method: traySchedule ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: traySchedule?.id,
+          scopeType: "tray",
+          scopeId: trayId,
+          name: traySchedule?.name ?? "Tray plant scan",
+          intervalMinutes: scheduleInterval,
+          active: scheduleActive,
+          destination: "raspberry-pi-edge"
+        })
+      });
+      const json = (await res.json()) as {
+        data?: TraySchedule;
+        error?: string;
+      };
+      if (!res.ok || !json.data) {
+        throw new Error(json.error ?? "Could not save schedule");
+      }
+      setTraySchedule(json.data);
+      setScheduleInterval(json.data.intervalMinutes);
+      setScheduleActive(json.data.active);
+      setMessage(
+        json.data.active
+          ? `Schedule saved · next run ${new Date(json.data.nextRunAt).toLocaleString()}`
+          : "Schedule saved (paused)"
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Schedule save failed");
     } finally {
       setBusy(false);
     }
@@ -1624,39 +1908,136 @@ export function TrayEdgeDevicePanel({
         </div>
       ) : null}
 
-      <div className="flex flex-wrap items-end gap-2 border-t border-ink/10 pt-4">
+      <div className="space-y-3 border-t border-ink/10 pt-4">
+        <div>
+          <h3 className="text-sm font-semibold text-ink">Scan all plants</h3>
+          <p className="mt-0.5 text-xs text-ink/45">
+            Moves to each plant pose, captures a photo, and runs disease
+            detection on ingest. Home axes once before the first run if Klipper
+            reports axes unhomed. Set{" "}
+            <span className="font-mono">AGRIHOME_ACTUATOR_DRY_RUN=0</span> on
+            the Pi for real motion.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-end gap-2">
+          <Button
+            type="button"
+            disabled={
+              busy ||
+              Boolean(device.revokedAt) ||
+              device.status === "offline" ||
+              plants.length === 0
+            }
+            onClick={() => void scanAllPlants()}
+          >
+            {scanning ? "Scanning…" : "Scan all plants"}
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={busy}
+            onClick={() => void generatePoses()}
+          >
+            Generate poses from layout
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            className="text-red-700 hover:bg-red-50 hover:text-red-800"
+            disabled={busy}
+            onClick={() => void unregisterDevice()}
+          >
+            Unregister device
+          </Button>
+        </div>
         {!developerMode ? (
-          <p className="mb-1 w-full text-xs text-ink/45">
-            Take picture, Get position, and stepper / G-code controls are under{" "}
+          <p className="text-xs text-ink/45">
+            Manual Take picture, Get position, and stepper / G-code controls are
+            under{" "}
             <a href="/settings" className="underline underline-offset-2">
               Settings → Developer tools
             </a>
             .
           </p>
         ) : null}
-        <Button
-          type="button"
-          variant="secondary"
-          disabled={busy}
-          onClick={() => void generatePoses()}
-        >
-          Generate poses from layout
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          className="text-red-700 hover:bg-red-50 hover:text-red-800"
-          disabled={busy}
-          onClick={() => void unregisterDevice()}
-        >
-          Unregister device
-        </Button>
+      </div>
+
+      <div className="space-y-3 border-t border-ink/10 pt-4">
+        <div>
+          <h3 className="text-sm font-semibold text-ink">
+            Automatic tray scan
+          </h3>
+          <p className="mt-0.5 text-xs text-ink/45">
+            Queues the same pose walk on a schedule (
+            <span className="font-mono">raspberry-pi-edge</span>). Production
+            needs the capture schedule runner cron on the AgriHome host.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="block min-w-[10rem] text-sm">
+            <span className="text-ink/60">Interval</span>
+            <select
+              className="mt-1 w-full rounded-md border border-ink/15 bg-white px-2 py-1.5 text-sm"
+              value={scheduleInterval}
+              onChange={(e) => setScheduleInterval(Number(e.target.value))}
+              disabled={busy}
+            >
+              {SCAN_INTERVAL_PRESETS.map((p) => (
+                <option key={p.minutes} value={p.minutes}>
+                  {p.label}
+                </option>
+              ))}
+              {SCAN_INTERVAL_PRESETS.every(
+                (p) => p.minutes !== scheduleInterval
+              ) ? (
+                <option value={scheduleInterval}>
+                  Every {scheduleInterval} min
+                </option>
+              ) : null}
+            </select>
+          </label>
+          <label className="flex items-center gap-2 pb-1.5 text-sm text-ink/70">
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-ink/20 text-leaf focus:ring-leaf"
+              checked={scheduleActive}
+              onChange={(e) => setScheduleActive(e.target.checked)}
+              disabled={busy}
+            />
+            Enabled
+          </label>
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={busy || Boolean(device.revokedAt)}
+            onClick={() => void saveTraySchedule()}
+          >
+            Save schedule
+          </Button>
+        </div>
+        {traySchedule ? (
+          <p className="text-xs text-ink/50">
+            Last run:{" "}
+            {traySchedule.lastRunAt
+              ? new Date(traySchedule.lastRunAt).toLocaleString()
+              : "never"}
+            {" · "}
+            Next:{" "}
+            {traySchedule.active
+              ? new Date(traySchedule.nextRunAt).toLocaleString()
+              : "paused"}
+          </p>
+        ) : (
+          <p className="text-xs text-ink/45">
+            No edge schedule yet for this tray.
+          </p>
+        )}
       </div>
 
       {device.status === "offline" && !device.revokedAt && (
         <p className="text-sm text-amber-800">
           Device looks offline (no recent heartbeat). Ensure the AgriHome agent
-          is running on the Pi before taking a picture.
+          is running on the Pi before scanning.
         </p>
       )}
 
@@ -1677,9 +2058,78 @@ export function TrayEdgeDevicePanel({
       ) : (
         <p className="text-sm text-ink/50">
           No camera stops yet. Add plants, then generate a pose sequence from
-          the plant layout.
+          the plant layout (or run Scan all plants to auto-generate).
         </p>
       )}
+
+      {scanSummary ? (
+        <div className="space-y-2 border-t border-ink/10 pt-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h3 className="text-sm font-semibold text-ink">Run summary</h3>
+            <p className="text-xs text-ink/50">
+              {scanSummary.posesSucceeded ?? 0}/{scanSummary.posesTotal ?? 0}{" "}
+              captured
+              {scanSummary.durationMs != null
+                ? ` · ${Math.round(scanSummary.durationMs / 1000)}s`
+                : ""}
+            </p>
+          </div>
+          <ul className="divide-y divide-ink/10 border border-ink/10">
+            {scanSummary.plants.map((p, i) => (
+              <li
+                key={`${p.plantId ?? "p"}-${p.poseOrder ?? i}`}
+                className="flex gap-3 px-3 py-2 text-sm"
+              >
+                {p.imageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={p.imageUrl}
+                    alt=""
+                    className="h-12 w-12 shrink-0 object-cover"
+                  />
+                ) : (
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center bg-ink/[0.04] text-[10px] text-ink/40">
+                    —
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-ink">
+                    {p.slotLabel || p.plantName || `Stop ${p.poseOrder ?? "?"}`}
+                    {p.plantId ? (
+                      <>
+                        {" "}
+                        <a
+                          href={`/plants/${encodeURIComponent(p.plantId)}`}
+                          className="text-xs font-normal text-ink/45 underline underline-offset-2"
+                        >
+                          open
+                        </a>
+                      </>
+                    ) : null}
+                  </p>
+                  <p className="text-xs text-ink/50">
+                    hinge {p.hingeDeg ?? "—"}° · motor {p.motorMm ?? "—"} mm ·{" "}
+                    {p.status}
+                  </p>
+                  {p.status === "ok" ? (
+                    <p className="text-xs text-ink/70">
+                      {p.diagnosis
+                        ? `${p.diagnosis}${
+                            p.confidence != null
+                              ? ` (${Math.round(p.confidence * 100)}%)`
+                              : ""
+                          }`
+                        : "Disease result pending…"}
+                    </p>
+                  ) : p.error ? (
+                    <p className="text-xs text-red-700">{p.error}</p>
+                  ) : null}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       {error && <p className="text-sm text-red-700">{error}</p>}
       {message && (
