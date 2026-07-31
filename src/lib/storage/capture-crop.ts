@@ -1,6 +1,9 @@
+import sharp from "sharp";
+
 import { env } from "@/lib/config/env";
 
 export type CaptureCropMode = "center" | "leaf" | "off";
+export type CaptureRotationDegrees = 0 | 90 | 180 | 270;
 
 /**
  * Parse DEVICE_CAPTURE_CROP / AGRIHOME_CAPTURE_CROP style values.
@@ -58,6 +61,20 @@ export function parseCaptureCropFraction(
   return frac;
 }
 
+export function parseCaptureRotation(
+  raw: string | undefined,
+  fallback: CaptureRotationDegrees = 180
+): CaptureRotationDegrees {
+  if (raw === undefined || raw.trim() === "") {
+    return fallback;
+  }
+  const deg = Number(raw.trim());
+  if (deg === 0 || deg === 90 || deg === 180 || deg === 270) {
+    return deg;
+  }
+  return fallback;
+}
+
 type CropBox = { left: number; top: number; width: number; height: number };
 
 function centerSquareBox(
@@ -82,8 +99,7 @@ function centerSquareBox(
  * callers fall back to center crop (no ML leaf segmenter in-repo).
  */
 async function leafSaliencyBox(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  sharpInstance: any,
+  image: ReturnType<typeof sharp>,
   width: number,
   height: number,
   fraction: number
@@ -92,13 +108,13 @@ async function leafSaliencyBox(
   const scale = Math.min(1, maxSide / Math.max(width, height));
   const sw = Math.max(1, Math.round(width * scale));
   const sh = Math.max(1, Math.round(height * scale));
-  const { data, info } = await sharpInstance
+  const { data, info } = await image
     .clone()
     .resize(sw, sh)
     .removeAlpha()
     .raw()
     .toBuffer({ resolveWithObject: true });
-  const channels = info.channels as number;
+  const channels = info.channels;
   const xs: number[] = [];
   const ys: number[] = [];
   for (let y = 0; y < info.height; y += 1) {
@@ -154,47 +170,68 @@ async function leafSaliencyBox(
 }
 
 /**
- * Center (or best-effort leaf) square crop for edge capture buffers.
- * Fail-soft: returns the original buffer on any error.
+ * Server-side capture framing (source of truth before save + disease detection).
  *
- * Used for server-direct streamer captures and as an optional ingest safety net.
- * Pi agent / camera_server already crop before upload when updated.
+ * Order: decode → rotate (DEVICE_CAPTURE_ROTATION) → center/leaf crop → JPEG.
+ * Pi agents should upload raw stills (AGRIHOME_CAPTURE_ROTATION=0, crop=off)
+ * so this pipeline is not double-applied.
+ *
+ * Fail-soft: returns the original buffer on any error.
  */
-export async function cropCaptureImageBuffer(
+export async function prepareCaptureImageBuffer(
   buffer: Buffer,
   options?: {
+    rotation?: CaptureRotationDegrees;
     mode?: CaptureCropMode;
     fraction?: number;
   }
 ): Promise<Buffer> {
+  const rotation = options?.rotation ?? env.device.captureRotation;
   const mode = options?.mode ?? env.device.captureCrop;
   const fraction = options?.fraction ?? env.device.captureCropFraction;
-  if (mode === "off" || fraction >= 0.999 || buffer.length === 0) {
+  const cropEnabled = mode !== "off" && fraction < 0.999;
+
+  if (buffer.length === 0 || (rotation === 0 && !cropEnabled)) {
     return buffer;
   }
 
   try {
-    const sharp = (await import("sharp")).default;
-    const image = sharp(buffer, { failOn: "none" });
-    const meta = await image.metadata();
-    const width = meta.width ?? 0;
-    const height = meta.height ?? 0;
-    if (width < 2 || height < 2) {
-      return buffer;
+    // Materialize after rotate so crop boxes use upright pixel dimensions.
+    let pipeline = sharp(buffer, { failOn: "none" });
+    if (rotation !== 0) {
+      pipeline = pipeline.rotate(rotation);
+    } else {
+      // Apply EXIF Orientation when no mount correction is configured.
+      pipeline = pipeline.rotate();
     }
 
+    const { data: rotatedBytes, info } = await pipeline
+      .jpeg({ quality: 90 })
+      .toBuffer({ resolveWithObject: true });
+
+    const width = info.width ?? 0;
+    const height = info.height ?? 0;
+    if (width < 2 || height < 2) {
+      return rotatedBytes;
+    }
+
+    if (!cropEnabled) {
+      return rotatedBytes;
+    }
+
+    const upright = sharp(rotatedBytes, { failOn: "none" });
     let box = centerSquareBox(width, height, fraction);
     if (mode === "leaf") {
-      const leaf = await leafSaliencyBox(image, width, height, fraction);
+      const leaf = await leafSaliencyBox(upright, width, height, fraction);
       if (leaf) {
         box = leaf;
       }
     }
     if (box.width >= width && box.height >= height) {
-      return buffer;
+      return rotatedBytes;
     }
 
-    return await image
+    return await upright
       .extract({
         left: box.left,
         top: box.top,
@@ -205,9 +242,27 @@ export async function cropCaptureImageBuffer(
       .toBuffer();
   } catch (err) {
     console.warn(
-      "[capture-crop] crop failed; storing original frame",
+      "[capture-crop] prepare (rotate/crop) failed; storing original frame",
       err instanceof Error ? err.message : err
     );
     return buffer;
   }
+}
+
+/**
+ * @deprecated Prefer {@link prepareCaptureImageBuffer} (rotate + crop).
+ * Crop-only helper kept for callers that already corrected orientation.
+ */
+export async function cropCaptureImageBuffer(
+  buffer: Buffer,
+  options?: {
+    mode?: CaptureCropMode;
+    fraction?: number;
+  }
+): Promise<Buffer> {
+  return prepareCaptureImageBuffer(buffer, {
+    rotation: 0,
+    mode: options?.mode,
+    fraction: options?.fraction
+  });
 }

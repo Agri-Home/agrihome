@@ -235,7 +235,12 @@ Agent env:
 | `AGRIHOME_ACTUATOR_DRY_RUN` | `1` | Skip real G-code until macros ready |
 | `AGRIHOME_STUB_HINGE_DEG` | — | Bench hinge pose without Moonraker |
 | `AGRIHOME_STUB_MOTOR_MM` | — | Bench motor pose without Moonraker |
+| `AGRIHOME_CAPTURE_ROTATION` | `0` | Pi-side rotate; keep `0` — server applies `DEVICE_CAPTURE_ROTATION` via sharp |
+| `AGRIHOME_CAPTURE_CROP` | `off` | Pi-side crop; keep `off` — server applies `DEVICE_CAPTURE_CROP` |
 
+Server ingest framing (AgriHome `.env`): `DEVICE_CAPTURE_ROTATION=180` (default) then
+`DEVICE_CAPTURE_CROP=center` before save + disease detection. Do not also rotate 180°
+on the Pi or images will be upside down again.
 ## Vision Console
 
 1. **Devices** — confirm heartbeat **online**.

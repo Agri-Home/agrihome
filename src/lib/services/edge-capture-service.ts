@@ -9,7 +9,7 @@ import {
   savePlantLeafOriginal,
   type LeafImageExt
 } from "@/lib/storage/save-original";
-import { cropCaptureImageBuffer } from "@/lib/storage/capture-crop";
+import { prepareCaptureImageBuffer } from "@/lib/storage/capture-crop";
 import type { CameraCapture } from "@/lib/types/domain";
 
 export type DirectCaptureResult = {
@@ -242,17 +242,13 @@ export async function captureFromKlipperStreamerDirect(input: {
     throw new Error("Tray not found");
   }
 
-  const { buffer: rawBuffer, snapshotUrl, contentType } = await fetchSnapshotBytes(
+  const { buffer: rawBuffer, snapshotUrl } = await fetchSnapshotBytes(
     input.klipperUrl,
     input.snapshotPath
   );
-  // Streamer stills skip the Pi agent; always frame to a center (or leaf) crop.
-  const buffer = await cropCaptureImageBuffer(rawBuffer, {
-    mode: env.device.captureCrop === "off" ? "center" : env.device.captureCrop,
-    fraction: env.device.captureCropFraction
-  });
-  const ext: LeafImageExt =
-    extFromMime(contentType ?? "") ?? extFromBuffer(buffer) ?? "jpg";
+  // Streamer stills skip the Pi agent; server sharp: rotate → crop before save/detect.
+  const buffer = await prepareCaptureImageBuffer(rawBuffer);
+  const ext: LeafImageExt = extFromBuffer(buffer) ?? "jpg";
   const saved = await savePlantLeafOriginal(buffer, ext);
   const capturedAt = new Date().toISOString();
 
@@ -323,17 +319,16 @@ export async function captureFromCameraServerDirect(input: {
     throw new Error("Tray not found");
   }
 
-  const { buffer, contentType, photoUrl } = await fetchCameraServerPhoto({
+  // Ask Pi for a raw still (rotation=0, crop=off); server sharp is source of truth.
+  const { buffer: rawBuffer, photoUrl } = await fetchCameraServerPhoto({
     cameraServerUrl: input.cameraServerUrl,
     width: input.width,
     height: input.height,
-    rotation: input.rotation,
-    // Pi camera_server crops after rotate; pass through so LAN direct matches agent.
-    crop: env.device.captureCrop === "off" ? "center" : env.device.captureCrop,
-    cropFraction: env.device.captureCropFraction
+    rotation: input.rotation ?? 0,
+    crop: "off"
   });
-  const ext: LeafImageExt =
-    extFromMime(contentType) ?? extFromBuffer(buffer) ?? "jpg";
+  const buffer = await prepareCaptureImageBuffer(rawBuffer);
+  const ext: LeafImageExt = extFromBuffer(buffer) ?? "jpg";
   const saved = await savePlantLeafOriginal(buffer, ext);
   const capturedAt = new Date().toISOString();
 
