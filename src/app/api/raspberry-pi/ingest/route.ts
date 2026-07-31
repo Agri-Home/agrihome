@@ -18,6 +18,7 @@ import { ingestCameraCapture } from "@/lib/services/camera-service";
 import { postprocessEdgeCapture } from "@/lib/services/edge-capture-postprocess";
 import { completeEdgeCommand } from "@/lib/services/edge-command-service";
 import { savePlantLeafOriginal, type LeafImageExt } from "@/lib/storage/save-original";
+import { cropCaptureImageBuffer } from "@/lib/storage/capture-crop";
 import { getTrayById } from "@/lib/services/topology-service";
 
 export const dynamic = "force-dynamic";
@@ -131,7 +132,13 @@ export async function POST(request: Request) {
       );
     }
 
-    const buffer = Buffer.from(await file.arrayBuffer());
+    const rawBuffer = Buffer.from(await file.arrayBuffer());
+    // Default off: Pi agent / camera_server already crop. Enable DEVICE_CAPTURE_CROP
+    // when ingesting from older agents that upload full wide frames.
+    const buffer =
+      env.device.captureCrop === "off"
+        ? rawBuffer
+        : await cropCaptureImageBuffer(rawBuffer);
     const saved = await savePlantLeafOriginal(buffer, ext);
 
     const trayIdForm = String(form.get("trayId") ?? "").trim();

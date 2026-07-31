@@ -127,6 +127,8 @@ export async function fetchCameraServerPhoto(input: {
   width?: number;
   height?: number;
   rotation?: number;
+  crop?: string;
+  cropFraction?: number;
 }): Promise<{ buffer: Buffer; contentType: string; photoUrl: string }> {
   const width = input.width ?? 1920;
   const height = input.height ?? 1080;
@@ -139,6 +141,12 @@ export async function fetchCameraServerPhoto(input: {
     height: String(height),
     rotation: String(rotation)
   });
+  if (input.crop) {
+    qs.set("crop", input.crop);
+  }
+  if (input.cropFraction != null) {
+    qs.set("crop_fraction", String(input.cropFraction));
+  }
   const path = `/photo?${qs.toString()}`;
   const base = normalizeCameraServerBase(input.cameraServerUrl);
   const photoUrl = `${base}${path}`;

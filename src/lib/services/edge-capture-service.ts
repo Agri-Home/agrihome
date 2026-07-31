@@ -9,6 +9,7 @@ import {
   savePlantLeafOriginal,
   type LeafImageExt
 } from "@/lib/storage/save-original";
+import { cropCaptureImageBuffer } from "@/lib/storage/capture-crop";
 import type { CameraCapture } from "@/lib/types/domain";
 
 export type DirectCaptureResult = {
@@ -241,10 +242,15 @@ export async function captureFromKlipperStreamerDirect(input: {
     throw new Error("Tray not found");
   }
 
-  const { buffer, snapshotUrl, contentType } = await fetchSnapshotBytes(
+  const { buffer: rawBuffer, snapshotUrl, contentType } = await fetchSnapshotBytes(
     input.klipperUrl,
     input.snapshotPath
   );
+  // Streamer stills skip the Pi agent; always frame to a center (or leaf) crop.
+  const buffer = await cropCaptureImageBuffer(rawBuffer, {
+    mode: env.device.captureCrop === "off" ? "center" : env.device.captureCrop,
+    fraction: env.device.captureCropFraction
+  });
   const ext: LeafImageExt =
     extFromMime(contentType ?? "") ?? extFromBuffer(buffer) ?? "jpg";
   const saved = await savePlantLeafOriginal(buffer, ext);
@@ -321,7 +327,10 @@ export async function captureFromCameraServerDirect(input: {
     cameraServerUrl: input.cameraServerUrl,
     width: input.width,
     height: input.height,
-    rotation: input.rotation
+    rotation: input.rotation,
+    // Pi camera_server crops after rotate; pass through so LAN direct matches agent.
+    crop: env.device.captureCrop === "off" ? "center" : env.device.captureCrop,
+    cropFraction: env.device.captureCropFraction
   });
   const ext: LeafImageExt =
     extFromMime(contentType) ?? extFromBuffer(buffer) ?? "jpg";
