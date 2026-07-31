@@ -264,6 +264,8 @@ export async function deletePlantById(
       [id]
     );
 
+    await client.query(`DELETE FROM capture_poses WHERE plant_id = $1`, [id]);
+
     await client.query(`DELETE FROM plants WHERE id = $1 AND owner_email = $2`, [
       id,
       ownerEmail
