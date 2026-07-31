@@ -57,6 +57,7 @@ function parseOptionalNumber(value: FormDataEntryValue | null): number | undefin
  *   image (file, required) — JPEG/PNG/WebP
  *   trayId (optional) — defaults to tray linked to this device
  *   plantId, slotLabel, capturedAt, hingeDeg, motorMm, poseOrder, notes, commandId (optional)
+ *   imagePrepared (optional) — "camera_server" skips sharp rotate/crop (camserver already framed)
  */
 export async function POST(request: Request) {
   const ip = clientIp(request);
@@ -133,9 +134,19 @@ export async function POST(request: Request) {
     }
 
     const rawBuffer = Buffer.from(await file.arrayBuffer());
-    // Server source of truth: sharp rotate → crop, then save + disease on corrected bytes.
-    // Pi should upload raw stills (AGRIHOME_CAPTURE_ROTATION=0, crop=off).
-    const buffer = await prepareCaptureImageBuffer(rawBuffer);
+    const notesField = String(form.get("notes") ?? "");
+    const preparedField = String(form.get("imagePrepared") ?? "")
+      .trim()
+      .toLowerCase();
+    // Camserver /photo already rotates+crops; do not re-apply sharp.
+    const alreadyFramed =
+      preparedField === "camera_server" ||
+      preparedField === "1" ||
+      preparedField === "true" ||
+      /camera_photo|camera_server|\/photo\?/i.test(notesField);
+    const buffer = alreadyFramed
+      ? rawBuffer
+      : await prepareCaptureImageBuffer(rawBuffer);
     // Pipeline emits JPEG when it transforms; fall back to the upload mime otherwise.
     const outExt: LeafImageExt =
       buffer.length >= 3 &&

@@ -209,9 +209,9 @@ export const env = {
       8_000
     ),
     /**
-     * Server is source of truth for orientation before save + disease detection.
-     * Default 180° for upside-down camera mounts. Pi agents should leave
-     * AGRIHOME_CAPTURE_ROTATION=0 (and crop=off) so this is not double-applied.
+     * Server-side orientation for raw stills (streamer / save_image.sh).
+     * Default 180° for upside-down mounts. Camserver /photo already rotates;
+     * raspberry-pi ingest skips this when imagePrepared=camera_server.
      */
     captureRotation: parseCaptureRotation(
       process.env.DEVICE_CAPTURE_ROTATION ??
@@ -219,8 +219,8 @@ export const env = {
       180
     ),
     /**
-     * Server-side crop after rotation (sharp). Default center.
-     * Pi should upload raw stills (AGRIHOME_CAPTURE_CROP=off) to avoid double crop.
+     * Server-side crop after rotation (sharp) for raw stills.
+     * Camserver /photo already crops; ingest skips when pre-framed.
      */
     captureCrop: parseCaptureCropMode(
       process.env.DEVICE_CAPTURE_CROP ?? process.env.AGRIHOME_CAPTURE_CROP,

@@ -319,15 +319,14 @@ export async function captureFromCameraServerDirect(input: {
     throw new Error("Tray not found");
   }
 
-  // Ask Pi for a raw still (rotation=0, crop=off); server sharp is source of truth.
-  const { buffer: rawBuffer, photoUrl } = await fetchCameraServerPhoto({
+  // Camserver returns a final JPEG (rotate + crop). Skip sharp to avoid double-framing.
+  const { buffer, photoUrl } = await fetchCameraServerPhoto({
     cameraServerUrl: input.cameraServerUrl,
     width: input.width,
     height: input.height,
-    rotation: input.rotation ?? 0,
-    crop: "off"
+    rotation: input.rotation ?? 180,
+    crop: "center"
   });
-  const buffer = await prepareCaptureImageBuffer(rawBuffer);
   const ext: LeafImageExt = extFromBuffer(buffer) ?? "jpg";
   const saved = await savePlantLeafOriginal(buffer, ext);
   const capturedAt = new Date().toISOString();

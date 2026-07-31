@@ -107,6 +107,7 @@ export async function POST(request: Request, context: RouteContext) {
       width?: number;
       height?: number;
       rotation?: number;
+      crop?: string;
       /** Freeform Klipper G-code / macro script for runGcode. */
       gcode?: string;
       /** When true, agent skips Moonraker POST (log only). */
@@ -182,9 +183,9 @@ export async function POST(request: Request, context: RouteContext) {
           payload: {
             cameraServerUrl: device.cameraServerUrl.trim(),
             requestedBy: auth.email,
-            // Server sharp applies DEVICE_CAPTURE_ROTATION; Pi uploads raw.
-            rotation: 0,
-            crop: "off",
+            // Camserver owns framing (Pillow rotate + crop).
+            rotation: 180,
+            crop: "center",
             hingeDeg:
               body.hingeDeg != null && Number.isFinite(body.hingeDeg)
                 ? body.hingeDeg
@@ -671,12 +672,15 @@ export async function POST(request: Request, context: RouteContext) {
               : undefined,
           width: body.width,
           height: body.height,
-          // Server sharp applies DEVICE_CAPTURE_ROTATION; default Pi rotate off.
+          // Camserver owns framing; default upside-down mount + center crop.
           rotation:
             body.rotation != null && Number.isFinite(Number(body.rotation))
               ? Number(body.rotation)
-              : 0,
-          crop: "off"
+              : 180,
+          crop:
+            typeof body.crop === "string" && body.crop.trim()
+              ? body.crop.trim()
+              : "center"
         }
       });
       return NextResponse.json({

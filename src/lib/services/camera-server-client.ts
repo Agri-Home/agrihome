@@ -2,12 +2,13 @@
  * Client for the Pi Zero Flask camera_server.py (klipper/camera_server.py).
  *
  * Endpoints (host 0.0.0.0:5000):
+ *   GET /health
  *   GET /servo?angle=0..90
  *   GET /led?rgb=R,G,B   (server swaps R/G for NeoPixel wiring)
- *   GET /photo?width=&height=&rotation=&crop=  → JPEG
+ *   GET /photo?width=&height=&rotation=&crop=&crop_fraction=  → JPEG
  *
- * Prefer rotation=0 and crop=off here: AgriHome server applies
- * DEVICE_CAPTURE_ROTATION + DEVICE_CAPTURE_CROP via sharp before save/detect.
+ * Camserver owns framing (default rotation=180, crop=center).
+ * Ingest should skip sharp when notes indicate camera_photo.
  */
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -125,6 +126,10 @@ export async function setCameraServerLed(input: {
   };
 }
 
+/** Defaults match camserver: upside-down mount + center crop. */
+export const CAMERA_SERVER_DEFAULT_ROTATION = 180;
+export const CAMERA_SERVER_DEFAULT_CROP = "center";
+
 export async function fetchCameraServerPhoto(input: {
   cameraServerUrl: string;
   width?: number;
@@ -135,21 +140,17 @@ export async function fetchCameraServerPhoto(input: {
 }): Promise<{ buffer: Buffer; contentType: string; photoUrl: string }> {
   const width = input.width ?? 1920;
   const height = input.height ?? 1080;
-  const rotation = input.rotation ?? 0;
+  const rotation = input.rotation ?? CAMERA_SERVER_DEFAULT_ROTATION;
   if (![0, 90, 180, 270].includes(rotation)) {
     throw new Error("Photo rotation must be 0, 90, 180, or 270");
   }
   const qs = new URLSearchParams({
     width: String(width),
     height: String(height),
-    // Prefer 0: AgriHome server applies DEVICE_CAPTURE_ROTATION via sharp.
+    // Camserver applies Pillow rotate/crop; do not re-apply on ingest.
     rotation: String(rotation)
   });
-  if (input.crop) {
-    qs.set("crop", input.crop);
-  } else {
-    qs.set("crop", "off");
-  }
+  qs.set("crop", input.crop ?? CAMERA_SERVER_DEFAULT_CROP);
   if (input.cropFraction != null) {
     qs.set("crop_fraction", String(input.cropFraction));
   }
