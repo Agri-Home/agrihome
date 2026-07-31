@@ -1912,11 +1912,12 @@ export function TrayEdgeDevicePanel({
         <div>
           <h3 className="text-sm font-semibold text-ink">Scan all plants</h3>
           <p className="mt-0.5 text-xs text-ink/45">
-            Moves to each plant pose, captures a photo, and runs disease
-            detection on ingest. Home axes once before the first run if Klipper
-            reports axes unhomed. Set{" "}
-            <span className="font-mono">AGRIHOME_ACTUATOR_DRY_RUN=0</span> on
-            the Pi for real motion.
+            Each run: <span className="font-mono text-[11px]">G28</span> →{" "}
+            <span className="font-mono text-[11px]">STORE_DOCK</span> → LED on
+            → move to each plant → Pi0{" "}
+            <span className="font-mono text-[11px]">/photo</span> → disease on
+            ingest → <span className="font-mono text-[11px]">DOCK_CAMERA</span>{" "}
+            → LED off. Requires a Pi0 camera server URL on the device.
           </p>
         </div>
         <div className="flex flex-wrap items-end gap-2">

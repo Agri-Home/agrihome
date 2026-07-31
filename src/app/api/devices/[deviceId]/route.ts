@@ -177,7 +177,8 @@ export async function POST(request: Request, context: RouteContext) {
       const runPoses = Boolean(body.runPoses);
 
       // Pi0 Take Picture: queue camera_photo for the LAN agent (agrihome.tech
-      // cannot reach 192.168.x camera_server URLs). Pose walks use capture_now.
+      // cannot reach 192.168.x camera_server URLs). Pose walks use capture_now
+      // but pass cameraServerUrl so the agent captures via Pi0 /photo each stop.
       if (!runPoses && device.cameraServerUrl?.trim()) {
         const cmd = await enqueueEdgeCommand({
           deviceId,
@@ -215,13 +216,21 @@ export async function POST(request: Request, context: RouteContext) {
         commandType: "capture_now",
         payload: {
           runPoses,
-          requestedBy: auth.email
+          requestedBy: auth.email,
+          ...(device.cameraServerUrl?.trim()
+            ? {
+                cameraServerUrl: device.cameraServerUrl.trim(),
+                rotation: 180,
+                crop: "center",
+                ledRgb: [255, 255, 255]
+              }
+            : {})
         }
       });
       return NextResponse.json({
         message: runPoses
-          ? "Pose capture queued. The Pi agent will claim it on the next heartbeat."
-          : "Capture queued for the Pi agent (fswebcam / camera-macros).",
+          ? "Tray scan queued: home → STORE_DOCK → LED on → Pi0 photos → DOCK_CAMERA → LED off."
+          : "Capture queued for the Pi agent.",
         queued: true,
         data: cmd
       });

@@ -90,6 +90,15 @@ async function main() {
         const deviceId = tray.rows[0]?.edge_device_id;
         if (!deviceId) continue;
 
+        const device = await client.query(
+          `SELECT camera_server_url FROM edge_devices WHERE id = $1`,
+          [deviceId]
+        );
+        const cameraServerUrl =
+          typeof device.rows[0]?.camera_server_url === "string"
+            ? device.rows[0].camera_server_url.trim()
+            : "";
+
         const cmdId = `cmd-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
         await client.query(
           `INSERT INTO edge_device_commands
@@ -102,7 +111,15 @@ async function main() {
             JSON.stringify({
               scheduleId: row.id,
               scheduleName: row.name,
-              runPoses: true
+              runPoses: true,
+              ...(cameraServerUrl
+                ? {
+                    cameraServerUrl,
+                    rotation: 180,
+                    crop: "center",
+                    ledRgb: [255, 255, 255]
+                  }
+                : {})
             })
           ]
         );
