@@ -604,11 +604,20 @@ export function TrayEdgeDevicePanel({
   async function ensurePoseSequence(): Promise<PoseSequence | null> {
     const current = sequences.find((s) => s.active) ?? sequences[0] ?? null;
     const plantIds = new Set(plants.map((p) => p.id));
+    const posePlantIds = (current?.poses ?? [])
+      .map((p) => p.plantId)
+      .filter((id): id is string => Boolean(id));
+    const hasOrphanPose = posePlantIds.some((id) => !plantIds.has(id));
+    const missingPlant = [...plantIds].some(
+      (id) => !posePlantIds.includes(id)
+    );
     const coversPlants =
       current &&
       current.poses.length > 0 &&
-      (plantIds.size === 0 ||
-        current.poses.some((p) => p.plantId && plantIds.has(p.plantId)));
+      plantIds.size > 0 &&
+      !hasOrphanPose &&
+      !missingPlant &&
+      posePlantIds.length === plantIds.size;
 
     if (coversPlants && current) {
       return current;

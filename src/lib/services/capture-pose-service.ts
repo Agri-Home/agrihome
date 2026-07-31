@@ -86,6 +86,52 @@ async function mapSequence(row: SequenceRow): Promise<CapturePoseSequence> {
   };
 }
 
+/**
+ * Drop poses whose plant_id no longer exists on the tray (deleted plants).
+ * Re-numbers pose_order. Persists when anything was removed.
+ */
+export async function pruneDeletedPlantPoses(
+  sequence: CapturePoseSequence
+): Promise<CapturePoseSequence> {
+  const live = await queryRows<{ id: string }>(
+    `SELECT id FROM plants WHERE tray_id = $1 AND owner_email = $2`,
+    [sequence.trayId, sequence.ownerEmail.toLowerCase()]
+  );
+  const liveIds = new Set(live.map((p) => p.id));
+  const kept = sequence.poses.filter(
+    (p) => !p.plantId || liveIds.has(p.plantId)
+  );
+  if (kept.length === sequence.poses.length) {
+    return sequence;
+  }
+  return upsertPoseSequence({
+    ownerEmail: sequence.ownerEmail,
+    trayId: sequence.trayId,
+    deviceId: sequence.deviceId,
+    name: sequence.name,
+    sequenceId: sequence.id,
+    active: sequence.active,
+    poses: kept.map((p, i) => ({
+      poseOrder: i + 1,
+      slotLabel: p.slotLabel,
+      row: p.row,
+      column: p.column,
+      plantId: p.plantId,
+      hingeDeg: p.hingeDeg,
+      motorMm: p.motorMm,
+      dwellMs: p.dwellMs
+    }))
+  });
+}
+
+/** Remove all pose rows for a plant (call when the plant is deleted). */
+export async function removePlantFromAllPoseSequences(
+  plantId: string
+): Promise<void> {
+  const pool = requirePostgresPool();
+  await pool.query(`DELETE FROM capture_poses WHERE plant_id = $1`, [plantId]);
+}
+
 export async function listPoseSequencesForTray(
   ownerEmail: string,
   trayId: string
@@ -96,7 +142,8 @@ export async function listPoseSequencesForTray(
      ORDER BY updated_at DESC`,
     [ownerEmail.toLowerCase(), trayId]
   );
-  return Promise.all(rows.map(mapSequence));
+  const sequences = await Promise.all(rows.map(mapSequence));
+  return Promise.all(sequences.map((s) => pruneDeletedPlantPoses(s)));
 }
 
 export async function getActivePoseSequenceForDevice(
@@ -112,7 +159,9 @@ export async function getActivePoseSequenceForDevice(
      LIMIT 1`,
     [deviceId]
   );
-  return rows[0] ? mapSequence(rows[0]) : null;
+  if (!rows[0]) return null;
+  const sequence = await mapSequence(rows[0]);
+  return pruneDeletedPlantPoses(sequence);
 }
 
 export async function upsertPoseSequence(input: {
