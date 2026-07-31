@@ -39,6 +39,12 @@ to register or run the agent.
    **not** used for Moonraker `/printer/objects/query`.
 5. **Poses / schedules** — pose walks and `destination: raspberry-pi-edge`
    schedules still enqueue commands the agent executes.
+6. **Scan all plants** — tray primary action queues `capture_now` with
+   `runPoses: true`. The agent walks the active pose sequence (move → dwell →
+   capture → ingest per plant). Disease runs via `DEVICE_AUTO_DISEASE_ON_INGEST`
+   after each ingest. **Home axes once** before the first live run if Klipper
+   says axes are unhomed; the walk does not re-home mid-run. Set
+   `AGRIHOME_ACTUATOR_DRY_RUN=0` on the Pi for real `G0 X/Y` motion.
 
 ```mermaid
 sequenceDiagram
@@ -244,10 +250,37 @@ on the Pi or images will be upside down again.
 ## Vision Console
 
 1. **Devices** — confirm heartbeat **online**.
-2. Tray → Raspberry Pi panel → **Take picture** (queues agent; optional
-   streamer URL for immediate server pull).
-3. **Generate poses from layout** then schedule with
-   `destination: raspberry-pi-edge` for multi-angle runs.
+2. Tray → Raspberry Pi panel → **Scan all plants** (primary): walks every plant
+   pose, captures, disease-on-ingest, then shows a run summary. Teach poses with
+   Developer tools → Get position first when stops are still at 0°/0 mm.
+3. **Automatic tray scan** on the same panel (or Schedule page with destination
+   `raspberry-pi-edge`) for recurring pose walks.
+4. Developer tools → **Take picture** for a single-shot capture (optional
+   streamer / Pi0 camera server path).
+
+## Capture schedule runner (production)
+
+The Next.js app does **not** tick schedules by itself. Run the runner on a cron
+(every minute is fine) on the AgriHome host (e.g. agrihome.tech):
+
+```bash
+# crontab -e
+* * * * * cd /path/to/agrihome && /usr/bin/npm run capture:schedule-runner >> /var/log/agrihome-capture-schedule.log 2>&1
+```
+
+Or:
+
+```bash
+* * * * * cd /path/to/agrihome && node scripts/capture-schedule-runner.cjs
+```
+
+Requires `POSTGRES_*` in `.env` / `.env.local`. Due rows with
+`destination = 'raspberry-pi-edge'` enqueue `capture_now` with
+`{ runPoses: true }` for each linked tray `edge_device_id`.
+
+**Schema:** existing `capture_schedules` table (`scope_type`/`scope_id` tray or
+mesh, `interval_minutes`, `active`, `next_run_at`, `last_run_at`,
+`destination`). No extra migration for tray scan scheduling.
 
 Update optional streamer URL via UI (`action: updateKlipperUrl`) or SQL.
 This field is for HTTP stills only — Get position uses Moonraker on the Pi

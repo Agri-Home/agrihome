@@ -30,6 +30,8 @@ export function ScheduleClient({
   const [name, setName] = useState("");
   const [interval, setInterval] = useState("120");
   const [active, setActive] = useState(true);
+  const [destination, setDestination] =
+    useState<CaptureSchedule["destination"]>("raspberry-pi-edge");
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -45,13 +47,15 @@ export function ScheduleClient({
       setName(sel.name);
       setInterval(String(sel.intervalMinutes));
       setActive(sel.active);
+      setDestination(sel.destination);
       return;
     }
     setScopeType("tray");
     setScopeId(trays[0]?.id ?? meshes[0]?.id ?? "");
     setName(trays[0] ? `${trays[0].name} capture` : "");
-    setInterval("120");
+    setInterval("360");
     setActive(true);
+    setDestination("raspberry-pi-edge");
   }, [selectedId, schedules, trays, meshes]);
 
   useEffect(() => {
@@ -82,7 +86,8 @@ export function ScheduleClient({
           scopeId,
           name: name.trim(),
           intervalMinutes: Number(interval),
-          active
+          active,
+          destination
         })
       });
       const json = (await res.json()) as Api<CaptureSchedule>;
@@ -133,7 +138,8 @@ export function ScheduleClient({
                       <div>
                         <p className="text-sm font-semibold text-ink">{s.name}</p>
                         <p className="mt-0.5 text-xs text-ink/40">
-                          Every {s.intervalMinutes} min · next {formatRelativeTimestamp(s.nextRunAt)}
+                          Every {s.intervalMinutes} min · {s.destination} · next{" "}
+                          {formatRelativeTimestamp(s.nextRunAt)}
                         </p>
                       </div>
                     </div>
@@ -213,6 +219,26 @@ export function ScheduleClient({
             />
           </label>
 
+          <label className="block">
+            <span className="text-xs font-semibold uppercase tracking-wider text-ink/40">
+              Destination
+            </span>
+            <select
+              value={destination}
+              onChange={(e) =>
+                setDestination(e.target.value as CaptureSchedule["destination"])
+              }
+              className="mt-2 w-full rounded-xl border border-ink/10 bg-white/80 px-3.5 py-2.5 text-sm transition-colors focus:border-leaf focus:outline-none"
+            >
+              <option value="raspberry-pi-edge">
+                Raspberry Pi edge (pose walk)
+              </option>
+              <option value="computer-vision-backend">
+                Computer vision backend
+              </option>
+            </select>
+          </label>
+
           <label className="flex items-center gap-3 rounded-xl bg-mist/40 px-4 py-3">
             <div className={`relative flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors ${active ? "bg-leaf" : "bg-ink/15"}`}>
               <input
@@ -253,8 +279,12 @@ export function ScheduleClient({
         </Card>
       </section>
 
-      <p className="text-xs text-ink/25">
-        Destination: {schedules[0]?.destination ?? "computer-vision-backend"}
+      <p className="text-xs text-ink/40">
+        Edge schedules need the capture schedule runner on the host, e.g.{" "}
+        <span className="font-mono">
+          * * * * * cd /path/to/agrihome && npm run capture:schedule-runner
+        </span>
+        . See docs/ops/RASPBERRY_PI_KLIPPER.md.
       </p>
     </div>
   );
