@@ -17,6 +17,7 @@ import { listPlantsByTray } from "@/lib/services/plant-service";
 import type { MonitoringEvent, TraySystem } from "@/lib/types/domain";
 import { getMeshById, listTraySystems } from "@/lib/services/topology-service";
 import { formatDateTime } from "@/lib/utils";
+import { MeshManageClient } from "./MeshManageClient";
 
 function meshTone(status: string) {
   return status === "active" ? ("success" as const) : ("default" as const);
@@ -103,8 +104,12 @@ export default async function MeshDetailPage({
         <p className="animate-fade-in text-sm text-ink/55">{mesh.summary}</p>
       )}
 
+      <section className="animate-fade-in stagger-1">
+        <MeshManageClient mesh={mesh} trays={trays} />
+      </section>
+
       {/* Stats grid */}
-      <div className="animate-fade-in stagger-1 grid grid-cols-3 gap-3">
+      <div className="animate-fade-in stagger-2 grid grid-cols-3 gap-3">
         <Card className="p-3.5 text-center">
           <p className="text-2xl font-bold text-ink">{meshPlants.length}</p>
           <p className="mt-0.5 text-[10px] font-semibold uppercase tracking-wider text-ink/40">Plants</p>
@@ -120,7 +125,7 @@ export default async function MeshDetailPage({
       </div>
 
       {/* Activity chart */}
-      <section className="animate-fade-in stagger-2">
+      <section className="animate-fade-in stagger-3">
         <SectionTitle>Activity</SectionTitle>
         <ClientChartFrame
           skeleton={
@@ -132,7 +137,7 @@ export default async function MeshDetailPage({
       </section>
 
       {/* Plants list */}
-      <section className="animate-fade-in stagger-3">
+      <section className="animate-fade-in stagger-4">
         <SectionTitle>Plants ({meshPlants.length})</SectionTitle>
         <ul className="flex flex-col gap-2.5">
           {meshPlants.map((plant) => (

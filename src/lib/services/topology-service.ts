@@ -53,8 +53,15 @@ interface MeshRow {
   summary: string;
 }
 
-const parseStringArray = (value: string[] | string) =>
-  Array.isArray(value) ? value : JSON.parse(value);
+const parseStringArray = (value: string[] | string): string[] => {
+  if (Array.isArray(value)) {
+    return value;
+  }
+  const parsed = JSON.parse(value) as unknown;
+  return Array.isArray(parsed)
+    ? parsed.filter((item): item is string => typeof item === "string")
+    : [];
+};
 
 const mapTrayRow = (row: TrayRow): TraySystem => ({
   id: row.id,
@@ -485,6 +492,148 @@ export const createMeshNetwork = async ({
       mesh.summary
     ]
   );
+  await syncPlantMeshMembership({ ownerEmail, meshId: mesh.id, trayIds });
 
   return mesh;
+};
+
+const syncPlantMeshMembership = async ({
+  ownerEmail,
+  meshId,
+  trayIds
+}: {
+  ownerEmail: string;
+  meshId: string;
+  trayIds: string[];
+}) => {
+  const pool = requirePostgresPool();
+  const rows = await pool.query<{
+    id: string;
+    tray_id: string;
+    mesh_ids: string[] | string;
+  }>(
+    `SELECT id, tray_id, mesh_ids
+     FROM plants
+     WHERE owner_email = $1`,
+    [ownerEmail]
+  );
+  const traySet = new Set(trayIds);
+
+  for (const row of rows.rows) {
+    const parsed = parseStringArray(row.mesh_ids).filter(
+      (id) => id !== meshId
+    );
+    const next = traySet.has(row.tray_id) ? [...parsed, meshId] : parsed;
+    await pool.query(
+      `UPDATE plants SET mesh_ids = $1::json WHERE id = $2 AND owner_email = $3`,
+      [JSON.stringify(next), row.id, ownerEmail]
+    );
+  }
+};
+
+export const updateMeshNetwork = async ({
+  ownerEmail,
+  id,
+  name,
+  trayIds
+}: {
+  ownerEmail: string;
+  id: string;
+  name: string;
+  trayIds: string[];
+}): Promise<MeshNetwork | null> => {
+  const existing = await getMeshById(ownerEmail, id);
+  if (!existing) {
+    return null;
+  }
+  const trimmedName = name.trim();
+  if (!trimmedName || trayIds.length < 2) {
+    throw new Error("Name and at least two trays are required");
+  }
+
+  const pool = requirePostgresPool();
+  const ownedTrayRows = await pool.query<{ id: string }>(
+    `SELECT id
+     FROM tray_systems
+     WHERE owner_email = $1 AND id = ANY($2::varchar[])`,
+    [ownerEmail, trayIds]
+  );
+
+  if (ownedTrayRows.rowCount !== trayIds.length) {
+    throw new Error("One or more trays were not found");
+  }
+
+  await pool.query(
+    `UPDATE mesh_networks
+     SET name = $1,
+         tray_ids = $2::json,
+         node_count = $3,
+         summary = $4
+     WHERE id = $5 AND owner_email = $6`,
+    [
+      trimmedName,
+      JSON.stringify(trayIds),
+      trayIds.length,
+      `${trayIds.length} trays in this group.`,
+      id,
+      ownerEmail
+    ]
+  );
+  await syncPlantMeshMembership({ ownerEmail, meshId: id, trayIds });
+
+  return getMeshById(ownerEmail, id);
+};
+
+export const deleteMeshNetwork = async (
+  ownerEmail: string,
+  id: string
+): Promise<boolean> => {
+  const existing = await getMeshById(ownerEmail, id);
+  if (!existing) {
+    return false;
+  }
+
+  const pool = requirePostgresPool();
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const plants = await client.query<{
+      id: string;
+      mesh_ids: string[] | string;
+    }>(
+      `SELECT id, mesh_ids
+       FROM plants
+       WHERE owner_email = $1`,
+      [ownerEmail]
+    );
+    for (const plant of plants.rows) {
+      const next = parseStringArray(plant.mesh_ids).filter(
+        (meshId) => meshId !== id
+      );
+      await client.query(
+        `UPDATE plants SET mesh_ids = $1::json WHERE id = $2 AND owner_email = $3`,
+        [JSON.stringify(next), plant.id, ownerEmail]
+      );
+    }
+
+    await client.query(
+      `DELETE FROM capture_schedules
+       WHERE owner_email = $1 AND scope_type = 'mesh' AND scope_id = $2`,
+      [ownerEmail, id]
+    );
+
+    const del = await client.query(
+      `DELETE FROM mesh_networks WHERE id = $1 AND owner_email = $2`,
+      [id, ownerEmail]
+    );
+
+    await client.query("COMMIT");
+    return (del.rowCount ?? 0) > 0;
+  } catch (e) {
+    await client.query("ROLLBACK");
+    throw e;
+  } finally {
+    client.release();
+  }
 };

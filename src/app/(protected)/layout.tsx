@@ -1,7 +1,7 @@
 import { AppShell } from "@/components/shell/AppShell";
 import { requireSessionAccountUser } from "@/lib/auth/session";
 import { env } from "@/lib/config/env";
-import { getParticipateMlFeedback } from "@/lib/services/user-preferences-service";
+import { getUserPreferences } from "@/lib/services/user-preferences-service";
 
 export default async function ProtectedLayout({
   children
@@ -9,15 +9,17 @@ export default async function ProtectedLayout({
   children: React.ReactNode;
 }>) {
   const currentUser = await requireSessionAccountUser();
-  const participateMlFeedback = currentUser.email
-    ? await getParticipateMlFeedback(currentUser.email)
-    : true;
+  const prefs = await getUserPreferences(currentUser.email);
+  const shellUser = {
+    ...currentUser,
+    name: prefs.displayName ?? currentUser.name
+  };
 
   return (
     <AppShell
-      currentUser={currentUser}
+      currentUser={shellUser}
       firebaseConfig={env.firebase.client}
-      participateMlFeedback={participateMlFeedback}
+      participateMlFeedback={prefs.participateMlFeedback}
     >
       {children}
     </AppShell>

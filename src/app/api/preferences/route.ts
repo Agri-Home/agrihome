@@ -45,13 +45,25 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
   const raw = body as {
+    displayName?: unknown;
     participateMlFeedback?: unknown;
     developerMode?: unknown;
   };
   const patch: {
+    displayName?: string | null;
     participateMlFeedback?: boolean;
     developerMode?: boolean;
   } = {};
+  if ("displayName" in raw) {
+    if (raw.displayName !== null && typeof raw.displayName !== "string") {
+      return NextResponse.json(
+        { error: "displayName must be a string or null" },
+        { status: 400 }
+      );
+    }
+    const next = raw.displayName?.trim() ?? "";
+    patch.displayName = next ? next.slice(0, 120) : null;
+  }
   if ("participateMlFeedback" in raw) {
     if (typeof raw.participateMlFeedback !== "boolean") {
       return NextResponse.json(
@@ -71,13 +83,14 @@ export async function PATCH(request: Request) {
     patch.developerMode = raw.developerMode;
   }
   if (
+    patch.displayName === undefined &&
     patch.participateMlFeedback === undefined &&
     patch.developerMode === undefined
   ) {
     return NextResponse.json(
       {
         error:
-          "Expected { participateMlFeedback?: boolean, developerMode?: boolean }"
+          "Expected { displayName?: string | null, participateMlFeedback?: boolean, developerMode?: boolean }"
       },
       { status: 400 }
     );

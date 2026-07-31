@@ -4,6 +4,7 @@ const DEFAULT_PARTICIPATE = true;
 const DEFAULT_DEVELOPER_MODE = false;
 
 export type UserPreferences = {
+  displayName: string | null;
   participateMlFeedback: boolean;
   developerMode: boolean;
 };
@@ -29,30 +30,55 @@ export async function getUserPreferences(
   const email = ownerEmail.trim().toLowerCase();
   if (!email) {
     return {
+      displayName: null,
       participateMlFeedback: DEFAULT_PARTICIPATE,
       developerMode: DEFAULT_DEVELOPER_MODE
     };
   }
   const pool = requirePostgresPool();
   const r = await pool.query<{
+    display_name: string | null;
     participate_ml_feedback: boolean;
     developer_mode: boolean | null;
   }>(
-    `SELECT participate_ml_feedback, developer_mode
+    `SELECT display_name, participate_ml_feedback, developer_mode
      FROM user_preferences WHERE owner_email = $1`,
     [email]
   );
   const row = r.rows[0];
   if (!row) {
     return {
+      displayName: null,
       participateMlFeedback: DEFAULT_PARTICIPATE,
       developerMode: DEFAULT_DEVELOPER_MODE
     };
   }
   return {
+    displayName: row.display_name,
     participateMlFeedback: row.participate_ml_feedback,
     developerMode: Boolean(row.developer_mode)
   };
+}
+
+export async function setDisplayName(
+  ownerEmail: string,
+  displayName: string | null
+): Promise<void> {
+  const email = ownerEmail.trim().toLowerCase();
+  if (!email) {
+    throw new Error("Missing account email");
+  }
+  const trimmed = displayName?.trim() ?? "";
+  const next = trimmed ? trimmed.slice(0, 120) : null;
+  const pool = requirePostgresPool();
+  await pool.query(
+    `INSERT INTO user_preferences (owner_email, display_name, updated_at)
+     VALUES ($1, $2, CURRENT_TIMESTAMP)
+     ON CONFLICT (owner_email) DO UPDATE SET
+       display_name = EXCLUDED.display_name,
+       updated_at = CURRENT_TIMESTAMP`,
+    [email, next]
+  );
 }
 
 export async function setParticipateMlFeedback(
@@ -106,6 +132,9 @@ export async function setUserPreferences(
   }
   if (patch.developerMode !== undefined) {
     await setDeveloperMode(email, patch.developerMode);
+  }
+  if (patch.displayName !== undefined) {
+    await setDisplayName(email, patch.displayName);
   }
   return getUserPreferences(email);
 }

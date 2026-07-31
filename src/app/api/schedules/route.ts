@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 
 import { requireApiAccountUser } from "@/lib/auth/session";
-import { listSchedules, upsertSchedule } from "@/lib/services/schedule-service";
+import {
+  deleteSchedule,
+  listSchedules,
+  upsertSchedule
+} from "@/lib/services/schedule-service";
 import type { CaptureSchedule } from "@/lib/types/domain";
 
 export const dynamic = "force-dynamic";
@@ -128,5 +132,37 @@ export async function PATCH(request: Request) {
     const status =
       msg === "Scope not found" || msg === "Schedule not found" ? 404 : 400;
     return NextResponse.json({ error: msg }, { status });
+  }
+}
+
+export async function DELETE(request: Request) {
+  const authResult = await requireApiAccountUser();
+  if (authResult instanceof Response) {
+    return authResult;
+  }
+
+  const { searchParams } = new URL(request.url);
+  const id = searchParams.get("id");
+  if (!id) {
+    return NextResponse.json({ error: "id is required" }, { status: 400 });
+  }
+
+  try {
+    const deleted = await deleteSchedule({
+      ownerEmail: authResult.email,
+      id
+    });
+    if (!deleted) {
+      return NextResponse.json(
+        { error: "Schedule not found" },
+        { status: 404 }
+      );
+    }
+    return NextResponse.json({ ok: true, message: "Schedule deleted" });
+  } catch {
+    return NextResponse.json(
+      { error: "Schedule delete failed" },
+      { status: 400 }
+    );
   }
 }
