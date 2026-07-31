@@ -170,11 +170,11 @@ async function leafSaliencyBox(
 }
 
 /**
- * Server-side capture framing (source of truth before save + disease detection).
+ * Server-side capture framing for raw stills (streamer / fswebcam).
  *
  * Order: decode → rotate (DEVICE_CAPTURE_ROTATION) → center/leaf crop → JPEG.
- * Pi agents should upload raw stills (AGRIHOME_CAPTURE_ROTATION=0, crop=off)
- * so this pipeline is not double-applied.
+ * Camserver /photo already applies rotate+crop; raspberry-pi ingest skips this
+ * when imagePrepared=camera_server (or notes contain camera_photo).
  *
  * Fail-soft: returns the original buffer on any error.
  */
