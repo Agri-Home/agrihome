@@ -331,7 +331,7 @@ export async function generatePosesFromPlantLayout(input: {
       plantId: p.id,
       hingeDeg: hinge,
       motorMm: motor,
-      dwellMs: input.dwellMs ?? known?.dwellMs ?? 800
+      dwellMs: input.dwellMs ?? known?.dwellMs ?? 2000
     };
   });
 

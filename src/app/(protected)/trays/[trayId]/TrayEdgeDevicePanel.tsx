@@ -1923,7 +1923,7 @@ export function TrayEdgeDevicePanel({
           <p className="mt-0.5 text-xs text-ink/45">
             Each run: <span className="font-mono text-[11px]">G28</span> →{" "}
             <span className="font-mono text-[11px]">STORE_DOCK</span> → LED on
-            → move to each plant → Pi0{" "}
+            → move to each plant → 2s settle → LED blink → Pi0{" "}
             <span className="font-mono text-[11px]">/photo</span> → disease on
             ingest → <span className="font-mono text-[11px]">DOCK_CAMERA</span>{" "}
             → LED off. Requires a Pi0 camera server URL on the device.
