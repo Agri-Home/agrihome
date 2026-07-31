@@ -260,7 +260,7 @@ export default async function TrayDetailPage({
           <Card className="p-6 text-center">
             <p className="text-sm text-ink/45">No plants in this tray yet.</p>
             <p className="mt-2 text-xs text-ink/35">
-              Use the form above to add plants manually, or{" "}
+              Use + beside Add plant manually, or{" "}
               <Link href={`/plants/new?trayId=${encodeURIComponent(tray.id)}`} className="font-semibold text-leaf">
                 add from a photo
               </Link>
@@ -273,29 +273,48 @@ export default async function TrayDetailPage({
       {/* Event log */}
       {events.length > 0 && (
         <section className="animate-fade-in">
-          <SectionTitle>Event Log</SectionTitle>
-          <Card className="divide-y divide-ink/5 p-0">
-            {events.slice(0, 8).map((ev, i) => (
-              <div key={ev.id} className={`flex items-start gap-3 px-4 py-3 ${i === 0 ? "rounded-t-3xl" : ""} ${i === Math.min(7, events.length - 1) ? "rounded-b-3xl" : ""}`}>
-                <span className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-[10px] font-bold ${
-                  ev.level === "critical"
-                    ? "bg-rose-100 text-rose-600"
-                    : ev.level === "warning"
-                      ? "bg-amber-100 text-amber-600"
-                      : "bg-emerald-100 text-emerald-600"
-                }`}>
-                  {ev.level === "critical" ? "!" : ev.level === "warning" ? "!" : "i"}
+          <details className="rounded-xl border border-ink/10 bg-ink/[0.02] open:bg-ink/[0.03]">
+            <summary className="cursor-pointer list-none px-3 py-2.5 text-sm font-medium text-ink marker:content-none [&::-webkit-details-marker]:hidden">
+              <span className="flex items-center justify-between gap-2">
+                <span>Event log</span>
+                <span className="text-xs font-normal text-ink/40">
+                  {Math.min(8, events.length)} recent
                 </span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="truncate text-sm font-medium text-ink">{ev.title}</p>
-                    <p className="shrink-0 text-[11px] text-ink/35">{formatRelativeTimestamp(ev.createdAt)}</p>
+              </span>
+            </summary>
+            <div className="divide-y divide-ink/5 border-t border-ink/10">
+              {events.slice(0, 8).map((ev) => (
+                <div key={ev.id} className="flex items-start gap-3 px-3 py-3">
+                  <span
+                    className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-[10px] font-bold ${
+                      ev.level === "critical"
+                        ? "bg-rose-100 text-rose-600"
+                        : ev.level === "warning"
+                          ? "bg-amber-100 text-amber-600"
+                          : "bg-emerald-100 text-emerald-600"
+                    }`}
+                  >
+                    {ev.level === "critical" || ev.level === "warning"
+                      ? "!"
+                      : "i"}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="truncate text-sm font-medium text-ink">
+                        {ev.title}
+                      </p>
+                      <p className="shrink-0 text-[11px] text-ink/35">
+                        {formatRelativeTimestamp(ev.createdAt)}
+                      </p>
+                    </div>
+                    <p className="mt-0.5 line-clamp-1 text-xs text-ink/45">
+                      {ev.message}
+                    </p>
                   </div>
-                  <p className="mt-0.5 text-xs text-ink/45 line-clamp-1">{ev.message}</p>
                 </div>
-              </div>
-            ))}
-          </Card>
+              ))}
+            </div>
+          </details>
         </section>
       )}
     </div>

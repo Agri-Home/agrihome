@@ -6,10 +6,34 @@ import {
   mapErrorToApiResponse
 } from "@/lib/api/api-error";
 import { requireApiAccountUser } from "@/lib/auth/session";
-import { updateTraySystem } from "@/lib/services/topology-service";
+import {
+  deleteTraySystem,
+  updateTraySystem
+} from "@/lib/services/topology-service";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
+
+export async function DELETE(
+  _request: Request,
+  context: { params: Promise<{ trayId: string }> }
+) {
+  const authResult = await requireApiAccountUser();
+  if (authResult instanceof Response) {
+    return authResult;
+  }
+
+  const { trayId } = await context.params;
+  try {
+    const ok = await deleteTraySystem(authResult.email, trayId);
+    if (!ok) {
+      return apiErrorResponse(API_ERROR_CODES.NOT_FOUND, "Tray not found", 404);
+    }
+    return NextResponse.json({ ok: true });
+  } catch (e) {
+    return mapErrorToApiResponse(e, "Delete failed");
+  }
+}
 
 export async function PATCH(
   request: Request,

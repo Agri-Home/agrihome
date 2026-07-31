@@ -1,7 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useEffectEvent, useId, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { Button } from "@/components/atoms/Button";
 import { Card } from "@/components/atoms/Card";
@@ -39,18 +40,6 @@ type PoseSequence = {
   }>;
 };
 
-type TraySchedule = {
-  id: string;
-  scopeType: "tray" | "mesh";
-  scopeId: string;
-  name: string;
-  intervalMinutes: number;
-  active: boolean;
-  nextRunAt: string;
-  lastRunAt?: string;
-  destination: "computer-vision-backend" | "raspberry-pi-edge";
-};
-
 type ScanPlantResult = {
   plantId: string | null;
   plantName: string | null;
@@ -78,11 +67,34 @@ type ScanSummary = {
   plants: ScanPlantResult[];
 };
 
-const SCAN_INTERVAL_PRESETS = [
-  { label: "Every 6 hours", minutes: 360 },
-  { label: "Every 12 hours", minutes: 720 },
-  { label: "Daily", minutes: 1440 }
-] as const;
+
+function BusySpinner({ label }: { label: string }) {
+  return (
+    <div
+      className="absolute inset-0 z-10 flex items-start justify-center rounded-[inherit] pt-14"
+      aria-busy="true"
+      aria-live="polite"
+    >
+      <div className="flex items-center gap-2 rounded-2xl border border-ink/10 bg-white px-4 py-2.5 text-sm font-medium text-ink shadow-lift">
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="animate-spin text-leaf"
+          aria-hidden
+        >
+          <path d="M21 12a9 9 0 11-6.219-8.56" />
+        </svg>
+        {label}
+      </div>
+    </div>
+  );
+}
 
 function statusLabel(status: string, revokedAt: string | null) {
   if (revokedAt) return "revoked";
@@ -109,10 +121,14 @@ export function TrayEdgeDevicePanel({
   developerMode?: boolean;
 }) {
   const router = useRouter();
+  const unregisterDialogTitleId = useId();
+  const [mounted, setMounted] = useState(false);
+  const [unregisterOpen, setUnregisterOpen] = useState(false);
   const [device, setDevice] = useState<DeviceSummary | null>(null);
   const [sequences, setSequences] = useState<PoseSequence[]>([]);
   const [plantId, setPlantId] = useState("");
   const [busy, setBusy] = useState(false);
+  const [firmwareBusy, setFirmwareBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -132,30 +148,21 @@ export function TrayEdgeDevicePanel({
     source?: string;
     rawXy?: string;
   } | null>(null);
-  const [traySchedule, setTraySchedule] = useState<TraySchedule | null>(null);
-  const [scheduleInterval, setScheduleInterval] = useState(360);
-  const [scheduleActive, setScheduleActive] = useState(false);
   const [scanSummary, setScanSummary] = useState<ScanSummary | null>(null);
   const [scanning, setScanning] = useState(false);
 
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [devicesRes, posesRes, schedulesRes] = await Promise.all([
+      const [devicesRes, posesRes] = await Promise.all([
         fetch("/api/devices"),
-        fetch(`/api/trays/${encodeURIComponent(trayId)}/poses`),
-        fetch(
-          `/api/schedules?scopeType=tray&scopeId=${encodeURIComponent(trayId)}`
-        )
+        fetch(`/api/trays/${encodeURIComponent(trayId)}/poses`)
       ]);
       const devicesJson = (await devicesRes.json()) as {
         data?: DeviceSummary[];
         error?: { message?: string };
       };
       const posesJson = (await posesRes.json()) as { data?: PoseSequence[] };
-      const schedulesJson = (await schedulesRes.json()) as {
-        data?: TraySchedule[];
-      };
 
       if (!devicesRes.ok) {
         throw new Error(devicesJson.error?.message ?? "Could not load devices");
@@ -170,16 +177,6 @@ export function TrayEdgeDevicePanel({
       setKlipperUrlDraft(linked?.klipperUrl?.trim() ?? "");
       setCameraServerUrlDraft(linked?.cameraServerUrl?.trim() ?? "");
       setSequences(posesJson.data ?? []);
-
-      const edgeSchedules = (schedulesJson.data ?? []).filter(
-        (s) => s.destination === "raspberry-pi-edge"
-      );
-      const sched = edgeSchedules[0] ?? schedulesJson.data?.[0] ?? null;
-      setTraySchedule(sched);
-      if (sched) {
-        setScheduleInterval(sched.intervalMinutes);
-        setScheduleActive(sched.active);
-      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load device panel");
     }
@@ -787,46 +784,6 @@ export function TrayEdgeDevicePanel({
     }
   }
 
-  async function saveTraySchedule() {
-    setBusy(true);
-    setError(null);
-    setMessage(null);
-    try {
-      const res = await fetch("/api/schedules", {
-        method: traySchedule ? "PATCH" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: traySchedule?.id,
-          scopeType: "tray",
-          scopeId: trayId,
-          name: traySchedule?.name ?? "Tray plant scan",
-          intervalMinutes: scheduleInterval,
-          active: scheduleActive,
-          destination: "raspberry-pi-edge"
-        })
-      });
-      const json = (await res.json()) as {
-        data?: TraySchedule;
-        error?: string;
-      };
-      if (!res.ok || !json.data) {
-        throw new Error(json.error ?? "Could not save schedule");
-      }
-      setTraySchedule(json.data);
-      setScheduleInterval(json.data.intervalMinutes);
-      setScheduleActive(json.data.active);
-      setMessage(
-        json.data.active
-          ? `Schedule saved · next run ${new Date(json.data.nextRunAt).toLocaleString()}`
-          : "Schedule saved (paused)"
-      );
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Schedule save failed");
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function linkDevice() {
     if (!linkDeviceId.trim()) return;
     setBusy(true);
@@ -1347,7 +1304,7 @@ export function TrayEdgeDevicePanel({
   /** Queue FIRMWARE_RESTART after MCU disconnect / Printer is shutdown. */
   async function firmwareRestart() {
     if (!device) return;
-    setBusy(true);
+    setFirmwareBusy(true);
     setError(null);
     setMessage(null);
     try {
@@ -1398,17 +1355,12 @@ export function TrayEdgeDevicePanel({
       setError(e instanceof Error ? e.message : "Firmware restart failed");
       setMessage(null);
     } finally {
-      setBusy(false);
+      setFirmwareBusy(false);
     }
   }
 
   async function unregisterDevice() {
     if (!device) return;
-    const label = device.hostname || device.model || device.cpuSerial;
-    const ok = window.confirm(
-      `Unregister “${label}”? This permanently removes the device from your account and unlinks it from this tray. The same Pi can register again afterward.`
-    );
-    if (!ok) return;
 
     setBusy(true);
     setError(null);
@@ -1426,6 +1378,7 @@ export function TrayEdgeDevicePanel({
       if (!res.ok) {
         throw new Error(json.error?.message ?? "Could not unregister device");
       }
+      setUnregisterOpen(false);
       setDevice(null);
       setMessage("Device unregistered");
       router.refresh();
@@ -1436,6 +1389,30 @@ export function TrayEdgeDevicePanel({
       setBusy(false);
     }
   }
+
+  function closeUnregisterDialog() {
+    if (busy) return;
+    setUnregisterOpen(false);
+  }
+
+  const onEscapeUnregister = useEffectEvent((e: KeyboardEvent) => {
+    if (e.key === "Escape") closeUnregisterDialog();
+  });
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!unregisterOpen) return;
+    document.addEventListener("keydown", onEscapeUnregister);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onEscapeUnregister);
+      document.body.style.overflow = prev;
+    };
+  }, [unregisterOpen]);
 
   if (!device) {
     return (
@@ -1468,7 +1445,7 @@ export function TrayEdgeDevicePanel({
             </label>
             <Button
               type="button"
-              disabled={busy || !linkDeviceId}
+              disabled={!linkDeviceId}
               onClick={() => void linkDevice()}
             >
               Link to tray
@@ -1487,10 +1464,18 @@ export function TrayEdgeDevicePanel({
   }
 
   const activeSeq = sequences.find((s) => s.active) ?? sequences[0];
+  const showBusyOverlay = busy || firmwareBusy;
+  const busyLabel = firmwareBusy
+    ? "Firmware restart…"
+    : scanning
+      ? "Scanning…"
+      : "Working…";
 
   return (
-    <Card className="space-y-4 p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <>
+      <Card className="relative space-y-4 overflow-hidden p-4">
+        {showBusyOverlay ? <BusySpinner label={busyLabel} /> : null}
+        <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-base font-semibold text-ink">Raspberry Pi</h2>
           <p className="mt-0.5 text-sm text-ink/55">
@@ -1504,33 +1489,43 @@ export function TrayEdgeDevicePanel({
         </span>
       </div>
 
-      <dl className="grid grid-cols-2 gap-3 text-sm">
-        <div>
-          <dt className="text-ink/45">Serial</dt>
-          <dd className="font-mono text-ink">{device.cpuSerial}</dd>
-        </div>
-        <div>
-          <dt className="text-ink/45">Last heartbeat</dt>
-          <dd className="text-ink">
-            {device.lastHeartbeatAt
-              ? new Date(device.lastHeartbeatAt).toLocaleString()
-              : "Never"}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-ink/45">Key prefix</dt>
-          <dd className="font-mono text-ink">{device.apiKeyPrefix}…</dd>
-        </div>
-        <div>
-          <dt className="text-ink/45">Actuator limits</dt>
-          <dd className="text-ink">
-            hinge {device.actuatorLimits.hingeMinDeg ?? "—"}–
-            {device.actuatorLimits.hingeMaxDeg ?? "—"}° · motor{" "}
-            {device.actuatorLimits.motorMinMm ?? "—"}–
-            {device.actuatorLimits.motorMaxMm ?? "—"} mm
-          </dd>
-        </div>
-      </dl>
+      <details className="rounded-xl border border-ink/10 bg-ink/[0.02] open:bg-ink/[0.03]">
+        <summary className="cursor-pointer list-none px-3 py-2.5 text-sm font-medium text-ink marker:content-none [&::-webkit-details-marker]:hidden">
+          <span className="flex items-center justify-between gap-2">
+            <span>Device info</span>
+            <span className="text-xs font-normal text-ink/40">
+              Serial · heartbeat · limits
+            </span>
+          </span>
+        </summary>
+        <dl className="grid grid-cols-2 gap-3 border-t border-ink/10 px-3 py-3 text-sm">
+          <div>
+            <dt className="text-ink/45">Serial</dt>
+            <dd className="font-mono text-ink">{device.cpuSerial}</dd>
+          </div>
+          <div>
+            <dt className="text-ink/45">Last heartbeat</dt>
+            <dd className="text-ink">
+              {device.lastHeartbeatAt
+                ? new Date(device.lastHeartbeatAt).toLocaleString()
+                : "Never"}
+            </dd>
+          </div>
+          <div>
+            <dt className="text-ink/45">Key prefix</dt>
+            <dd className="font-mono text-ink">{device.apiKeyPrefix}…</dd>
+          </div>
+          <div>
+            <dt className="text-ink/45">Actuator limits</dt>
+            <dd className="text-ink">
+              hinge {device.actuatorLimits.hingeMinDeg ?? "—"}–
+              {device.actuatorLimits.hingeMaxDeg ?? "—"}° · motor{" "}
+              {device.actuatorLimits.motorMinMm ?? "—"}–
+              {device.actuatorLimits.motorMaxMm ?? "—"} mm
+            </dd>
+          </div>
+        </dl>
+      </details>
 
       <div className="space-y-1 border-t border-ink/10 pt-4">
         <div className="flex flex-wrap items-end gap-2">
@@ -1542,15 +1537,13 @@ export function TrayEdgeDevicePanel({
               placeholder="http://192.168.1.x/webcam/?action=snapshot"
               value={klipperUrlDraft}
               onChange={(e) => setKlipperUrlDraft(e.target.value)}
-              disabled={busy || Boolean(device.revokedAt)}
+              disabled={Boolean(device.revokedAt)}
             />
           </label>
           <Button
             type="button"
             variant="secondary"
-            disabled={
-              busy ||
-              Boolean(device.revokedAt) ||
+            disabled={Boolean(device.revokedAt) ||
               klipperUrlDraft.trim() === (device.klipperUrl?.trim() ?? "")
             }
             onClick={() => void saveKlipperUrl()}
@@ -1588,15 +1581,13 @@ export function TrayEdgeDevicePanel({
               placeholder="http://192.168.1.x:5000"
               value={cameraServerUrlDraft}
               onChange={(e) => setCameraServerUrlDraft(e.target.value)}
-              disabled={busy || Boolean(device.revokedAt)}
+              disabled={Boolean(device.revokedAt)}
             />
           </label>
           <Button
             type="button"
             variant="secondary"
-            disabled={
-              busy ||
-              Boolean(device.revokedAt) ||
+            disabled={Boolean(device.revokedAt) ||
               cameraServerUrlDraft.trim() ===
                 (device.cameraServerUrl?.trim() ?? "")
             }
@@ -1620,9 +1611,7 @@ export function TrayEdgeDevicePanel({
                     className="w-full"
                     value={servoAngle}
                     onChange={(e) => setServoAngle(Number(e.target.value))}
-                    disabled={
-                      busy ||
-                      Boolean(device.revokedAt) ||
+                    disabled={Boolean(device.revokedAt) ||
                       !device.cameraServerUrl?.trim()
                     }
                   />
@@ -1634,9 +1623,7 @@ export function TrayEdgeDevicePanel({
               <Button
                 type="button"
                 variant="secondary"
-                disabled={
-                  busy ||
-                  Boolean(device.revokedAt) ||
+                disabled={Boolean(device.revokedAt) ||
                   !device.cameraServerUrl?.trim()
                 }
                 onClick={() => void moveServo()}
@@ -1664,9 +1651,7 @@ export function TrayEdgeDevicePanel({
                         )
                       }))
                     }
-                    disabled={
-                      busy ||
-                      Boolean(device.revokedAt) ||
+                    disabled={Boolean(device.revokedAt) ||
                       !device.cameraServerUrl?.trim()
                     }
                   />
@@ -1675,9 +1660,7 @@ export function TrayEdgeDevicePanel({
               <Button
                 type="button"
                 variant="secondary"
-                disabled={
-                  busy ||
-                  Boolean(device.revokedAt) ||
+                disabled={Boolean(device.revokedAt) ||
                   !device.cameraServerUrl?.trim()
                 }
                 onClick={() => void setLed()}
@@ -1686,9 +1669,7 @@ export function TrayEdgeDevicePanel({
               </Button>
               <Button
                 type="button"
-                disabled={
-                  busy ||
-                  Boolean(device.revokedAt) ||
+                disabled={Boolean(device.revokedAt) ||
                   !device.cameraServerUrl?.trim()
                 }
                 onClick={() => void takePi0Photo()}
@@ -1728,9 +1709,7 @@ export function TrayEdgeDevicePanel({
             <Button
               type="button"
               disabled={
-                busy ||
-                Boolean(device.revokedAt) ||
-                device.status === "offline"
+                Boolean(device.revokedAt) || device.status === "offline"
               }
               onClick={() => void homeAxes()}
             >
@@ -1739,14 +1718,31 @@ export function TrayEdgeDevicePanel({
             <Button
               type="button"
               variant="secondary"
-              disabled={
-                busy ||
-                Boolean(device.revokedAt) ||
-                device.status === "offline"
-              }
+              className="relative z-20"
+              disabled={firmwareBusy || Boolean(device.revokedAt)}
               onClick={() => void firmwareRestart()}
             >
-              Firmware restart
+              {firmwareBusy ? (
+                <span className="inline-flex items-center gap-2">
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="animate-spin"
+                    aria-hidden
+                  >
+                    <path d="M21 12a9 9 0 11-6.219-8.56" />
+                  </svg>
+                  Restarting…
+                </span>
+              ) : (
+                "Firmware restart"
+              )}
             </Button>
             <span className="text-xs text-ink/45">
               <span className="font-mono">G28</span> /{" "}
@@ -1778,21 +1774,17 @@ export function TrayEdgeDevicePanel({
             </label>
             <Button
               type="button"
-              disabled={
-                busy ||
-                Boolean(device.revokedAt) ||
+              disabled={Boolean(device.revokedAt) ||
                 device.status === "offline"
               }
               onClick={() => void takePicture()}
             >
-              {busy ? "Working…" : "Take picture"}
+              Take picture
             </Button>
             <Button
               type="button"
               variant="secondary"
-              disabled={
-                busy ||
-                Boolean(device.revokedAt) ||
+              disabled={Boolean(device.revokedAt) ||
                 device.status === "offline"
               }
               onClick={() => void getPosition()}
@@ -1815,7 +1807,7 @@ export function TrayEdgeDevicePanel({
                 className="mt-1 w-full rounded-md border border-ink/15 bg-white px-2 py-1.5 font-mono text-xs"
                 value={hingeDegDraft}
                 onChange={(e) => setHingeDegDraft(e.target.value)}
-                disabled={busy || Boolean(device.revokedAt)}
+                disabled={Boolean(device.revokedAt)}
               />
             </label>
             <label className="block w-28 text-sm">
@@ -1826,15 +1818,13 @@ export function TrayEdgeDevicePanel({
                 className="mt-1 w-full rounded-md border border-ink/15 bg-white px-2 py-1.5 font-mono text-xs"
                 value={motorMmDraft}
                 onChange={(e) => setMotorMmDraft(e.target.value)}
-                disabled={busy || Boolean(device.revokedAt)}
+                disabled={Boolean(device.revokedAt)}
               />
             </label>
             <Button
               type="button"
               variant="secondary"
-              disabled={
-                busy ||
-                Boolean(device.revokedAt) ||
+              disabled={Boolean(device.revokedAt) ||
                 device.status === "offline"
               }
               onClick={() => {
@@ -1848,9 +1838,7 @@ export function TrayEdgeDevicePanel({
             </Button>
             <Button
               type="button"
-              disabled={
-                busy ||
-                Boolean(device.revokedAt) ||
+              disabled={Boolean(device.revokedAt) ||
                 device.status === "offline"
               }
               onClick={() => void moveSteppers()}
@@ -1867,7 +1855,7 @@ export function TrayEdgeDevicePanel({
               spellCheck={false}
               value={gcodeDraft}
               onChange={(e) => setGcodeDraft(e.target.value)}
-              disabled={busy || Boolean(device.revokedAt)}
+              disabled={Boolean(device.revokedAt)}
               placeholder={"G0 X0 Y0 F1200\n; or a Klipper macro name"}
             />
           </label>
@@ -1878,16 +1866,13 @@ export function TrayEdgeDevicePanel({
                 className="h-4 w-4 rounded border-ink/20 text-leaf focus:ring-leaf"
                 checked={actuatorDryRun}
                 onChange={(e) => setActuatorDryRun(e.target.checked)}
-                disabled={busy}
               />
               Dry run (log only, no motion)
             </label>
             <Button
               type="button"
               variant="secondary"
-              disabled={
-                busy ||
-                Boolean(device.revokedAt) ||
+              disabled={Boolean(device.revokedAt) ||
                 device.status === "offline" ||
                 !gcodeDraft.trim()
               }
@@ -1934,9 +1919,7 @@ export function TrayEdgeDevicePanel({
         <div className="flex flex-wrap items-end gap-2">
           <Button
             type="button"
-            disabled={
-              busy ||
-              Boolean(device.revokedAt) ||
+            disabled={Boolean(device.revokedAt) ||
               device.status === "offline" ||
               plants.length === 0
             }
@@ -1947,7 +1930,6 @@ export function TrayEdgeDevicePanel({
           <Button
             type="button"
             variant="secondary"
-            disabled={busy}
             onClick={() => void generatePoses()}
           >
             Generate poses from layout
@@ -1956,8 +1938,10 @@ export function TrayEdgeDevicePanel({
             type="button"
             variant="ghost"
             className="text-red-700 hover:bg-red-50 hover:text-red-800"
-            disabled={busy}
-            onClick={() => void unregisterDevice()}
+            onClick={() => {
+              setError(null);
+              setUnregisterOpen(true);
+            }}
           >
             Unregister device
           </Button>
@@ -1976,74 +1960,18 @@ export function TrayEdgeDevicePanel({
 
       <div className="space-y-3 border-t border-ink/10 pt-4">
         <div>
-          <h3 className="text-sm font-semibold text-ink">
-            Automatic tray scan
-          </h3>
+          <h3 className="text-sm font-semibold text-ink">Automatic tray scan</h3>
           <p className="mt-0.5 text-xs text-ink/45">
-            Queues the same pose walk on a schedule (
-            <span className="font-mono">raspberry-pi-edge</span>). Production
-            needs the capture schedule runner cron on the AgriHome host.
+            Schedule recurring pose walks from the Capture Schedule page
+            (destination: Raspberry Pi edge).
           </p>
         </div>
-        <div className="flex flex-wrap items-end gap-3">
-          <label className="block min-w-[10rem] text-sm">
-            <span className="text-ink/60">Interval</span>
-            <select
-              className="mt-1 w-full rounded-md border border-ink/15 bg-white px-2 py-1.5 text-sm"
-              value={scheduleInterval}
-              onChange={(e) => setScheduleInterval(Number(e.target.value))}
-              disabled={busy}
-            >
-              {SCAN_INTERVAL_PRESETS.map((p) => (
-                <option key={p.minutes} value={p.minutes}>
-                  {p.label}
-                </option>
-              ))}
-              {SCAN_INTERVAL_PRESETS.every(
-                (p) => p.minutes !== scheduleInterval
-              ) ? (
-                <option value={scheduleInterval}>
-                  Every {scheduleInterval} min
-                </option>
-              ) : null}
-            </select>
-          </label>
-          <label className="flex items-center gap-2 pb-1.5 text-sm text-ink/70">
-            <input
-              type="checkbox"
-              className="h-4 w-4 rounded border-ink/20 text-leaf focus:ring-leaf"
-              checked={scheduleActive}
-              onChange={(e) => setScheduleActive(e.target.checked)}
-              disabled={busy}
-            />
-            Enabled
-          </label>
-          <Button
-            type="button"
-            variant="secondary"
-            disabled={busy || Boolean(device.revokedAt)}
-            onClick={() => void saveTraySchedule()}
-          >
-            Save schedule
-          </Button>
-        </div>
-        {traySchedule ? (
-          <p className="text-xs text-ink/50">
-            Last run:{" "}
-            {traySchedule.lastRunAt
-              ? new Date(traySchedule.lastRunAt).toLocaleString()
-              : "never"}
-            {" · "}
-            Next:{" "}
-            {traySchedule.active
-              ? new Date(traySchedule.nextRunAt).toLocaleString()
-              : "paused"}
-          </p>
-        ) : (
-          <p className="text-xs text-ink/45">
-            No edge schedule yet for this tray.
-          </p>
-        )}
+        <a
+          href="/schedule"
+          className="inline-flex text-sm font-semibold text-leaf underline-offset-2 hover:underline"
+        >
+          Open Schedule →
+        </a>
       </div>
 
       {device.status === "offline" && !device.revokedAt && (
@@ -2172,5 +2100,62 @@ export function TrayEdgeDevicePanel({
         </div>
       )}
     </Card>
+    {mounted && unregisterOpen && device
+      ? createPortal(
+          <div
+            className="fixed inset-0 z-[100] flex items-end justify-center bg-ink/40 p-4 sm:items-center"
+            role="presentation"
+            onClick={closeUnregisterDialog}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby={unregisterDialogTitleId}
+              className="w-full max-w-md rounded-3xl border border-ink/10 bg-white p-5 shadow-lift"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <p
+                id={unregisterDialogTitleId}
+                className="text-sm font-semibold text-ink"
+              >
+                Unregister this Raspberry Pi?
+              </p>
+              <p className="mt-2 text-sm text-ink/60">
+                This permanently removes{" "}
+                <span className="font-semibold text-ink">
+                  {device.hostname || device.model || device.cpuSerial}
+                </span>{" "}
+                from your account and unlinks it from this tray. The same Pi can
+                register again afterward.
+              </p>
+              {error ? (
+                <p className="mt-2 text-sm text-red-700" role="alert">
+                  {error}
+                </p>
+              ) : null}
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  className="bg-rose-600 hover:bg-rose-700"
+                  disabled={busy}
+                  onClick={() => void unregisterDevice()}
+                >
+                  {busy ? "Unregistering…" : "Unregister device"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={busy}
+                  onClick={closeUnregisterDialog}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )
+      : null}
+    </>
   );
 }

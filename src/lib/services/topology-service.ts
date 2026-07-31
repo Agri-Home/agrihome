@@ -267,6 +267,178 @@ export const updateTraySystem = async ({
   return getTrayById(ownerEmail, id);
 };
 
+/**
+ * Permanently delete a tray and all associated plants, poses, schedules,
+ * captures, and reports. Mesh networks lose this tray id from their lists.
+ * The linked edge device (if any) is left registered but unlinked.
+ */
+export const deleteTraySystem = async (
+  ownerEmail: string,
+  id: string
+): Promise<boolean> => {
+  const existing = await getTrayById(ownerEmail, id);
+  if (!existing) {
+    return false;
+  }
+
+  if (existing.edgeDeviceId) {
+    throw new Error(
+      "Unregister the linked Raspberry Pi before deleting this tray."
+    );
+  }
+
+  const pool = requirePostgresPool();
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const plantRes = await client.query<{ id: string }>(
+      `SELECT id FROM plants WHERE tray_id = $1 AND owner_email = $2`,
+      [id, ownerEmail]
+    );
+    const plantIds = plantRes.rows.map((r) => r.id);
+
+    const capFromReports = await client.query<{ capture_id: string | null }>(
+      `SELECT capture_id FROM plant_reports
+       WHERE tray_id = $1 AND capture_id IS NOT NULL`,
+      [id]
+    );
+    const capFromTray = await client.query<{ id: string }>(
+      `SELECT id FROM camera_captures WHERE tray_id = $1`,
+      [id]
+    );
+    const captureIds = [
+      ...new Set([
+        ...capFromReports.rows
+          .map((r) => r.capture_id)
+          .filter((c): c is string => Boolean(c)),
+        ...capFromTray.rows.map((r) => r.id)
+      ])
+    ];
+
+    if (captureIds.length > 0) {
+      await client.query(
+        `DELETE FROM prediction_results WHERE capture_id = ANY($1::varchar[])`,
+        [captureIds]
+      );
+    }
+    await client.query(`DELETE FROM prediction_results WHERE tray_id = $1`, [
+      id
+    ]);
+
+    await client.query(`DELETE FROM plant_reports WHERE tray_id = $1`, [id]);
+
+    if (captureIds.length > 0) {
+      await client.query(
+        `DELETE FROM camera_captures WHERE id = ANY($1::varchar[])`,
+        [captureIds]
+      );
+    }
+
+    await client.query(
+      `UPDATE monitoring_events
+       SET plant_id = NULL, tray_id = NULL, capture_id = NULL
+       WHERE tray_id = $1 OR plant_id = ANY($2::varchar[])`,
+      [id, plantIds.length > 0 ? plantIds : ["__none__"]]
+    );
+
+    if (plantIds.length > 0) {
+      await client.query(
+        `DELETE FROM capture_poses WHERE plant_id = ANY($1::varchar[])`,
+        [plantIds]
+      );
+    }
+
+    const seqRes = await client.query<{ id: string }>(
+      `SELECT id FROM capture_pose_sequences
+       WHERE tray_id = $1 AND owner_email = $2`,
+      [id, ownerEmail]
+    );
+    const sequenceIds = seqRes.rows.map((r) => r.id);
+    if (sequenceIds.length > 0) {
+      await client.query(
+        `DELETE FROM capture_poses WHERE sequence_id = ANY($1::varchar[])`,
+        [sequenceIds]
+      );
+      await client.query(
+        `DELETE FROM capture_pose_sequences WHERE id = ANY($1::varchar[])`,
+        [sequenceIds]
+      );
+    }
+
+    await client.query(
+      `UPDATE edge_device_commands
+       SET tray_id = NULL, plant_id = NULL
+       WHERE tray_id = $1 OR plant_id = ANY($2::varchar[])`,
+      [id, plantIds.length > 0 ? plantIds : ["__none__"]]
+    );
+
+    await client.query(
+      `DELETE FROM plants WHERE tray_id = $1 AND owner_email = $2`,
+      [id, ownerEmail]
+    );
+
+    await client.query(
+      `DELETE FROM capture_schedules
+       WHERE owner_email = $1 AND scope_type = 'tray' AND scope_id = $2`,
+      [ownerEmail, id]
+    );
+
+    const meshes = await client.query<{
+      id: string;
+      tray_ids: string[] | string;
+    }>(
+      `SELECT id, tray_ids FROM mesh_networks WHERE owner_email = $1`,
+      [ownerEmail]
+    );
+    for (const mesh of meshes.rows) {
+      const raw = mesh.tray_ids;
+      const ids: string[] = Array.isArray(raw)
+        ? raw
+        : typeof raw === "string"
+          ? (() => {
+              try {
+                const parsed = JSON.parse(raw) as unknown;
+                return Array.isArray(parsed)
+                  ? parsed.filter((x): x is string => typeof x === "string")
+                  : [];
+              } catch {
+                return [];
+              }
+            })()
+          : [];
+      if (!ids.includes(id)) continue;
+      const next = ids.filter((t) => t !== id);
+      await client.query(
+        `UPDATE mesh_networks
+         SET tray_ids = $1::json, node_count = $2,
+             summary = $3
+         WHERE id = $4 AND owner_email = $5`,
+        [
+          JSON.stringify(next),
+          next.length,
+          `${next.length} trays in this group.`,
+          mesh.id,
+          ownerEmail
+        ]
+      );
+    }
+
+    const del = await client.query(
+      `DELETE FROM tray_systems WHERE id = $1 AND owner_email = $2`,
+      [id, ownerEmail]
+    );
+
+    await client.query("COMMIT");
+    return (del.rowCount ?? 0) > 0;
+  } catch (e) {
+    await client.query("ROLLBACK");
+    throw e;
+  } finally {
+    client.release();
+  }
+};
+
 export const createMeshNetwork = async ({
   ownerEmail,
   name,

@@ -105,7 +105,8 @@ const isValidationMessage = (message: string) =>
   message.includes("Could not read") ||
   message.includes("too large") ||
   message.includes("Unsupported image") ||
-  message.includes("Service uploads require");
+  message.includes("Service uploads require") ||
+  message.includes("Unregister the linked");
 
 export const mapErrorToApiResponse = (
   error: unknown,
