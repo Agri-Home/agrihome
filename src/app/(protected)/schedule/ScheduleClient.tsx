@@ -13,6 +13,14 @@ import { formatRelativeTimestamp } from "@/lib/utils";
 
 type Api<T> = { data: T; error?: string };
 
+const SCAN_INTERVAL_PRESETS = [
+  { label: "Every 6 hours", minutes: 360 },
+  { label: "Every 12 hours", minutes: 720 },
+  { label: "Daily", minutes: 1440 },
+  { label: "Every 2 hours", minutes: 120 },
+  { label: "Custom…", minutes: -1 }
+] as const;
+
 export function ScheduleClient({
   initialSchedules,
   trays,
@@ -28,7 +36,8 @@ export function ScheduleClient({
   const [scopeType, setScopeType] = useState<CaptureSchedule["scopeType"]>("tray");
   const [scopeId, setScopeId] = useState("");
   const [name, setName] = useState("");
-  const [interval, setInterval] = useState("120");
+  const [interval, setInterval] = useState("360");
+  const [intervalPreset, setIntervalPreset] = useState(360);
   const [active, setActive] = useState(true);
   const [destination, setDestination] =
     useState<CaptureSchedule["destination"]>("raspberry-pi-edge");
@@ -46,14 +55,19 @@ export function ScheduleClient({
       setScopeId(sel.scopeId);
       setName(sel.name);
       setInterval(String(sel.intervalMinutes));
+      const presetMatch = SCAN_INTERVAL_PRESETS.find(
+        (p) => p.minutes === sel.intervalMinutes
+      );
+      setIntervalPreset(presetMatch ? sel.intervalMinutes : -1);
       setActive(sel.active);
       setDestination(sel.destination);
       return;
     }
     setScopeType("tray");
     setScopeId(trays[0]?.id ?? meshes[0]?.id ?? "");
-    setName(trays[0] ? `${trays[0].name} capture` : "");
+    setName(trays[0] ? `${trays[0].name} plant scan` : "");
     setInterval("360");
+    setIntervalPreset(360);
     setActive(true);
     setDestination("raspberry-pi-edge");
   }, [selectedId, schedules, trays, meshes]);
@@ -62,7 +76,7 @@ export function ScheduleClient({
     if (selectedId) return;
     if (scopeType === "tray") {
       setScopeId(trays[0]?.id ?? "");
-      setName(trays[0] ? `${trays[0].name} capture` : "");
+      setName(trays[0] ? `${trays[0].name} plant scan` : "");
     } else {
       setScopeId(meshes[0]?.id ?? "");
       setName(meshes[0] ? `${meshes[0].name} capture` : "");
@@ -72,6 +86,11 @@ export function ScheduleClient({
   const save = async () => {
     if (!scopeId || !name.trim()) {
       setMsg("Pick a target and enter a name.");
+      return;
+    }
+    const mins = Number(interval);
+    if (!Number.isFinite(mins) || mins < 5) {
+      setMsg("Interval must be at least 5 minutes.");
       return;
     }
     setBusy(true);
@@ -85,7 +104,7 @@ export function ScheduleClient({
           scopeType,
           scopeId,
           name: name.trim(),
-          intervalMinutes: Number(interval),
+          intervalMinutes: mins,
           active,
           destination
         })
@@ -112,9 +131,59 @@ export function ScheduleClient({
   };
 
   const targets = scopeType === "tray" ? trays : meshes;
+  const edgeTraySchedules = schedules.filter(
+    (s) =>
+      s.scopeType === "tray" && s.destination === "raspberry-pi-edge"
+  );
 
   return (
     <div className="space-y-6">
+      <section className="animate-fade-in stagger-1">
+        <SectionTitle>Automatic tray scan</SectionTitle>
+        <Card className="space-y-3 p-5">
+          <p className="text-sm text-ink/60">
+            Queue a recurring pose walk on a linked Raspberry Pi (same as Scan
+            all plants). Pick a tray, choose{" "}
+            <span className="font-medium text-ink/80">Raspberry Pi edge</span>,
+            set an interval, and enable the schedule.
+          </p>
+          {edgeTraySchedules.length > 0 ? (
+            <ul className="divide-y divide-ink/10 rounded-xl border border-ink/10">
+              {edgeTraySchedules.map((s) => {
+                const tray = trays.find((t) => t.id === s.scopeId);
+                return (
+                  <li key={s.id}>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedId(s.id)}
+                      className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left hover:bg-ink/[0.03]"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-ink">
+                          {s.name}
+                        </p>
+                        <p className="text-xs text-ink/40">
+                          {tray?.name ?? s.scopeId} · every {s.intervalMinutes}{" "}
+                          min · next {formatRelativeTimestamp(s.nextRunAt)}
+                        </p>
+                      </div>
+                      <Badge tone={s.active ? "success" : "default"}>
+                        {s.active ? "Active" : "Paused"}
+                      </Badge>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="text-sm text-ink/45">
+              No automatic tray scans yet. Create one below with destination
+              Raspberry Pi edge.
+            </p>
+          )}
+        </Card>
+      </section>
+
       {/* Saved schedules */}
       <section className="animate-fade-in stagger-1">
         <SectionTitle>Saved Schedules</SectionTitle>
@@ -208,16 +277,41 @@ export function ScheduleClient({
           </label>
 
           <label className="block">
-            <span className="text-xs font-semibold uppercase tracking-wider text-ink/40">Interval (minutes)</span>
-            <input
-              type="number"
-              min={5}
-              step={5}
-              value={interval}
-              onChange={(e) => setInterval(e.target.value)}
+            <span className="text-xs font-semibold uppercase tracking-wider text-ink/40">
+              Interval
+            </span>
+            <select
+              value={intervalPreset}
+              onChange={(e) => {
+                const next = Number(e.target.value);
+                setIntervalPreset(next);
+                if (next > 0) setInterval(String(next));
+              }}
               className="mt-2 w-full rounded-xl border border-ink/10 bg-white/80 px-3.5 py-2.5 text-sm transition-colors focus:border-leaf focus:outline-none"
-            />
+            >
+              {SCAN_INTERVAL_PRESETS.map((p) => (
+                <option key={p.label} value={p.minutes}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
           </label>
+
+          {intervalPreset < 0 ? (
+            <label className="block">
+              <span className="text-xs font-semibold uppercase tracking-wider text-ink/40">
+                Interval (minutes)
+              </span>
+              <input
+                type="number"
+                min={5}
+                step={5}
+                value={interval}
+                onChange={(e) => setInterval(e.target.value)}
+                className="mt-2 w-full rounded-xl border border-ink/10 bg-white/80 px-3.5 py-2.5 text-sm transition-colors focus:border-leaf focus:outline-none"
+              />
+            </label>
+          ) : null}
 
           <label className="block">
             <span className="text-xs font-semibold uppercase tracking-wider text-ink/40">
@@ -231,13 +325,20 @@ export function ScheduleClient({
               className="mt-2 w-full rounded-xl border border-ink/10 bg-white/80 px-3.5 py-2.5 text-sm transition-colors focus:border-leaf focus:outline-none"
             >
               <option value="raspberry-pi-edge">
-                Raspberry Pi edge (pose walk)
+                Raspberry Pi edge (automatic tray scan)
               </option>
               <option value="computer-vision-backend">
                 Computer vision backend
               </option>
             </select>
           </label>
+
+          {destination === "raspberry-pi-edge" && scopeType === "tray" ? (
+            <p className="rounded-xl bg-mist/50 px-3 py-2 text-xs text-ink/50">
+              This schedule queues the tray pose walk on the linked Pi (requires
+              the capture schedule runner cron).
+            </p>
+          ) : null}
 
           <label className="flex items-center gap-3 rounded-xl bg-mist/40 px-4 py-3">
             <div className={`relative flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full transition-colors ${active ? "bg-leaf" : "bg-ink/15"}`}>
