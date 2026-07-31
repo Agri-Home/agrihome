@@ -1049,6 +1049,64 @@ export function TrayEdgeDevicePanel({
     }
   }
 
+  /** Queue FIRMWARE_RESTART after MCU disconnect / Printer is shutdown. */
+  async function firmwareRestart() {
+    if (!device) return;
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const res = await fetch(
+        `/api/devices/${encodeURIComponent(device.id)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "firmwareRestart",
+            trayId
+          })
+        }
+      );
+      const json = (await res.json()) as {
+        message?: string;
+        error?: { message?: string };
+        data?: { id?: string };
+      };
+      if (!res.ok) {
+        throw new Error(json.error?.message ?? "Firmware restart failed");
+      }
+      const commandId = json.data?.id?.trim();
+      if (!commandId) {
+        throw new Error("Firmware restart command was not queued");
+      }
+      setMessage("Firmware restart (FIRMWARE_RESTART)…");
+      const polled = await pollQueuedCommand({
+        deviceId: device.id,
+        commandId
+      });
+      if (polled.status === "failed") {
+        throw new Error(
+          polled.errorMessage ?? "Firmware restart failed on Pi"
+        );
+      }
+      if (polled.status === "timeout") {
+        setMessage(
+          (json.message ?? "Firmware restart queued") +
+            " Waiting for the edge agent — keep the agent online."
+        );
+        return;
+      }
+      setMessage(
+        "Firmware restarted. If axes were lost, use Home axes before moving."
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Firmware restart failed");
+      setMessage(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function unregisterDevice() {
     if (!device) return;
     const label = device.hostname || device.model || device.cpuSerial;
@@ -1366,7 +1424,8 @@ export function TrayEdgeDevicePanel({
               Moves use Moonraker{" "}
               <span className="font-mono">G0 X=hinge Y=motor</span> (same
               mapping as Get position). If Klipper says “Must home axis
-              first”, use Home axes before moving.
+              first”, use Home axes before moving. After “Lost communication
+              with MCU” / shutdown, use Firmware restart.
             </p>
           </div>
 
@@ -1382,8 +1441,22 @@ export function TrayEdgeDevicePanel({
             >
               Home axes
             </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={
+                busy ||
+                Boolean(device.revokedAt) ||
+                device.status === "offline"
+              }
+              onClick={() => void firmwareRestart()}
+            >
+              Firmware restart
+            </Button>
             <span className="text-xs text-ink/45">
-              Sends <span className="font-mono">G28</span> via Moonraker
+              <span className="font-mono">G28</span> /{" "}
+              <span className="font-mono">FIRMWARE_RESTART</span> via
+              Moonraker
             </span>
           </div>
 

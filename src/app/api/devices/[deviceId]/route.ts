@@ -76,9 +76,9 @@ export async function GET(request: Request, context: RouteContext) {
 /**
  * POST /api/devices/[deviceId]
  * Actions: capture | getPosition | moveActuators | runGcode | homeAxes |
- *          linkTray | revoke | delete | rotateKey | updateLimits |
- *          updateKlipperUrl | updateCameraServerUrl | cameraServo |
- *          cameraLed | cameraPhoto
+ *          firmwareRestart | linkTray | revoke | delete | rotateKey |
+ *          updateLimits | updateKlipperUrl | updateCameraServerUrl |
+ *          cameraServo | cameraLed | cameraPhoto
  */
 export async function POST(request: Request, context: RouteContext) {
   const auth = await requireApiAccountUser();
@@ -132,6 +132,7 @@ export async function POST(request: Request, context: RouteContext) {
       "moveActuators",
       "runGcode",
       "homeAxes",
+      "firmwareRestart",
       "cameraServo",
       "cameraLed",
       "cameraPhoto"
@@ -181,6 +182,7 @@ export async function POST(request: Request, context: RouteContext) {
           payload: {
             cameraServerUrl: device.cameraServerUrl.trim(),
             requestedBy: auth.email,
+            rotation: 180,
             hingeDeg:
               body.hingeDeg != null && Number.isFinite(body.hingeDeg)
                 ? body.hingeDeg
@@ -374,6 +376,48 @@ export async function POST(request: Request, context: RouteContext) {
       });
       return NextResponse.json({
         message: `Homing queued (${gcode}). Required before moves if Klipper reports “Must home axis first”.`,
+        queued: true,
+        data: cmd
+      });
+    }
+
+    if (body.action === "firmwareRestart") {
+      if (device.revokedAt) {
+        return apiErrorResponse(
+          API_ERROR_CODES.FORBIDDEN,
+          "Device is revoked",
+          403
+        );
+      }
+      // Recover from MCU disconnect / Printer is shutdown (same as Mainsail).
+      const gcode =
+        ((body.gcode ?? "FIRMWARE_RESTART") as string).trim() ||
+        "FIRMWARE_RESTART";
+      if (gcode.length > 4000) {
+        return apiErrorResponse(
+          API_ERROR_CODES.BAD_REQUEST,
+          "gcode script is too long (max 4000 chars)",
+          400
+        );
+      }
+      const trayId = await resolveLinkedTrayId(
+        deviceId,
+        auth.email,
+        body.trayId
+      );
+      const cmd = await enqueueEdgeCommand({
+        deviceId,
+        trayId,
+        commandType: "run_gcode",
+        payload: {
+          gcode,
+          dryRun: false,
+          purpose: "firmware_restart",
+          requestedBy: auth.email
+        }
+      });
+      return NextResponse.json({
+        message: `Firmware restart queued (${gcode}). Use after “Lost communication with MCU” / Printer is shutdown.`,
         queued: true,
         data: cmd
       });
@@ -625,7 +669,10 @@ export async function POST(request: Request, context: RouteContext) {
               : undefined,
           width: body.width,
           height: body.height,
-          rotation: body.rotation
+          rotation:
+            body.rotation != null && Number.isFinite(Number(body.rotation))
+              ? Number(body.rotation)
+              : 180
         }
       });
       return NextResponse.json({
@@ -638,7 +685,7 @@ export async function POST(request: Request, context: RouteContext) {
 
     return apiErrorResponse(
       API_ERROR_CODES.BAD_REQUEST,
-      "Unknown action. Use capture, getPosition, moveActuators, runGcode, homeAxes, linkTray, revoke, delete, rotateKey, updateLimits, updateKlipperUrl, updateCameraServerUrl, cameraServo, cameraLed, or cameraPhoto.",
+      "Unknown action. Use capture, getPosition, moveActuators, runGcode, homeAxes, firmwareRestart, linkTray, revoke, delete, rotateKey, updateLimits, updateKlipperUrl, updateCameraServerUrl, cameraServo, cameraLed, or cameraPhoto.",
       400
     );
   } catch (error) {

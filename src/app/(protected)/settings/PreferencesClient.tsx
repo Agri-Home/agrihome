@@ -102,8 +102,8 @@ export function PreferencesClient({
         </p>
         <p className="mt-1 text-sm text-ink/60">
           Shows manual Raspberry Pi / Klipper controls on tray pages: Take
-          picture, Get position, Home axes, Pi0 servo &amp; LED, and stepper
-          G-code moves. Leave off for day-to-day use.
+          picture, Get position, Home axes, Firmware restart, Pi0 servo
+          &amp; LED, and stepper G-code moves. Leave off for day-to-day use.
         </p>
 
         <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-xl border border-ink/10 bg-white/50 p-3.5 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-leaf/40">
