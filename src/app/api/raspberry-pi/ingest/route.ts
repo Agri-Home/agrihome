@@ -18,7 +18,7 @@ import { ingestCameraCapture } from "@/lib/services/camera-service";
 import { postprocessEdgeCapture } from "@/lib/services/edge-capture-postprocess";
 import { completeEdgeCommand } from "@/lib/services/edge-command-service";
 import { savePlantLeafOriginal, type LeafImageExt } from "@/lib/storage/save-original";
-import { cropCaptureImageBuffer } from "@/lib/storage/capture-crop";
+import { prepareCaptureImageBuffer } from "@/lib/storage/capture-crop";
 import { getTrayById } from "@/lib/services/topology-service";
 
 export const dynamic = "force-dynamic";
@@ -133,13 +133,18 @@ export async function POST(request: Request) {
     }
 
     const rawBuffer = Buffer.from(await file.arrayBuffer());
-    // Default off: Pi agent / camera_server already crop. Enable DEVICE_CAPTURE_CROP
-    // when ingesting from older agents that upload full wide frames.
-    const buffer =
-      env.device.captureCrop === "off"
-        ? rawBuffer
-        : await cropCaptureImageBuffer(rawBuffer);
-    const saved = await savePlantLeafOriginal(buffer, ext);
+    // Server source of truth: sharp rotate → crop, then save + disease on corrected bytes.
+    // Pi should upload raw stills (AGRIHOME_CAPTURE_ROTATION=0, crop=off).
+    const buffer = await prepareCaptureImageBuffer(rawBuffer);
+    // Pipeline emits JPEG when it transforms; fall back to the upload mime otherwise.
+    const outExt: LeafImageExt =
+      buffer.length >= 3 &&
+      buffer[0] === 0xff &&
+      buffer[1] === 0xd8 &&
+      buffer[2] === 0xff
+        ? "jpg"
+        : ext;
+    const saved = await savePlantLeafOriginal(buffer, outExt);
 
     const trayIdForm = String(form.get("trayId") ?? "").trim();
     let tray = trayIdForm

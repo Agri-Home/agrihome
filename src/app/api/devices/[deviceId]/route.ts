@@ -182,7 +182,9 @@ export async function POST(request: Request, context: RouteContext) {
           payload: {
             cameraServerUrl: device.cameraServerUrl.trim(),
             requestedBy: auth.email,
-            rotation: 180,
+            // Server sharp applies DEVICE_CAPTURE_ROTATION; Pi uploads raw.
+            rotation: 0,
+            crop: "off",
             hingeDeg:
               body.hingeDeg != null && Number.isFinite(body.hingeDeg)
                 ? body.hingeDeg
@@ -669,10 +671,12 @@ export async function POST(request: Request, context: RouteContext) {
               : undefined,
           width: body.width,
           height: body.height,
+          // Server sharp applies DEVICE_CAPTURE_ROTATION; default Pi rotate off.
           rotation:
             body.rotation != null && Number.isFinite(Number(body.rotation))
               ? Number(body.rotation)
-              : 180
+              : 0,
+          crop: "off"
         }
       });
       return NextResponse.json({

@@ -19,6 +19,7 @@ const parseBoolean = (value: string | undefined, fallback: boolean) => {
 };
 
 type CaptureCropMode = "center" | "leaf" | "off";
+type CaptureRotationDegrees = 0 | 90 | 180 | 270;
 
 const parseCaptureCropMode = (
   value: string | undefined,
@@ -70,6 +71,20 @@ const parseCaptureCropFraction = (
     return fallback;
   }
   return frac;
+};
+
+const parseCaptureRotation = (
+  value: string | undefined,
+  fallback: CaptureRotationDegrees
+): CaptureRotationDegrees => {
+  if (value === undefined || value.trim() === "") {
+    return fallback;
+  }
+  const deg = Number(value.trim());
+  if (deg === 0 || deg === 90 || deg === 180 || deg === 270) {
+    return deg;
+  }
+  return fallback;
 };
 
 const firebaseClientConfig: FirebaseClientConfig = {
@@ -194,14 +209,22 @@ export const env = {
       8_000
     ),
     /**
-     * Post-capture framing for optional server-side crop.
-     * Default off so Pi-cropped uploads are not double-cropped. Streamer-direct
-     * capture always applies center crop regardless. Set center|leaf when using
-     * older Pi agents that do not crop before ingest.
+     * Server is source of truth for orientation before save + disease detection.
+     * Default 180° for upside-down camera mounts. Pi agents should leave
+     * AGRIHOME_CAPTURE_ROTATION=0 (and crop=off) so this is not double-applied.
+     */
+    captureRotation: parseCaptureRotation(
+      process.env.DEVICE_CAPTURE_ROTATION ??
+        process.env.AGRIHOME_CAPTURE_ROTATION,
+      180
+    ),
+    /**
+     * Server-side crop after rotation (sharp). Default center.
+     * Pi should upload raw stills (AGRIHOME_CAPTURE_CROP=off) to avoid double crop.
      */
     captureCrop: parseCaptureCropMode(
       process.env.DEVICE_CAPTURE_CROP ?? process.env.AGRIHOME_CAPTURE_CROP,
-      "off"
+      "center"
     ),
     captureCropFraction: parseCaptureCropFraction(
       process.env.DEVICE_CAPTURE_CROP_FRACTION ??

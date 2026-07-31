@@ -4,7 +4,10 @@
  * Endpoints (host 0.0.0.0:5000):
  *   GET /servo?angle=0..90
  *   GET /led?rgb=R,G,B   (server swaps R/G for NeoPixel wiring)
- *   GET /photo?width=&height=&rotation=  → JPEG
+ *   GET /photo?width=&height=&rotation=&crop=  → JPEG
+ *
+ * Prefer rotation=0 and crop=off here: AgriHome server applies
+ * DEVICE_CAPTURE_ROTATION + DEVICE_CAPTURE_CROP via sharp before save/detect.
  */
 
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -132,17 +135,20 @@ export async function fetchCameraServerPhoto(input: {
 }): Promise<{ buffer: Buffer; contentType: string; photoUrl: string }> {
   const width = input.width ?? 1920;
   const height = input.height ?? 1080;
-  const rotation = input.rotation ?? 180;
+  const rotation = input.rotation ?? 0;
   if (![0, 90, 180, 270].includes(rotation)) {
     throw new Error("Photo rotation must be 0, 90, 180, or 270");
   }
   const qs = new URLSearchParams({
     width: String(width),
     height: String(height),
+    // Prefer 0: AgriHome server applies DEVICE_CAPTURE_ROTATION via sharp.
     rotation: String(rotation)
   });
   if (input.crop) {
     qs.set("crop", input.crop);
+  } else {
+    qs.set("crop", "off");
   }
   if (input.cropFraction != null) {
     qs.set("crop_fraction", String(input.cropFraction));
