@@ -277,8 +277,12 @@ export async function generatePosesFromPlantLayout(input: {
 
   const sequences = await listPoseSequencesForTray(owner, input.trayId);
   const active = sequences.find((s) => s.active) ?? sequences[0] ?? null;
+  const plantSequence =
+    sequences.find((sequence) =>
+      sequence.poses.some((pose) => Boolean(pose.plantId))
+    ) ?? null;
   const knownByPlant = new Map(
-    (active?.poses ?? [])
+    (plantSequence?.poses ?? [])
       .filter((p) => p.plantId)
       .map((p) => [p.plantId as string, p])
   );
@@ -338,9 +342,9 @@ export async function generatePosesFromPlantLayout(input: {
   return upsertPoseSequence({
     ownerEmail: owner,
     trayId: input.trayId,
-    deviceId: input.deviceId ?? active?.deviceId,
-    name: input.name ?? active?.name ?? "Generated from plant layout",
-    sequenceId: active?.id,
+    deviceId: input.deviceId ?? plantSequence?.deviceId ?? active?.deviceId,
+    name: input.name ?? plantSequence?.name ?? "Generated from plant layout",
+    sequenceId: plantSequence?.id,
     active: true,
     poses
   });
