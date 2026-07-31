@@ -67,6 +67,13 @@ type ScanSummary = {
   plants: ScanPlantResult[];
 };
 
+type CustomPositionDraft = {
+  id: number;
+  hingeDeg: string;
+  motorMm: string;
+};
+
+const MIN_CUSTOM_POSITIONS = 4;
 
 function BusySpinner({ label }: { label: string }) {
   return (
@@ -150,6 +157,14 @@ export function TrayEdgeDevicePanel({
   } | null>(null);
   const [scanSummary, setScanSummary] = useState<ScanSummary | null>(null);
   const [scanning, setScanning] = useState(false);
+  const [customPositions, setCustomPositions] = useState<CustomPositionDraft[]>(
+    () =>
+      Array.from({ length: MIN_CUSTOM_POSITIONS }, (_, index) => ({
+        id: index + 1,
+        hingeDeg: "",
+        motorMm: ""
+      }))
+  );
 
   const load = useCallback(async () => {
     setError(null);
@@ -169,6 +184,7 @@ export function TrayEdgeDevicePanel({
       }
 
       const devices = devicesJson.data ?? [];
+      const poseSequences = posesJson.data ?? [];
       setAllDevices(devices);
       const linked = edgeDeviceId
         ? devices.find((d) => d.id === edgeDeviceId) ?? null
@@ -176,7 +192,19 @@ export function TrayEdgeDevicePanel({
       setDevice(linked);
       setKlipperUrlDraft(linked?.klipperUrl?.trim() ?? "");
       setCameraServerUrlDraft(linked?.cameraServerUrl?.trim() ?? "");
-      setSequences(posesJson.data ?? []);
+      setSequences(poseSequences);
+      const savedCustom = poseSequences.find(
+        (sequence) => sequence.name === "Custom Pi tray positions"
+      );
+      if (savedCustom && savedCustom.poses.length >= MIN_CUSTOM_POSITIONS) {
+        setCustomPositions(
+          savedCustom.poses.map((pose) => ({
+            id: pose.poseOrder,
+            hingeDeg: String(pose.hingeDeg),
+            motorMm: String(pose.motorMm)
+          }))
+        );
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load device panel");
     }
@@ -669,9 +697,12 @@ export function TrayEdgeDevicePanel({
     return null;
   }
 
-  async function scanAllPlants() {
+  async function scanAllPlants(
+    sequenceOverride?: PoseSequence,
+    itemLabel = "plants"
+  ) {
     if (!device) return;
-    if (plants.length === 0) {
+    if (!sequenceOverride && plants.length === 0) {
       setError("Add plants to this tray before scanning.");
       return;
     }
@@ -683,7 +714,7 @@ export function TrayEdgeDevicePanel({
     const startedAt = Date.now();
     const sinceIso = new Date(startedAt).toISOString();
     try {
-      const seq = await ensurePoseSequence();
+      const seq = sequenceOverride ?? (await ensurePoseSequence());
       if (!seq || seq.poses.length === 0) {
         throw new Error(
           "No camera stops available. Generate poses from layout first."
@@ -698,7 +729,7 @@ export function TrayEdgeDevicePanel({
         );
       } else {
         setMessage(
-          `Scanning ${seq.poses.length} plants… Home axes first if Klipper is not already homed. Waiting for the Pi…`
+          `Scanning ${seq.poses.length} ${itemLabel}… Home axes first if Klipper is not already homed. Waiting for the Pi…`
         );
       }
 
@@ -763,7 +794,7 @@ export function TrayEdgeDevicePanel({
             ? Math.round(summary.durationMs / 1000)
             : Math.round((Date.now() - startedAt) / 1000);
         setMessage(
-          `Tray scan finished: ${ok}/${total} plants captured in ${secs}s` +
+          `Tray scan finished: ${ok}/${total} ${itemLabel} captured in ${secs}s` +
             (summary.lastError ? ` (some failures: ${summary.lastError})` : "")
         );
       } else {
@@ -780,6 +811,106 @@ export function TrayEdgeDevicePanel({
       setMessage(null);
     } finally {
       setScanning(false);
+      setBusy(false);
+    }
+  }
+
+  async function scanCustomPositions() {
+    if (!device) return;
+    if (customPositions.length < MIN_CUSTOM_POSITIONS) {
+      setError(`Add at least ${MIN_CUSTOM_POSITIONS} positions.`);
+      return;
+    }
+    if (
+      customPositions.some(
+        (position) =>
+          !position.hingeDeg.trim() || !position.motorMm.trim()
+      )
+    ) {
+      setError("Enter both X (hinge) and Y (motor) for every position.");
+      return;
+    }
+
+    const positions = customPositions.map((position, index) => ({
+      poseOrder: index + 1,
+      slotLabel: `Position ${index + 1}`,
+      hingeDeg: Number(position.hingeDeg),
+      motorMm: Number(position.motorMm),
+      dwellMs: 2000
+    }));
+    const invalidPosition = positions.find(
+      (position) =>
+        !Number.isFinite(position.hingeDeg) ||
+        !Number.isFinite(position.motorMm)
+    );
+    if (invalidPosition) {
+      setError(
+        `Enter valid X (hinge) and Y (motor) values for position ${invalidPosition.poseOrder}.`
+      );
+      return;
+    }
+
+    const limits = device.actuatorLimits;
+    const outsideLimits = positions.find(
+      (position) =>
+        (limits.hingeMinDeg != null &&
+          position.hingeDeg < limits.hingeMinDeg) ||
+        (limits.hingeMaxDeg != null &&
+          position.hingeDeg > limits.hingeMaxDeg) ||
+        (limits.motorMinMm != null &&
+          position.motorMm < limits.motorMinMm) ||
+        (limits.motorMaxMm != null && position.motorMm > limits.motorMaxMm)
+    );
+    if (outsideLimits) {
+      setError(
+        `Position ${outsideLimits.poseOrder} is outside this device's actuator limits.`
+      );
+      return;
+    }
+
+    const uniquePositions = new Set(
+      positions.map((position) => `${position.hingeDeg}:${position.motorMm}`)
+    );
+    if (uniquePositions.size !== positions.length) {
+      setError("Each position must use a unique X/Y pair.");
+      return;
+    }
+
+    setBusy(true);
+    setError(null);
+    setMessage("Saving custom positions…");
+    try {
+      const existing = sequences.find(
+        (sequence) => sequence.name === "Custom Pi tray positions"
+      );
+      const res = await fetch(
+        `/api/trays/${encodeURIComponent(trayId)}/poses`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: "Custom Pi tray positions",
+            deviceId: device.id,
+            sequenceId: existing?.id,
+            poses: positions
+          })
+        }
+      );
+      const json = (await res.json()) as {
+        error?: { message?: string };
+        data?: PoseSequence;
+      };
+      if (!res.ok) {
+        throw new Error(json.error?.message ?? "Could not save positions");
+      }
+      if (!json.data || json.data.poses.length < MIN_CUSTOM_POSITIONS) {
+        throw new Error("The custom position sequence was not saved.");
+      }
+      await scanAllPlants(json.data, "positions");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Position scan failed");
+      setMessage(null);
+    } finally {
       setBusy(false);
     }
   }
@@ -1956,6 +2087,125 @@ export function TrayEdgeDevicePanel({
             .
           </p>
         ) : null}
+      </div>
+
+      <div className="space-y-3 border-t border-ink/10 pt-4">
+        <div>
+          <h3 className="text-sm font-semibold text-ink">
+            Scan custom positions
+          </h3>
+          <p className="mt-0.5 text-xs text-ink/45">
+            Enter at least four X (hinge) and Y (motor) positions. The Pi uses
+            the same home, move, settle, photo, and dock sequence as Scan all
+            plants.
+          </p>
+        </div>
+
+        <div className="space-y-2">
+          {customPositions.map((position, index) => (
+            <div
+              key={position.id}
+              className="grid grid-cols-[1.5rem_minmax(0,1fr)_minmax(0,1fr)_2.25rem] items-end gap-2"
+            >
+              <span className="pb-2.5 text-center text-xs font-semibold text-ink/40">
+                {index + 1}
+              </span>
+              <label className="min-w-0 text-xs text-ink/50">
+                X · hinge (°)
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  step="any"
+                  value={position.hingeDeg}
+                  disabled={busy}
+                  onChange={(event) =>
+                    setCustomPositions((current) =>
+                      current.map((item) =>
+                        item.id === position.id
+                          ? { ...item, hingeDeg: event.target.value }
+                          : item
+                      )
+                    )
+                  }
+                  className="mt-1 w-full rounded-xl border border-ink/10 bg-white px-3 py-2 text-sm text-ink focus:border-leaf focus:outline-none"
+                  aria-label={`Position ${index + 1} X hinge degrees`}
+                />
+              </label>
+              <label className="min-w-0 text-xs text-ink/50">
+                Y · motor (mm)
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  step="any"
+                  value={position.motorMm}
+                  disabled={busy}
+                  onChange={(event) =>
+                    setCustomPositions((current) =>
+                      current.map((item) =>
+                        item.id === position.id
+                          ? { ...item, motorMm: event.target.value }
+                          : item
+                      )
+                    )
+                  }
+                  className="mt-1 w-full rounded-xl border border-ink/10 bg-white px-3 py-2 text-sm text-ink focus:border-leaf focus:outline-none"
+                  aria-label={`Position ${index + 1} Y motor millimeters`}
+                />
+              </label>
+              <button
+                type="button"
+                disabled={
+                  busy || customPositions.length <= MIN_CUSTOM_POSITIONS
+                }
+                onClick={() =>
+                  setCustomPositions((current) =>
+                    current.filter((item) => item.id !== position.id)
+                  )
+                }
+                className="flex h-9 w-9 items-center justify-center rounded-xl text-lg text-ink/45 transition-colors hover:bg-red-50 hover:text-red-700 disabled:pointer-events-none disabled:opacity-20"
+                aria-label={`Remove position ${index + 1}`}
+                title="Remove position"
+              >
+                −
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={busy}
+            onClick={() =>
+              setCustomPositions((current) => [
+                ...current,
+                {
+                  id:
+                    current.reduce(
+                      (largest, position) => Math.max(largest, position.id),
+                      0
+                    ) + 1,
+                  hingeDeg: "",
+                  motorMm: ""
+                }
+              ])
+            }
+          >
+            Add position
+          </Button>
+          <Button
+            type="button"
+            disabled={
+              busy ||
+              Boolean(device.revokedAt) ||
+              device.status === "offline"
+            }
+            onClick={() => void scanCustomPositions()}
+          >
+            {scanning ? "Scanning…" : "Run position scan"}
+          </Button>
+        </div>
       </div>
 
       <div className="space-y-3 border-t border-ink/10 pt-4">
