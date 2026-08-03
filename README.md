@@ -49,6 +49,22 @@ See `.env.example` for full variable list and storage layout.
 5. `npm run dev` → [http://localhost:3000](http://localhost:3000)
 6. Production build: `npm run build` then `npm start` (or `npm run start:standalone` after build for the standalone server from repo root).
 
+## CAD and STEP Files
+
+STEP files are available for download through the Fusion 360 links below:
+
+- [Y-Axis Motor Mount](https://a360.co/4hddHdd)
+- [Camera Head](https://a360.co/4xjbl1e)
+- [Y-Gantry Assembly](https://a360.co/4bbembm)
+- [Y-Axis Idler](https://a360.co/4hM4VTC)
+
+## Bill of Materials
+
+The Bill of Materials (BOM) is available for download.
+
+> **Note:** The BOM may not be fully accurate or up to date. Refer to the CAD files for the most reliable parts and assembly information.
+
+
 ## Documentation
 
 | Doc | Description |
