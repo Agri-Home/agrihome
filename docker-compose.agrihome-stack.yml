@@ -1,0 +1,94 @@
+# AgriHome core stack: app + Postgres + Qdrant + Watchtower.
+#
+# Usage (Dockge or CLI):
+#   cp .env.example .env   # set secrets and Docker service hostnames (see below)
+#   docker compose -f docker-compose.agrihome-stack.yml up -d
+#
+# Required .env overrides for in-compose networking:
+#   POSTGRES_HOST=postgres
+#   QDRANT_URL=http://qdrant:6333
+#   CV_SPECIES_INFERENCE_URL=http://plant-classifier:8765/v1/classify  # agrihome-ai stack
+#
+# `agrihome` waits for Postgres to pass `pg_isready` before starting.
+
+services:
+  agrihome:
+    image: ghcr.io/agri-home/agrihome:latest
+    container_name: agrihome
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    labels:
+      - com.centurylinklabs.watchtower.enable=true
+    volumes:
+      - /mnt/mainpool/apps/agrihome/uploads:/data/agrihome
+    networks:
+      - agrihome_net
+
+  postgres:
+    image: postgres:16
+    container_name: agrihome-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DATABASE}
+    volumes:
+      - /mnt/mainpool/apps/agrihome/postgres:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\"",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    labels:
+      - com.centurylinklabs.watchtower.enable=false
+    networks:
+      - agrihome_net
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: agrihome-qdrant
+    restart: unless-stopped
+    volumes:
+      - /mnt/mainpool/apps/agrihome/qdrant/storage:/qdrant/storage
+      - /mnt/mainpool/apps/agrihome/qdrant/snapshots:/qdrant/snapshots
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    labels:
+      - com.centurylinklabs.watchtower.enable=false
+    networks:
+      - agrihome_net
+
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: agrihome-watchtower
+    restart: unless-stopped
+    command:
+      - --label-enable
+      - --interval
+      - "300"
+      - --cleanup
+      - --rolling-restart
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - agrihome_net
+
+networks:
+  agrihome_net:
+    driver: bridge
